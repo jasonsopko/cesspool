@@ -57,7 +57,11 @@ def pct(x, places=1):
         return "0%"
     if x < 0.001:
         return "<0.1%"
-    return f"{x * 100:.{places}f}%"
+    shown = f"{x * 100:.{places}f}%"
+    if x < 1 and shown.startswith("100"):
+        # anything short of all of it never reads 100%
+        return f"{math.floor(x * 100 * 10**places) / 10**places:.{places}f}%"
+    return shown
 
 
 def size(b):
