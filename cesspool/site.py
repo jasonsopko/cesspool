@@ -14,7 +14,8 @@ EXPLORER = "https://mempool.guide"
 PLUMB_REPO = "https://github.com/plumb-node/plumb"
 PLUMB_RELEASE = "https://github.com/plumb-node/plumb/releases/latest"
 INSTALLER = "https://github.com/jasonsopko/knots-datum-node"
-PLUMB_VERSION = "plumb1 (v29.4.2.knots20260508.plumb1)"
+PLUMB_VERSION = "plumb2 (v29.4.2.knots20260508.plumb2)"
+PLUMB_NAME = "Plumb 2"
 FORK = 961640
 
 GRADES = [  # key, label, css
@@ -378,7 +379,7 @@ def io_html(rows, kind, limit=8, missed=False):
     for (key, cnt, r) in g[:limit]:
         t = TYPE_SHORT.get(r["type"], r["type"] or "?")
         extra = f'{n(r["sats"])} sat' if kind == "out" else (f'{n(r["wbytes"])} B witness' if r["wbytes"] else "")
-        d = f'<span class="db">{n(r["data"] * cnt)} B data{" (Plumb 1 misses)" if missed and kind == "in" else ""}</span>' if r["data"] else '<span class="x">payment</span>'
+        d = f'<span class="db">{n(r["data"] * cnt)} B data{" (" + PLUMB_NAME + " misses)" if missed and kind == "in" else ""}</span>' if r["data"] else '<span class="x">payment</span>'
         if kind == "out" and r["type"] == "nulldata":
             d = f'<span class="db">{n(r["data"] * cnt)} B data</span>' if r["data"] else f'<span class="db">{r["len"]} B note</span>'
         parts.append(f'<div class="row{" d" if r["data"] or (kind == "out" and r["type"] == "nulldata") else ""}">'
@@ -389,7 +390,7 @@ def io_html(rows, kind, limit=8, missed=False):
     return "".join(parts)
 
 
-VERDICT_NAMES = [("core", "Bitcoin Core 29"), ("knots", "Knots 29.4.2"), ("plumb", "Plumb 1")]
+VERDICT_NAMES = [("core", "Bitcoin Core 29"), ("knots", "Knots 29.4.2"), ("plumb", PLUMB_NAME)]
 
 
 def verdict_html(v, missed):
@@ -437,7 +438,7 @@ def dissection(s, pool, rate_ctx):
     others = "".join(f'<span class="chip">{esc(l)}</span>' for l in s["labels"][1:])
     note = ""
     if s["missed"]:
-        note = f'<div class="note"><b>Plumb 1 relays this.</b> {prose(i.get("note", ""))} {filter_line(t)}</div>'
+        note = f'<div class="note"><b>{PLUMB_NAME} relays this.</b> {prose(i.get("note", ""))} {filter_line(t)}</div>'
     return f'''<section class="{cls}" id="tx-{s["txid"][:16]}">
 <div class="hd">{tier_stamp}<h3>{esc(i["name"])}</h3><span class="muted small">{esc(s["labels"][0]) if s["labels"] else ""}</span></div>
 <div class="txid"><a href="{EXPLORER}/tx/{s["txid"]}">{s["txid"]}</a></div>
@@ -480,7 +481,7 @@ def block_page(rec, s, prev_h, next_h, tip):
         verdict = (f'{n(s["sn"])} sewage transaction{"s" if s["sn"] != 1 else ""} took <b>{pct(s["share"])}</b> of this block '
                    f'and paid {esc(pool)} <b>{btc(s["sf"])} BTC</b>, {pct(s["sf"] / total_fees if total_fees else 0)} of its fees.')
         if s["sm"]:
-            verdict += (" One of them is" if s["sm"] == 1 else f' {n(s["sm"])} of them are') + " a shape Plumb 1 does not catch yet."
+            verdict += (" One of them is" if s["sm"] == 1 else f' {n(s["sm"])} of them are') + f" a shape {PLUMB_NAME} does not catch yet."
         caught = s["ps"]
         if caught:
             verdict += f' A Plumb node refuses {n(caught)} of the {n(s["sn"])}.'
@@ -501,7 +502,7 @@ def block_page(rec, s, prev_h, next_h, tip):
 <div class="stampbox">{stamp(s["grade"])}</div></div>
 <div class="mapbox"><canvas id="map" aria-label="Map of every transaction in the block, sized by virtual size"></canvas><div class="tip"></div></div>
 <div class="legend"><span><i style="background:var(--water);opacity:.55"></i>Payment</span><span><i style="background:var(--gray)"></i>Gray water (small note)</span>
-<span><i style="background:var(--sewage)"></i>Sewage</span><span><i style="border:2px solid var(--miss)"></i>Sewage Plumb 1 misses</span></div>
+<span><i style="background:var(--sewage)"></i>Sewage</span><span><i style="border:2px solid var(--miss)"></i>Sewage {PLUMB_NAME} misses</span></div>
 <script type="application/json" id="mapdata">{json.dumps(mapdata, separators=(",", ":"))}</script>
 '''
     if sew:
@@ -676,7 +677,7 @@ def guide_page(idx, tip):
         measured = []
         for k, name in VERDICT_NAMES:
             measured.append(f'<tr><td>{name}</td><td class="r num">{n(s[k])} / {n(s["n"])}</td><td class="r num">{pct(s[k] / s["n"] if s["n"] else 0)}</td></tr>')
-        note = f'<div class="note small"><b>Plumb 1 relays these.</b> {prose(i["note"])}</div>' if i.get("note") else ""
+        note = f'<div class="note small"><b>{PLUMB_NAME} relays these.</b> {prose(i["note"])}</div>' if i.get("note") else ""
         secs.append(f'''<section class="panel" id="{t}" style="margin:14px 0"><div class="ftype"><div>
 <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap"><h3 style="margin:0">{esc(i["name"])}</h3>{status_chip(t)}{prs}</div>
 <p style="margin-top:10px">{prose(i["what"])}</p><p class="muted">{prose(i["how"])}</p>{note}
@@ -706,7 +707,7 @@ def plumb_page(idx, tip):
 <div class="tiles"><div class="tile"><div class="v">{size(tot["sd"])}</div><div class="l">of sewage payload mined since the fork</div></div>
 <div class="tile"><div class="v">{pct(tot["psw"] / tot["sw"] if tot["sw"] else 0)}</div><div class="l">of that block space a Plumb node refuses</div></div>
 <div class="tile"><div class="v">{pct(tot["ksw"] / tot["sw"] if tot["sw"] else 0)}</div><div class="l">refused by stock Knots</div></div>
-<div class="tile"><div class="v">{n(tot["sm"])}</div><div class="l">sewage transactions Plumb 1 misses</div><div class="s">fake multisig keys; the filter is in review</div></div></div>
+<div class="tile"><div class="v">{n(tot["sm"])}</div><div class="l">sewage transactions {PLUMB_NAME} misses</div><div class="s">fake multisig keys; the filter is in review</div></div></div>
 <h2>What it adds to Knots</h2><div class="tw"><table><tr><th>Option</th><th>What it counts as data</th><th>Source</th></tr>{frows}</table></div>
 <p class="small muted" style="margin-top:8px">Everything Knots already refuses stays refused: runestones, Counterparty, inscriptions, CAT-21, bare multisig.</p>
 <h2>Run it</h2><div class="grid2"><div class="panel"><h3>A node</h3><p class="muted">Build from the signed tag and replace <code>bitcoind</code>. Same config, same data directory, same RPC.</p>
@@ -722,7 +723,7 @@ def about_page(tip):
 <p class="lede">Every block since the BLAKE2b fork at height {FORK}, every transaction in it, run through three node policies.</p></div>
 <div class="prose">
 <h2>Verdicts come from the shipped code</h2>
-<p>Each transaction, with the coins it spends, goes through the policy checks of Plumb {PLUMB_VERSION}: <code>IsStandardTx</code>, <code>AreInputsStandard</code>, the data-carrier count and <code>IsWitnessStandard</code>, three times over: once with Bitcoin Core defaults (<code>-corepolicy</code>), once as stock Knots 29.4.2 with Plumb's two filters off, and once as Plumb. Nothing here reimplements a filter, so this page and a Plumb node cannot disagree about a transaction.</p>
+<p>Each transaction, with the coins it spends, goes through the policy checks of Plumb {PLUMB_VERSION}: <code>IsStandardTx</code>, <code>AreInputsStandard</code>, the data-carrier count and <code>IsWitnessStandard</code>, three times over: once with Bitcoin Core defaults (<code>-corepolicy</code>), once as stock Knots 29.4.2 with Plumb's filters off, and once as Plumb. Nothing here reimplements a filter, so this page and a Plumb node cannot disagree about a transaction.</p>
 <p>Not modeled: fee floors, mempool limits, replacement rules and address reuse. Those depend on the mempool at the time, not on what the transaction carries.</p>
 <h2>Grades</h2>
 <ul><li>{stamp("pristine", True)} every transaction is a payment. Not one byte of data.</li>

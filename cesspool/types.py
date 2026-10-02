@@ -83,6 +83,20 @@ TYPES = {
         "filter": PLUMB, "option": "-rejectdeadbranches",
         "prs": [("knots#400", "https://github.com/bitcoinknots/bitcoin/pull/400")],
     },
+    "bare-inscription": {
+        "name": "Inscription, bare envelope",
+        "what": "An `ord` inscription whose pushes are dropped again with OP_2DROP instead of wrapped in OP_FALSE OP_IF.",
+        "how": "The shape inscriptions moved to for when OP_IF is not available. Knots counts only the last push before a drop, so the payload walks past it.",
+        "filter": PLUMB, "option": "-rejectbareenvelopes",
+        "prs": [("knots#319", "https://github.com/bitcoinknots/bitcoin/pull/319")],
+    },
+    "bare-envelope": {
+        "name": "Bare data envelope",
+        "what": "A run of data pushes in a script, dropped again with OP_DROP or OP_2DROP.",
+        "how": "The same shape as a bare inscription without the `ord` tag. The pushes never affect the spend.",
+        "filter": PLUMB, "option": "-rejectbareenvelopes",
+        "prs": [("knots#319", "https://github.com/bitcoinknots/bitcoin/pull/319")],
+    },
     "envelope": {
         "name": "OP_FALSE OP_IF envelope",
         "what": "Pushes wrapped in a branch that can never run.",

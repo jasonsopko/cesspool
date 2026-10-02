@@ -11,6 +11,7 @@ import re
 OP_0, OP_PUSHDATA1, OP_PUSHDATA2, OP_PUSHDATA4 = 0x00, 0x4C, 0x4D, 0x4E
 OP_1, OP_16, OP_IF, OP_RETURN, OP_13 = 0x51, 0x60, 0x63, 0x6A, 0x5D
 OP_CHECKMULTISIG, OP_CHECKSIG = 0xAE, 0xAC
+OP_RESERVED, OP_DROP, OP_2DROP = 0x50, 0x75, 0x6D
 
 SECP_P = 2**256 - 2**32 - 977
 
@@ -149,6 +150,21 @@ def witness_script(vin):
     return None, None
 
 
+def bare_envelope(o):
+    """The first push of a run of pushes ended by OP_DROP or OP_2DROP, the shape
+    -rejectbareenvelopes counts; None if the script has no such run."""
+    run = []
+    for op, data in o:
+        if op <= OP_16 and op != OP_RESERVED:
+            run.append(data or b"")
+        elif (op == OP_2DROP and run) or (op == OP_DROP and len(run) >= 2):
+            # one push then OP_DROP is the shape Knots already counts
+            return run[0]
+        else:
+            run = []
+    return None
+
+
 def data_input(vin):
     """Name a witness input that plumb-check counted as data."""
     kind, script = witness_script(vin)
@@ -160,6 +176,11 @@ def data_input(vin):
                 if tag == b"ord":
                     return "inscription", "Ordinals inscription envelope"
                 return "envelope", "OP_FALSE OP_IF envelope"
+        tag = bare_envelope(o)
+        if tag is not None:
+            if tag == b"ord":
+                return "bare-inscription", "Ordinals inscription in a bare envelope (OP_2DROP, no OP_IF)"
+            return "bare-envelope", "Run of data pushes dropped again with OP_DROP or OP_2DROP"
         if kind == "tapscript":
             return "dead-branch", "Data in a script branch that can never run"
     return "witness-data", "Data in an input's witness or script"
@@ -168,7 +189,7 @@ def data_input(vin):
 def fake_multisig(tx):
     """Inputs revealing m-of-n scripts with eight or more unneeded keys.
 
-    Not counted by Plumb 1 (knots#422 and #435 target it). The threshold keeps
+    Not counted by Plumb 2 (knots#422 and #435 target it). The threshold keeps
     real vaults out: no 1-of-3 or 2-of-5 spend comes near it.
     """
     per_input = []

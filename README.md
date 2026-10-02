@@ -9,7 +9,7 @@ kept it out.
 - `plumb-check/plumb_check_tests.cpp` is built into `test_bitcoin` from a Plumb
   tree (`plumb-check/build.sh`). It runs the shipped policy code on each
   transaction three ways: Core defaults (`-corepolicy`), stock Knots 29.4.2
-  (Plumb's two filters off) and Plumb, and reports every reason each one
+  (Plumb's filters off) and Plumb, and reports every reason each one
   trips plus where Plumb counts data bytes. Nothing reimplements a filter.
 - `cesspool/classify.py` names the protocol and finds the shapes Plumb does
   not count yet (fake multisig keys), so a miss shows as a miss.

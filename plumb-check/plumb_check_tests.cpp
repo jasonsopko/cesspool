@@ -35,6 +35,7 @@ struct Profile {
     unsigned int weight_per_data_byte;
     unsigned int script_size_limit;
     bool reject_dead_branches;
+    bool reject_bare_envelopes;
     unsigned int bytes_per_sigop;
     unsigned int bytes_per_sigop_strict;
 };
@@ -43,6 +44,7 @@ struct Globals {
     unsigned int weight_per_data_byte{::g_weight_per_data_byte};
     unsigned int script_size_limit{::g_script_size_policy_limit};
     bool reject_dead_branches{::g_reject_dead_branches};
+    bool reject_bare_envelopes{::g_reject_bare_envelopes};
     unsigned int bytes_per_sigop{::nBytesPerSigOp};
     unsigned int bytes_per_sigop_strict{::nBytesPerSigOpStrict};
 };
@@ -55,13 +57,14 @@ Profile MakeProfile(const std::string& name, const std::vector<std::pair<std::st
     for (const auto& [k, v] : set) args.ForceSetArg(k, v);
     InitParameterInteraction(args);
     Profile p{name, kernel::MemPoolOptions{}, defaults.weight_per_data_byte, defaults.script_size_limit,
-              defaults.reject_dead_branches, defaults.bytes_per_sigop, defaults.bytes_per_sigop_strict};
+              defaults.reject_dead_branches, defaults.reject_bare_envelopes, defaults.bytes_per_sigop, defaults.bytes_per_sigop_strict};
     BOOST_REQUIRE(ApplyArgsManOptions(args, Params(), p.opts));
     if (auto parsed = args.GetFixedPointArg("-datacarriercost", 2)) {
         p.weight_per_data_byte = ((*parsed * WITNESS_SCALE_FACTOR) + 99) / 100;
     }
     p.script_size_limit = args.GetIntArg("-maxscriptsize", p.script_size_limit);
     p.reject_dead_branches = args.GetBoolArg("-rejectdeadbranches", p.reject_dead_branches);
+    p.reject_bare_envelopes = args.GetBoolArg("-rejectbareenvelopes", p.reject_bare_envelopes);
     p.bytes_per_sigop = args.GetIntArg("-bytespersigop", p.bytes_per_sigop);
     p.bytes_per_sigop_strict = args.GetIntArg("-bytespersigopstrict", p.bytes_per_sigop_strict);
     return p;
@@ -72,6 +75,7 @@ void Activate(const Profile& p)
     ::g_weight_per_data_byte = p.weight_per_data_byte;
     ::g_script_size_policy_limit = p.script_size_limit;
     ::g_reject_dead_branches = p.reject_dead_branches;
+    ::g_reject_bare_envelopes = p.reject_bare_envelopes;
     ::nBytesPerSigOp = p.bytes_per_sigop;
     ::nBytesPerSigOpStrict = p.bytes_per_sigop_strict;
 }
@@ -128,8 +132,8 @@ BOOST_AUTO_TEST_CASE(plumb_check)
     const Globals defaults;
     std::vector<Profile> profiles;
     profiles.push_back(MakeProfile("core", {{"-corepolicy", "1"}}, defaults));
-    // Stock Knots 29.4.2: Plumb's two filters do not exist there.
-    profiles.push_back(MakeProfile("knots", {{"-rejectfakeoutputs", "0"}, {"-rejectdeadbranches", "0"}}, defaults));
+    // Stock Knots 29.4.2: none of Plumb's filters exist there.
+    profiles.push_back(MakeProfile("knots", {{"-rejectfakeoutputs", "0"}, {"-rejectdeadbranches", "0"}, {"-rejectbareenvelopes", "0"}}, defaults));
     profiles.push_back(MakeProfile("plumb", {}, defaults));
 
     std::ifstream in{in_path};
@@ -191,13 +195,15 @@ BOOST_AUTO_TEST_CASE(plumb_check)
             for (const CTxIn& txin : tx.vin) {
                 const CTxOut& utxo = view.AccessCoin(txin.prevout).out;
                 auto [script, wpb] = GetScriptForTransactionInput(utxo.scriptPubKey, txin);
-                const auto d = script.DatacarrierBytes(0, &txin.scriptWitness, ::g_reject_dead_branches);
+                // The node skips the dead-branch analysis on a witness over the size limit
+                const bool dead_branches{::g_reject_dead_branches && GetSerializeSize(txin.scriptWitness.stack) <= ::g_script_size_policy_limit};
+                const auto d = script.DatacarrierBytes(0, &txin.scriptWitness, dead_branches, ::g_reject_bare_envelopes);
                 ins.push_back(uint64_t(d.first + d.second));
                 total += d.first + d.second;
             }
             UniValue outs{UniValue::VARR};
             for (size_t o{0}; o < tx.vout.size(); ++o) {
-                const auto d = tx.vout[o].scriptPubKey.DatacarrierBytes(tx.vout.size() - o);
+                const auto d = tx.vout[o].scriptPubKey.DatacarrierBytes(tx.vout.size() - o, nullptr, false, ::g_reject_bare_envelopes);
                 const size_t n{d.first + std::max(d.second, data_outputs[o])};
                 outs.push_back(uint64_t(n));
                 total += n;
@@ -207,7 +213,7 @@ BOOST_AUTO_TEST_CASE(plumb_check)
             row.pushKV("data_out", outs);
         }
         Activate({"", {}, defaults.weight_per_data_byte, defaults.script_size_limit, defaults.reject_dead_branches,
-                  defaults.bytes_per_sigop, defaults.bytes_per_sigop_strict});
+                  defaults.reject_bare_envelopes, defaults.bytes_per_sigop, defaults.bytes_per_sigop_strict});
         row.pushKV("v", verdicts);
         out << row.write() << "\n";
     }
