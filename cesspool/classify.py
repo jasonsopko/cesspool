@@ -189,7 +189,7 @@ def data_input(vin):
 def fake_multisig(tx):
     """Inputs revealing m-of-n scripts with eight or more unneeded keys.
 
-    Not counted by Plumb 2 (knots#422 and #435 target it). The threshold keeps
+    Plumb 3 counts these past ten unsigned keys a script (knots#422). The threshold keeps
     real vaults out: no 1-of-3 or 2-of-5 spend comes near it.
     """
     per_input = []
@@ -236,9 +236,10 @@ def classify(tx, verdict):
     missed = False
     if fm_inputs:
         add("fake-multisig", f"Fake multisig keys in {fm_inputs} input{'s' if fm_inputs != 1 else ''}")
+        # Plumb counts only the keys past its allowance; the payload is every unused key
+        data_bytes = max(data_bytes, fm_bytes)
         if not data_reasons:
             missed = True
-            data_bytes = max(data_bytes, fm_bytes)
 
     if data_reasons or missed:
         tier = "sewage"

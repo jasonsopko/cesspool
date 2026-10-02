@@ -14,8 +14,8 @@ EXPLORER = "https://mempool.guide"
 PLUMB_REPO = "https://github.com/plumb-node/plumb"
 PLUMB_RELEASE = "https://github.com/plumb-node/plumb/releases/latest"
 INSTALLER = "https://github.com/jasonsopko/knots-datum-node"
-PLUMB_VERSION = "plumb2 (v29.4.2.knots20260508.plumb2)"
-PLUMB_NAME = "Plumb 2"
+PLUMB_VERSION = "plumb3 (v29.4.2.knots20260508.plumb3)"
+PLUMB_NAME = "Plumb 3"
 FORK = 961640
 
 GRADES = [  # key, label, css
@@ -677,7 +677,8 @@ def guide_page(idx, tip):
         measured = []
         for k, name in VERDICT_NAMES:
             measured.append(f'<tr><td>{name}</td><td class="r num">{n(s[k])} / {n(s["n"])}</td><td class="r num">{pct(s[k] / s["n"] if s["n"] else 0)}</td></tr>')
-        note = f'<div class="note small"><b>{PLUMB_NAME} relays these.</b> {prose(i["note"])}</div>' if i.get("note") else ""
+        relays = f"<b>{PLUMB_NAME} relays these.</b> " if i["filter"] == NONE else ""
+        note = f'<div class="note small">{relays}{prose(i["note"])}</div>' if i.get("note") else ""
         secs.append(f'''<section class="panel" id="{t}" style="margin:14px 0"><div class="ftype"><div>
 <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap"><h3 style="margin:0">{esc(i["name"])}</h3>{status_chip(t)}{prs}</div>
 <p style="margin-top:10px">{prose(i["what"])}</p><p class="muted">{prose(i["how"])}</p>{note}
@@ -707,7 +708,7 @@ def plumb_page(idx, tip):
 <div class="tiles"><div class="tile"><div class="v">{size(tot["sd"])}</div><div class="l">of sewage payload mined since the fork</div></div>
 <div class="tile"><div class="v">{pct(tot["psw"] / tot["sw"] if tot["sw"] else 0)}</div><div class="l">of that block space a Plumb node refuses</div></div>
 <div class="tile"><div class="v">{pct(tot["ksw"] / tot["sw"] if tot["sw"] else 0)}</div><div class="l">refused by stock Knots</div></div>
-<div class="tile"><div class="v">{n(tot["sm"])}</div><div class="l">sewage transactions {PLUMB_NAME} misses</div><div class="s">fake multisig keys; the filter is in review</div></div></div>
+<div class="tile"><div class="v">{n(tot["sm"])}</div><div class="l">sewage transactions {PLUMB_NAME} misses</div><div class="s">fake multisig reveals small enough to stay under the limit</div></div></div>
 <h2>What it adds to Knots</h2><div class="tw"><table><tr><th>Option</th><th>What it counts as data</th><th>Source</th></tr>{frows}</table></div>
 <p class="small muted" style="margin-top:8px">Everything Knots already refuses stays refused: runestones, Counterparty, inscriptions, CAT-21, bare multisig.</p>
 <h2>Run it</h2><div class="grid2"><div class="panel"><h3>A node</h3><p class="muted">Build from the signed tag and replace <code>bitcoind</code>. Same config, same data directory, same RPC.</p>

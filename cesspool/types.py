@@ -15,10 +15,9 @@ TYPES = {
         "name": "Fake multisig keys",
         "what": "Spends a script that asks for one signature out of a dozen or more public keys. Only the signing key is real; the rest are file bytes dressed as keys.",
         "how": "Each unused 33-byte key in the revealed witness script is payload. One reveal can carry hundreds of inputs.",
-        "filter": NONE,
-        "prs": [("knots#422", "https://github.com/bitcoinknots/bitcoin/pull/422"),
-                ("knots#435", "https://github.com/bitcoinknots/bitcoin/pull/435")],
-        "note": "Its fake-output filter catches the funding transaction that sets them up, not the reveal. Both PRs are in review; Plumb ships one once the false-positive work is done.",
+        "filter": PLUMB, "option": "-rejectfakemultisig",
+        "prs": [("knots#422", "https://github.com/bitcoinknots/bitcoin/pull/422")],
+        "note": "Plumb refuses the reveal when more than ten keys in a script go unsigned, and its fake-output filter refuses the funding transaction that sets the reveal up. A reveal small enough to stay under ten unsigned keys still gets through.",
     },
     "p2wsh-run": {
         "name": "Dust P2WSH run",
