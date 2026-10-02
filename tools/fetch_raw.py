@@ -12,7 +12,7 @@ def get(path, timeout=60):
 
 def main():
     lo, hi = int(sys.argv[1]), int(sys.argv[2])
-    out = sys.argv[3] if len(sys.argv) > 3 else os.path.expanduser("~/.cesspool/raw")
+    out = sys.argv[3] if len(sys.argv) > 3 else os.path.join(os.environ.get("CESSPOOL_HOME", os.path.expanduser("~/.cesspool")), "raw")
     os.makedirs(out, exist_ok=True)
     for h in range(lo, hi + 1):
         path = f"{out}/{h}.json.gz"

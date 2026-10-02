@@ -4,7 +4,7 @@ import collections, datetime, html, json, math, os, shutil, subprocess, time
 from . import classify, miner
 from .types import TYPES, info, KNOTS, PLUMB, NONE, ALLOWED
 
-HOME = os.path.expanduser("~/.cesspool")
+HOME = os.environ.get("CESSPOOL_HOME", os.path.expanduser("~/.cesspool"))
 BLOCKS = f"{HOME}/blocks"
 INDEX = f"{HOME}/index.json"
 SRC = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))

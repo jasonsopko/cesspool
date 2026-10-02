@@ -2,7 +2,7 @@
 import importlib.util, os, re
 
 RW_PATH = os.environ.get("REORG_WATCH", os.path.expanduser("~/src/pr359-review/reorg-watch.py"))
-CACHE = os.path.expanduser("~/.cesspool/pools-v2.json")
+CACHE = os.path.join(os.environ.get("CESSPOOL_HOME", os.path.expanduser("~/.cesspool")), "pools-v2.json")
 
 _rw = None
 _pools = None

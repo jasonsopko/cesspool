@@ -7,10 +7,10 @@ import gzip, json, os, subprocess, tempfile
 
 from . import classify, miner
 
-HOME = os.path.expanduser("~/.cesspool")
+HOME = os.environ.get("CESSPOOL_HOME", os.path.expanduser("~/.cesspool"))
 RAW = f"{HOME}/raw"
 BLOCKS = f"{HOME}/blocks"
-CHECKER = os.environ.get("PLUMB_CHECK_BIN", os.path.expanduser("~/.cesspool/bin/test_bitcoin-plumb"))
+CHECKER = os.environ.get("PLUMB_CHECK_BIN", f"{HOME}/bin/test_bitcoin-plumb")
 TIERS = {"clean": 0, "gray": 1, "sewage": 2}
 
 
