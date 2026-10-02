@@ -1,0 +1,69 @@
+# cesspool.lol: static files rendered once a minute by tools/update.py.
+server {
+    listen 80;
+    listen [::]:80;
+    server_name cesspool.lol www.cesspool.lol;
+    location ^~ /.well-known/acme-challenge/ { root /var/www/cesspool.lol; }
+    location / { return 301 https://cesspool.lol$request_uri; }
+}
+server {
+    listen 443 ssl http2;
+    listen [::]:443 ssl http2;
+    server_name www.cesspool.lol;
+    ssl_certificate /etc/letsencrypt/live/cesspool.lol/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/cesspool.lol/privkey.pem;
+    include /etc/letsencrypt/options-ssl-nginx.conf;
+    ssl_dhparam /etc/letsencrypt/ssl-dhparams.pem;
+    ssl_client_certificate /etc/ssl/cloudflare-origin-pull-ca.pem;
+    ssl_verify_client on;
+    return 301 https://cesspool.lol$request_uri;
+}
+server {
+    listen 443 ssl http2;
+    listen [::]:443 ssl http2;
+    server_name cesspool.lol;
+    root /var/www/cesspool.lol;
+    index index.html;
+    error_page 404 /404.html;
+    ssl_certificate /etc/letsencrypt/live/cesspool.lol/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/cesspool.lol/privkey.pem;
+    include /etc/letsencrypt/options-ssl-nginx.conf;
+    ssl_dhparam /etc/letsencrypt/ssl-dhparams.pem;
+
+    # Only Cloudflare reaches the origin. Authenticated Origin Pulls must be ON
+    # for the cesspool.lol zone before this is reloaded.
+    ssl_client_certificate /etc/ssl/cloudflare-origin-pull-ca.pem;
+    ssl_verify_client on;
+
+    include /etc/nginx/cloudflare-ips.conf;
+    real_ip_header CF-Connecting-IP;
+
+    gzip on;
+    gzip_types text/css application/javascript application/json image/svg+xml;
+
+    add_header Strict-Transport-Security "max-age=31536000; includeSubDomains" always;
+    add_header X-Content-Type-Options nosniff always;
+    add_header Referrer-Policy strict-origin-when-cross-origin always;
+    # Static pages, no inline scripts. Inline styles carry bar widths.
+    add_header Content-Security-Policy "default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'" always;
+
+    location /static/ {
+        add_header Cache-Control "public, max-age=86400" always;
+        add_header Strict-Transport-Security "max-age=31536000; includeSubDomains" always;
+        add_header X-Content-Type-Options nosniff always;
+        add_header Content-Security-Policy "default-src 'none'; style-src 'self'; font-src 'self'" always;
+    }
+    location /og/ {
+        add_header Cache-Control "public, max-age=3600" always;
+        add_header X-Content-Type-Options nosniff always;
+    }
+    location / {
+        add_header Cache-Control "public, max-age=60" always;
+        add_header Strict-Transport-Security "max-age=31536000; includeSubDomains" always;
+        add_header X-Content-Type-Options nosniff always;
+        add_header Referrer-Policy strict-origin-when-cross-origin always;
+        add_header Content-Security-Policy "default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'" always;
+        try_files $uri $uri/ =404;
+    }
+    location ~ /\. { return 404; }
+}
