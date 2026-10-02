@@ -131,7 +131,11 @@ BOOST_AUTO_TEST_CASE(plumb_check)
 
     const Globals defaults;
     std::vector<Profile> profiles;
-    profiles.push_back(MakeProfile("core", {{"-corepolicy", "1"}}, defaults));
+    // Bitcoin Core 31 defaults. -corepolicy resets Knots to Core 29's policy; since then Core
+    // enforces 2,500 legacy sigops a transaction (30) and relays more than one OP_RETURN output
+    // (30), which Knots has no option for, so that reason is dropped below. Core 30's larger
+    // datacarriersize cannot matter here: BIP110 caps OP_RETURN outputs at 83 bytes by consensus.
+    profiles.push_back(MakeProfile("core", {{"-corepolicy", "1"}, {"-maxtxlegacysigops", "2500"}}, defaults));
     // Stock Knots 29.4.2: none of Plumb's filters exist there.
     profiles.push_back(MakeProfile("knots", {{"-rejectfakeoutputs", "0"}, {"-rejectdeadbranches", "0"}, {"-rejectbareenvelopes", "0"}}, defaults));
     profiles.push_back(MakeProfile("plumb", {}, defaults));
@@ -181,6 +185,7 @@ BOOST_AUTO_TEST_CASE(plumb_check)
             if (tx.HasWitness()) {
                 Collect([&](std::string& r, const ignore_rejects_type& ig) { return IsWitnessStandard(tx, view, "bad-witness-", r, ig); }, reasons);
             }
+            if (p.name == "core") std::erase(reasons, std::string{"multi-op-return"});
             UniValue v{UniValue::VOBJ};
             v.pushKV("reasons", Strings(reasons));
             v.pushKV("data", uint64_t(dcb.first));
