@@ -477,7 +477,7 @@ def block_page(rec, s, prev_h, next_h, tip):
     sew = [x for x in rec["spam"] if x["tier"] == "sewage"]
     gray = [x for x in rec["spam"] if x["tier"] == "gray"]
     sew.sort(key=lambda x: (-x["missed"], -x["data"]))
-    mapdata = {"map": rec["map"], "spam": [{"id": x["txid"][:16], "n": info(x["types"][0])["name"] if x["types"] else "Data",
+    mapdata = {"pn": PLUMB_NAME, "map": rec["map"], "spam": [{"id": x["txid"][:16], "n": info(x["types"][0])["name"] if x["types"] else "Data",
                                              "d": x["data"], "m": 1 if x["missed"] else 0} for x in rec["spam"]]}
     pool = rec["pool"]
     total_fees = rec["fees"]
