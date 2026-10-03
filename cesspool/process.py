@@ -5,11 +5,12 @@ the block map, and full findings for every transaction that is not clean.
 """
 import gzip, json, os, subprocess, tempfile
 
-from . import classify, miner
+from . import classify, miner, txdetail
 
 HOME = os.environ.get("CESSPOOL_HOME", os.path.expanduser("~/.cesspool"))
 RAW = f"{HOME}/raw"
 BLOCKS = f"{HOME}/blocks"
+TXD = f"{HOME}/txd"
 CHECKER = os.environ.get("PLUMB_CHECK_BIN", f"{HOME}/bin/test_bitcoin-plumb")
 TIERS = {"clean": 0, "gray": 1, "sewage": 2}
 
@@ -64,11 +65,12 @@ def tx_detail(t, f, miss_in=None):
 
 
 def process_block(b, rows):
+    """(transaction file, block record) for one block."""
     txs = b["tx"]
     cb = txs[0]
     reward = sum(sats(o["value"]) for o in cb["vout"])
     total_fee, total_w = 0, 0
-    tmap, spam = [], []
+    tmap, spam, txd = [], [], []
     for t in txs[1:]:
         fee = sats(t.get("fee", 0))
         total_fee += fee
@@ -76,8 +78,10 @@ def process_block(b, rows):
         row = rows.get(t["txid"])
         if row is None or "error" in row:
             tmap.append([t["vsize"], fee, 0, -1])
+            txd.append(txdetail.tx_record(t, row, None))
             continue
         c = classify.classify(t, row)
+        txd.append(txdetail.tx_record(t, row, c))
         tier = TIERS[c["tier"]]
         if tier:
             d = tx_detail(t, {"data_in": row.get("data_in", []), "data_out": row.get("data_out", [])}, c.get("miss_in"))
@@ -89,9 +93,11 @@ def process_block(b, rows):
         else:
             tmap.append([t["vsize"], fee, 0, -1])
     pool, tag = miner.identify(cb)
+    txd = {"h": b["height"], "hash": b["hash"], "t": b["time"], "pool": pool, "ps": miner.slug(pool),
+           "cb": txdetail.coinbase_record(cb), "tx": txd}
     sewage = [s for s in spam if s["tier"] == "sewage"]
     gray = [s for s in spam if s["tier"] == "gray"]
-    return {
+    return txd, {
         "h": b["height"], "hash": b["hash"], "prev": b.get("previousblockhash"), "t": b["time"],
         "pool": pool, "tag": tag, "ntx": len(txs), "w": b["weight"],
         "size": b["size"], "reward": reward, "fees": total_fee, "txw": total_w,
@@ -103,16 +109,22 @@ def process_block(b, rows):
     }
 
 
+def write_json(path, obj):
+    tmp = path + ".tmp"
+    with open(tmp, "w") as f:
+        f.write(json.dumps(obj, separators=(",", ":")))  # dumps uses the C encoder; dump to a file does not
+    os.replace(tmp, path)
+
+
 def process_range(heights):
     os.makedirs(BLOCKS, exist_ok=True)
+    os.makedirs(TXD, exist_ok=True)
     blocks = [load_raw(h) for h in heights]
     rows = run_checker([t for b in blocks for t in b["tx"][1:]])
     out = []
     for b in blocks:
-        rec = process_block(b, rows)
-        tmp = f"{BLOCKS}/{rec['h']}.json.tmp"
-        with open(tmp, "w") as f:
-            f.write(json.dumps(rec, separators=(",", ":")))  # dumps uses the C encoder; dump to a file does not
-        os.replace(tmp, f"{BLOCKS}/{rec['h']}.json")
+        txd, rec = process_block(b, rows)
+        write_json(f"{TXD}/{rec['h']}.json", txd)
+        write_json(f"{BLOCKS}/{rec['h']}.json", rec)
         out.append(rec)
     return out
