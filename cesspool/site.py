@@ -367,6 +367,9 @@ def page(path, title, body, *, nav="", desc="", og=None, tip=None):
     navh = "".join(f'<a href="{u}"{" class=\"on\"" if k == nav else ""}>{t}</a>' for k, u, t in nav_items)
     full_title = f"{title} · cesspool.lol" if title else "cesspool.lol · Bitcoin water quality, block by block"
     foot_tip = f'Tip {tip["h"]}, {tm(tip["t"])}. ' if tip else ""
+    # Summary pages reload themselves when a new block lands; block, transaction and about pages do not.
+    live = tip and not path.startswith("/block/") and path not in ("/tx/", "/about/", "/404")
+    body_attr = f' data-tip="{tip["h"]}"' if live else ""
     return f'''<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>{esc(full_title)}</title>
@@ -375,7 +378,7 @@ def page(path, title, body, *, nav="", desc="", og=None, tip=None):
 <meta property="og:image" content="{SITE}{og}"><meta property="og:url" content="{SITE}{path}"><meta property="og:type" content="website">
 <meta name="twitter:card" content="summary_large_image"><meta name="twitter:image" content="{SITE}{og}">
 <link rel="icon" href="/static/favicon.svg" type="image/svg+xml"><link rel="alternate" type="application/atom+xml" title="Foul and raw-sewage blocks" href="/feed.xml"><link rel="stylesheet" href="/static/site.css?v={ASSET_V}">
-</head><body>
+</head><body{body_attr}>
 <header class="top"><div class="wrap"><a class="brand" href="/">{LOGO}<span>cesspool<span class="tld">.lol</span></span></a>
 <nav class="main">{navh}</nav><span class="spacer"></span>
 <form class="jump" role="search"><input placeholder="Height or txid" aria-label="Go to a block height or a transaction id"></form></div></header>
@@ -1208,3 +1211,5 @@ def build(out, heights=None, all_blocks=False, og=True):
     write(out, "feed.xml", feed(idx))
     write(out, "robots.txt", "User-agent: *\nAllow: /\n")
     write(out, "404.html", page("/404", "Not found", '<div class="hero"><h1>Nothing down here</h1><p class="lede">That page does not exist. <a href="/">Back to the surface</a>.</p></div>', tip=tip))
+    # Last, so a page that sees the new tip reloads into pages that already show it.
+    write(out, "tip.json", json.dumps({"h": tip["h"]}) + "\n")

@@ -43,6 +43,21 @@
     } catch (err) {}
   });
 
+  // Summary pages carry the tip they were built at; when the site has a newer block, reload.
+  // The build writes /tip.json last, so the reload finds pages that already show it.
+  var tipHave = Number(document.body.getAttribute("data-tip") || 0);
+  if (tipHave) {
+    var checkTip = function () {
+      if (document.hidden) return;
+      fetch("/tip.json?m=" + Math.floor(Date.now() / 30000), { cache: "no-store" })
+        .then(function (r) { return r.ok ? r.json() : null; })
+        .then(function (j) { if (j && j.h > tipHave) location.reload(); })
+        .catch(function () {});
+    };
+    setInterval(checkTip, 60000);
+    document.addEventListener("visibilitychange", checkTip);
+  }
+
   // Copy buttons
   document.querySelectorAll("button.copy[data-copy]").forEach(function (b) {
     b.addEventListener("click", function () {
