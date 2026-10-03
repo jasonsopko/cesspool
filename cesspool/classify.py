@@ -111,13 +111,21 @@ def nulldata(tx, spk_hex):
     return "opreturn-data", f"Binary note, {len(payload)} bytes"
 
 
+def olga_header(vout):
+    """True for a P2WSH output whose hash starts an OLGA payload (Stamps framing)."""
+    spk = vout["scriptPubKey"]
+    prog = bytes.fromhex(spk["hex"])[2:]
+    return spk.get("type") == "witness_v0_scripthash" and (prog[2:8] == b"stamp:" or prog[2:6] == b"ACME")
+
+
 def fake_output(tx, idx, vout):
     """Name an output whose hash or key plumb-check counted as data."""
     spk = vout["scriptPubKey"]
     t = spk.get("type", "")
     prog = bytes.fromhex(spk["hex"])[2:]
     if t == "witness_v0_scripthash":
-        if prog[2:8] == b"stamp:" or prog[2:6] == b"ACME":
+        # The header output names the payload; the P2WSH outputs after it carry the rest of it.
+        if any(olga_header(o) for o in tx["vout"]):
             return "olga", "OLGA payload in P2WSH hashes (Stamps framing)"
         return "p2wsh-run", "Run of dust P2WSH outputs whose hashes are data"
     if t == "witness_v0_keyhash":
