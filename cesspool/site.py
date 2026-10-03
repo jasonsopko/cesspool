@@ -450,9 +450,9 @@ def dissection(s, pool, rate_ctx):
 {f'<p class="small">{others}</p>' if others else ""}
 <div class="anat"><div><h4>Inputs ({n(len(s["ins"]))})</h4><div class="io">{io_html(s["ins"], "in", missed=s["missed"])}</div></div>
 <div><h4>Outputs ({n(len(s["outs"]))})</h4><div class="io">{io_html(s["outs"], "out")}</div></div></div>
-<div class="small muted">Payload: <b class="num" style="color:var(--text)">{n(s["data"])} bytes</b> of a {n(s.get("size", vbytes))}-byte transaction ({n(vbytes)} vB).
+<div class="small muted">{"Counted as data" if i.get("staged") else "Payload"}: <b class="num" style="color:var(--text)">{n(s["data"])} bytes</b> of a {n(s.get("size", vbytes))}-byte transaction ({n(vbytes)} vB).
 Fee <span class="num">{n(s["fee"])}</span> sat ({feerate:.1f} sat/vB), paid to {esc(pool)}.</div>
-<div class="fill" title="Share of the transaction that is payload"><span style="width:{share * 100:.1f}%;background:var(--sewage)"></span><span style="flex:1"></span></div>
+<div class="fill" title="Share of the transaction that is {"counted as data" if i.get("staged") else "payload"}"><span style="width:{share * 100:.1f}%;background:var(--sewage)"></span><span style="flex:1"></span></div>
 {verdict_html(s["v"], s["missed"])}
 {f'<p class="small" style="margin:10px 0 0">{filter_line(t)}</p>' if filter_line(t) and not s["missed"] else ""}
 {note}

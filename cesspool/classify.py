@@ -127,7 +127,7 @@ def fake_output(tx, idx, vout):
         # The header output names the payload; the P2WSH outputs after it carry the rest of it.
         if any(olga_header(o) for o in tx["vout"]):
             return "olga", "OLGA payload in P2WSH hashes (Stamps framing)"
-        return "p2wsh-run", "Run of dust P2WSH outputs whose hashes are data"
+        return "p2wsh-run", "Run of dust P2WSH outputs set up for a script reveal"
     if t == "witness_v0_keyhash":
         if printable(prog):
             return "swap-memo-hash", "Swap memo continued as text inside P2WPKH hashes"

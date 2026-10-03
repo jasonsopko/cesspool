@@ -21,8 +21,9 @@ TYPES = {
     },
     "p2wsh-run": {
         "name": "Dust P2WSH run",
-        "what": "Pays the same few hundred sats to a run of P2WSH outputs whose 32-byte hashes are not hashes of any script.",
-        "how": "Each output hash is 32 bytes of payload. The coins are unspendable and stay in every node's UTXO set for good.",
+        "what": "Pays 546 sats or less to each output in a run of P2WSH outputs. Each output commits to a witness script that is revealed when the output is spent.",
+        "how": "The payload is not in this transaction: it lands on chain when the outputs are spent, in the scripts revealed then, mostly as unused multisig keys. Plumb counts each output in the run as data and refuses the transaction; Knots relays it.",
+        "staged": True,
         "filter": PLUMB, "option": "-rejectfakeoutputs",
         "prs": [("knots#389", "https://github.com/bitcoinknots/bitcoin/pull/389")],
     },
