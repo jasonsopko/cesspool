@@ -296,6 +296,10 @@
     sec.appendChild(meta);
     what.forEach(function (w) { sec.appendChild(w); });
     if (!tx.cb) sec.appendChild(verdicts(tx, cat, plumb, tier !== "sewage"));
+    if (!tx.cb && !tx.e && tx.x && ["core", "knots", "plumb"].some(function (k) { return tx.x[k] && tx.x[k].length; })) {
+      var pol = el("p", { cls: "small muted", text: "Refusing is policy, not a consensus rule: a node that refuses it does not relay it or put it in a block it builds, but it still accepts a block that has it." });
+      pol.style.marginTop = "10px"; sec.appendChild(pol);
+    }
     var anat = el("div", { cls: "anat" });
     if (!tx.cb) anat.appendChild(ioSection("Inputs", tx.i, "in"));
     anat.appendChild(ioSection("Outputs", tx.o, "out"));
