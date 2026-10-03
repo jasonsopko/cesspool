@@ -1,16 +1,16 @@
 """Render cesspool.lol as static files from the block records."""
-import collections, datetime, html, json, math, os, shutil, subprocess, time
+import collections, datetime, gzip, html, json, math, os, shutil, subprocess, tempfile, time
 
 from . import classify, miner
 from .types import TYPES, info, KNOTS, PLUMB, NONE, ALLOWED
 
 HOME = os.environ.get("CESSPOOL_HOME", os.path.expanduser("~/.cesspool"))
 BLOCKS = f"{HOME}/blocks"
+TXD = f"{HOME}/txd"
 INDEX = f"{HOME}/index.json"
 SRC = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 FILTERS = os.environ.get("PLUMB_FILTERS", os.path.expanduser("~/src/plumb/plumb/filters.json"))
 SITE = "https://cesspool.lol"
-EXPLORER = "https://mempool.guide"
 PLUMB_REPO = "https://github.com/plumb-node/plumb"
 PLUMB_RELEASE = "https://github.com/plumb-node/plumb/releases/latest"
 INSTALLER = "https://github.com/jasonsopko/knots-datum-node"
@@ -337,7 +337,7 @@ def page(path, title, body, *, nav="", desc="", og=None, tip=None):
 </head><body>
 <header class="top"><div class="wrap"><a class="brand" href="/">{LOGO}<span>cesspool<span class="tld">.lol</span></span></a>
 <nav class="main">{navh}</nav><span class="spacer"></span>
-<form class="jump" role="search"><input inputmode="numeric" placeholder="Block height" aria-label="Go to block height"></form></div></header>
+<form class="jump" role="search"><input placeholder="Height or txid" aria-label="Go to a block height or a transaction id"></form></div></header>
 <main class="wrap">{body}</main>
 <footer><div class="wrap"><div>Verdicts from the policy code in Plumb {PLUMB_VERSION}, run on every transaction.<br>
 {foot_tip}Pool names follow <a href="https://reorg.watch">reorg.watch</a>.</div>
@@ -346,7 +346,7 @@ def page(path, title, body, *, nav="", desc="", og=None, tip=None):
 '''
 
 
-ASSET_V = "1"
+ASSET_V = "2"
 
 
 def write(out, rel, text):
@@ -447,7 +447,7 @@ def dissection(s, pool, rate_ctx):
         note = f'<div class="note"><b>{PLUMB_NAME} relays this.</b> {prose(i.get("note", ""))} {filter_line(t)}</div>'
     return f'''<section class="{cls}" id="tx-{s["txid"][:16]}">
 <div class="hd">{tier_stamp}<h3>{esc(i["name"])}</h3><span class="muted small">{esc(s["labels"][0]) if s["labels"] else ""}</span></div>
-<div class="txid"><a href="{EXPLORER}/tx/{s["txid"]}">{s["txid"]}</a></div>
+<div class="txid"><a href="/tx/?{s["txid"]}">{s["txid"]}</a></div>
 <p>{prose(i["what"])} <span class="muted">{prose(i["how"])}</span></p>
 {f'<p class="small">{others}</p>' if others else ""}
 <div class="anat"><div><h4>Inputs ({n(len(s["ins"]))})</h4><div class="io">{io_html(s["ins"], "in", missed=s["missed"])}</div></div>
@@ -467,7 +467,7 @@ def gray_table(gray):
     rows = []
     for s in gray[:400]:
         t = s["types"][0] if s["types"] else "unknown"
-        rows.append(f'<tr id="tx-{s["txid"][:16]}"><td>{esc(info(t)["name"])}</td><td class="mono small"><a href="{EXPLORER}/tx/{s["txid"]}">{s["txid"][:16]}…</a></td>'
+        rows.append(f'<tr id="tx-{s["txid"][:16]}"><td>{esc(info(t)["name"])}</td><td class="mono small"><a href="/tx/?{s["txid"]}">{s["txid"][:16]}…</a></td>'
                     f'<td class="r num">{n(s["data"])}</td><td class="r num">{n(s["vsize"])}</td><td class="r num">{n(s["fee"])}</td></tr>')
     more = f'<p class="small muted">{n(len(gray) - 400)} more not listed.</p>' if len(gray) > 400 else ""
     return f'''<details class="more"><summary>{n(len(gray))} gray-water transactions: small notes inside the default allowance</summary>
@@ -479,7 +479,7 @@ def block_page(rec, s, prev_h, next_h, tip):
     sew = [x for x in rec["spam"] if x["tier"] == "sewage"]
     gray = [x for x in rec["spam"] if x["tier"] == "gray"]
     sew.sort(key=lambda x: (-x["missed"], -x["data"]))
-    mapdata = {"pn": PLUMB_NAME, "map": rec["map"], "spam": [{"id": x["txid"][:16], "n": info(x["types"][0])["name"] if x["types"] else "Data",
+    mapdata = {"h": rec["h"], "pn": PLUMB_NAME, "map": rec["map"], "spam": [{"id": x["txid"][:16], "n": info(x["types"][0])["name"] if x["types"] else "Data",
                                              "d": x["data"], "m": 1 if x["missed"] else 0} for x in rec["spam"]]}
     pool = rec["pool"]
     total_fees = rec["fees"]
@@ -503,8 +503,7 @@ def block_page(rec, s, prev_h, next_h, tip):
 <div class="meta"><span>Mined by <b>{pool_link(pool)}</b></span><span>{tm(rec["t"])}</span><span><b class="num">{n(rec["ntx"])}</b> transactions</span>
 <span><b class="num">{rec["w"] / 4e6 * 100:.0f}%</b> full</span><span>Fees <b class="num">{btc(total_fees)}</b> BTC</span></div>
 <p style="margin-top:14px;max-width:70ch">{verdict}</p>
-<div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">{nav}<button class="copy" data-copy="{esc(share_text)} {SITE}/block/{rec["h"]}/">Copy share link</button>
-<a class="small" href="{EXPLORER}/block/{rec["hash"]}">Open in explorer</a></div></div>
+<div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">{nav}<button class="copy" data-copy="{esc(share_text)} {SITE}/block/{rec["h"]}/">Copy share link</button></div></div>
 <div class="stampbox">{stamp(s["grade"])}</div></div>
 <div class="mapbox"><canvas id="map" aria-label="Map of every transaction in the block, sized by virtual size"></canvas><div class="tip"></div></div>
 <div class="legend"><span><i style="background:var(--water);opacity:.55"></i>Payment</span><span><i style="background:var(--gray)"></i>Gray water (small note)</span>
@@ -522,6 +521,132 @@ def block_page(rec, s, prev_h, next_h, tip):
     og = f"/og/block/{rec['h']}.png" if s["sn"] else None
     desc = f"Mined by {pool}. " + (f"{pct(s['share'])} of the block is spam: {n(s['sn'])} transactions." if s["sn"] else f"{label}: no sewage.")
     return page(f"/block/{rec['h']}/", f"Block {rec['h']}: {label}", body, nav="blocks", desc=desc, og=og, tip=tip)
+
+
+# ---------------------------------------------------------------- transaction page
+
+# What each refusal reason means, for the transaction page. Anything not listed is shown as its code.
+REASONS = {
+    "txn-datacarrier-exceeded": "carries more data than the data carrier allowance",
+    "txn-datacarrier-nonstandard": "carries data outside an OP_RETURN output",
+    "tokens-runes": "a Runes message (-rejecttokens)",
+    "tokens-counterparty": "a Counterparty message (-rejecttokens)",
+    "tokens-olga": "OLGA / Stamps outputs (-rejecttokens)",
+    "tokens-json": "a JSON token message (-rejecttokenmessages)",
+    "tokens-omni": "an Omni Layer message (-rejecttokenmessages)",
+    "bare-datacarrier": "an OP_RETURN with no payment output beside it",
+    "multi-op-return": "more than one OP_RETURN output",
+    "bare-multisig": "a bare multisig output",
+    "parasite-cat21": "a CAT-21 mint (-rejectparasites)",
+    "scriptpubkey": "an output script the policy does not relay",
+    "dust": "an output below the dust limit",
+}
+
+
+def tx_page(tip):
+    body = f'''<div id="txapp" data-plumb="{esc(PLUMB_NAME)}">
+<div class="hero"><div class="kicker">Transaction</div><h1>Look up a transaction</h1>
+<p class="lede">Paste a transaction id from any block since the fork. The page shows what the transaction does, what it carries, and what Bitcoin Core, Knots and {esc(PLUMB_NAME)} would do with it.</p></div>
+<form class="txform"><input class="mono" spellcheck="false" autocomplete="off" placeholder="Transaction id (64 hex characters)" aria-label="Transaction id"><button class="btn">Look up</button></form>
+<div class="txout" aria-live="polite"></div>
+<noscript><p class="muted">This page needs JavaScript to load the transaction.</p></noscript></div>'''
+    return page("/tx/", "Transaction", body, desc="What a transaction since the fork does, what it carries, and what each node policy does with it.", tip=tip)
+
+
+def write_gz(path, obj):
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    tmp = path + ".tmp"
+    with gzip.open(tmp, "wb", compresslevel=6) as f:
+        f.write(json.dumps(obj, separators=(",", ":")).encode())
+    os.replace(tmp, path)
+
+
+def read_gz(path):
+    try:
+        with gzip.open(path) as f:
+            return json.load(f)
+    except FileNotFoundError:
+        return {}
+
+
+def shard_key(txid):
+    """Index shard (first three hex characters) and the key within it (the next 13)."""
+    return txid[:3], txid[3:16]
+
+
+def txids_of(h):
+    with open(f"{TXD}/{h}.json") as f:
+        d = json.load(f)
+    return [d["cb"]["id"]] + [t["id"] for t in d["tx"]]
+
+
+def publish_txd(out, heights):
+    """Copy the transaction files for `heights` into the site and point the index at them."""
+    shards = collections.defaultdict(dict)
+    heights = [h for h in heights if os.path.exists(f"{TXD}/{h}.json")]
+    for h in heights:
+        for txid in txids_of(h):
+            s, k = shard_key(txid)
+            shards[s][k] = h
+    # Index first: a block file that is missing gets published again, an index entry would not.
+    for s, entries in shards.items():
+        p = f"{out}/d/i/{s}.json.gz"
+        cur = read_gz(p)
+        cur.update(entries)
+        write_gz(p, cur)
+    for h in heights:
+        with open(f"{TXD}/{h}.json") as f:
+            write_gz(f"{out}/d/b/{h}.json.gz", json.load(f))
+
+
+def rebuild_tx_index(out, heights):
+    """Write every index shard from scratch, through 16 temporary files to keep memory small."""
+    with tempfile.TemporaryDirectory(dir=HOME) as tmp:
+        files = {c: open(f"{tmp}/{c}", "w") for c in "0123456789abcdef"}
+        for h in heights:
+            if os.path.exists(f"{TXD}/{h}.json"):
+                for txid in txids_of(h):
+                    files[txid[0]].write(f"{txid} {h}\n")
+        for f in files.values():
+            f.close()
+        for c in "0123456789abcdef":
+            shards = collections.defaultdict(dict)
+            with open(f"{tmp}/{c}") as f:
+                for line in f:
+                    txid, h = line.split()
+                    s, k = shard_key(txid)
+                    shards[s][k] = int(h)
+            for s, entries in shards.items():
+                write_gz(f"{out}/d/i/{s}.json.gz", entries)
+
+
+def drop_from_tx_index(out, heights):
+    """Before a reorg removes `heights`, take their transactions out of the index and the site."""
+    shards = collections.defaultdict(set)
+    for h in heights:
+        if not os.path.exists(f"{TXD}/{h}.json"):
+            continue
+        for txid in txids_of(h):
+            s, k = shard_key(txid)
+            shards[s].add(k)
+        p = f"{out}/d/b/{h}.json.gz"
+        if os.path.exists(p):
+            os.remove(p)
+    for s, keys in shards.items():
+        p = f"{out}/d/i/{s}.json.gz"
+        cur = read_gz(p)
+        for k in keys:
+            if cur.get(k) in heights:
+                del cur[k]
+        write_gz(p, cur)
+
+
+def tx_catalog():
+    """What the transaction page needs to name and explain a finding."""
+    types = {t: {k: i[k] for k in ("name", "what", "how", "filter", "option", "note", "staged") if k in i} | {"prs": i.get("prs", [])}
+             for t, i in TYPES.items()}
+    return {"plumb": PLUMB_NAME, "verdicts": VERDICT_NAMES, "reasons": REASONS, "types": types,
+            "filters": {"knots": KNOTS, "plumb": PLUMB, "none": NONE, "allowed": ALLOWED}}
 
 
 # ---------------------------------------------------------------- other pages
@@ -906,6 +1031,26 @@ def build(out, heights=None, all_blocks=False, og=True):
     tip = idx[hs[-1]]
     copy_static(out)
     todo = set(hs) if all_blocks else set(heights or []) | set(changed)
+    if not all_blocks:
+        # A run that died partway leaves blocks with no page; the next run that renders catches them up.
+        todo |= {h for h in hs if not os.path.exists(f"{out}/block/{h}/index.html")}
+    # Transaction data goes up before the pages that link to it.
+    unpublished = set()
+    if not all_blocks:
+        # Records a run wrote but never published, for example one that died partway.
+        have = set(os.listdir(f"{out}/d/b")) if os.path.isdir(f"{out}/d/b") else set()
+        unpublished = {int(n[:-5]) for n in os.listdir(TXD) if n.endswith(".json") and n + ".gz" not in have}
+    publish = set(heights or []) | set(changed) | unpublished
+    if all_blocks or len(unpublished) > 500:
+        # Every block, or too many to index in memory: rebuild the index through temporary files, then
+        # write each file. Index first, as in publish_txd: a missing file gets published again, a missing entry would not.
+        rebuild_tx_index(out, hs)
+        for h in hs:
+            if (all_blocks or h in publish) and os.path.exists(f"{TXD}/{h}.json"):
+                with open(f"{TXD}/{h}.json") as f:
+                    write_gz(f"{out}/d/b/{h}.json.gz", json.load(f))
+    else:
+        publish_txd(out, sorted(publish))
     # neighbors' prev/next links
     pos = {h: i for i, h in enumerate(hs)}
     for h in list(todo):
@@ -930,6 +1075,8 @@ def build(out, heights=None, all_blocks=False, og=True):
     write(out, "guide/index.html", guide_page(idx, tip))
     write(out, "plumb/index.html", plumb_page(idx, tip))
     write(out, "about/index.html", about_page(tip))
+    write(out, "tx/index.html", tx_page(tip))
+    write_gz(f"{out}/d/catalog.json.gz", tx_catalog())
     pools = sorted({b["pool"] for b in idx.values()})
     for name in pools:
         r = pool_page(idx, name, tip)

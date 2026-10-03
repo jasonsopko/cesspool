@@ -52,8 +52,9 @@ def main():
             break
     if redo_from is not None:
         print(f"reorg: reprocessing from {redo_from}", flush=True)
+        site.drop_from_tx_index(a.out, set(range(redo_from, top + 1)))
         for h in range(redo_from, top + 1):
-            for p in (f"{process.BLOCKS}/{h}.json", f"{process.RAW}/{h}.json.gz"):
+            for p in (f"{process.BLOCKS}/{h}.json", f"{process.RAW}/{h}.json.gz", f"{process.TXD}/{h}.json"):
                 if os.path.exists(p):
                     os.remove(p)
         top = redo_from - 1

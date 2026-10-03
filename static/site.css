@@ -249,3 +249,23 @@ footer .wrap { display: flex; gap: 24px; flex-wrap: wrap; justify-content: space
 .sample .bigcube svg { width: 190px; height: 196px; display: block; margin: 0 auto; }
 .sample .sh { font-family: "Plex Mono", monospace; font-weight: 600; font-size: 1.3rem; margin-top: 6px; }
 .grid2 > *, .grid3 > *, .podium > *, .ftype > * { min-width: 0; }
+
+/* Transaction page */
+.txform { display: flex; gap: 8px; margin: 0 0 18px; max-width: 760px; }
+.txform input { flex: 1; min-width: 0; padding: 9px 12px; border: 1px solid var(--line); border-radius: 6px; background: var(--panel); color: var(--text); font-size: .85rem; }
+.txout .meta { display: flex; gap: 14px; flex-wrap: wrap; align-items: center; margin: 0 0 12px; color: var(--muted); }
+.txout .anat { grid-template-columns: 1fr; }
+table.iot { width: 100%; border-collapse: collapse; font-size: .8rem; }
+table.iot th { text-align: left; font-weight: 500; color: var(--muted); padding: 4px 8px; border-bottom: 1px solid var(--line); white-space: nowrap; }
+table.iot td { padding: 5px 8px; border-bottom: 1px solid var(--line); vertical-align: top; }
+table.iot tr.d td { background: color-mix(in srgb, var(--sewage) 22%, transparent); }
+table.iot .r { text-align: right; white-space: nowrap; }
+table.iot .x { color: var(--muted); }
+table.iot .db { color: var(--text); font-weight: 600; }
+.txout .btn.ghost { margin-top: 8px; }
+.verd.normal .pass { color: var(--ok); }
+.verd.normal .stop { color: var(--miss); }
+.txout .anat > div { min-width: 0; }
+.dis.normal { border-left-color: var(--ok); }
+.dis.coinbase { border-left-color: var(--water); }
+.txout code { overflow-wrap: anywhere; }
