@@ -324,6 +324,19 @@
             el("a", { href: "/past-defaults/", text: "Every block like this" }), ". " + policy)
         : el("p", { cls: "small muted", text: policy });
       pol.style.marginTop = "10px"; sec.appendChild(pol);
+      // As on the block page: say when only the coinbase text ties the block to the name it carries.
+      if (tx.x.knots && tx.x.knots.length && b.pool && b.pool.indexOf("Unknown (") !== 0 && b.cb && b.cb.o) {
+        var pays = b.cb.o.filter(function (o) { return o.ad && o.a > 0; }).map(function (o) { return o.ad; });
+        fetch("/d/pools.json?m=" + Math.floor(Date.now() / 600000))
+          .then(function (r) { return r.ok ? r.json() : null; })
+          .then(function (m) {
+            if (!m) return;
+            var on = m[b.pool] || [];
+            if (pays.some(function (a) { return on.indexOf(a) >= 0; })) return;
+            pol.appendChild(document.createTextNode(" The name " + b.pool + " comes from this block's coinbase text alone, which anyone can write."));
+          })
+          .catch(function () {});
+      }
     }
     var anat = el("div", { cls: "anat" });
     if (!tx.cb) anat.appendChild(ioSection("Inputs", tx.i, "in"));

@@ -1195,6 +1195,10 @@ def build(out, heights=None, all_blocks=False, og=True):
     write(out, "about/index.html", about_page(tip))
     write(out, "tx/index.html", tx_page(tip))
     write_gz(f"{out}/d/catalog.json.gz", tx_catalog())
+    # Payout addresses on file for each name in the index, so a transaction page can tell a block
+    # named by its payout from one named by its coinbase text alone, as the block page does.
+    addrs = pool_addresses()
+    write_gz(f"{out}/d/pools.json.gz", {name: sorted(addrs[name]) for name in sorted({b["pool"] for b in idx.values()}) if addrs.get(name)})
     pools = sorted({b["pool"] for b in idx.values()})
     for name in pools:
         r = pool_page(idx, name, tip)
