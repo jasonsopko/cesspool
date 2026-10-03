@@ -44,14 +44,25 @@ server {
     add_header Strict-Transport-Security "max-age=31536000; includeSubDomains" always;
     add_header X-Content-Type-Options nosniff always;
     add_header Referrer-Policy strict-origin-when-cross-origin always;
-    # Static pages, no inline scripts. Inline styles carry bar widths.
-    add_header Content-Security-Policy "default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'" always;
+    # Static pages, no inline scripts. Inline styles carry bar widths. The
+    # transaction page fetches its data from /d/ on this origin.
+    add_header Content-Security-Policy "default-src 'none'; script-src 'self'; connect-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'" always;
 
     location /static/ {
         add_header Cache-Control "public, max-age=86400" always;
         add_header Strict-Transport-Security "max-age=31536000; includeSubDomains" always;
         add_header X-Content-Type-Options nosniff always;
         add_header Content-Security-Policy "default-src 'none'; style-src 'self'; font-src 'self'" always;
+    }
+    # Transaction data for /tx/, stored only as .json.gz and served as JSON.
+    location /d/ {
+        gzip_static always;
+        gunzip on;
+        default_type application/json;
+        add_header Cache-Control "public, max-age=60" always;
+        add_header Strict-Transport-Security "max-age=31536000; includeSubDomains" always;
+        add_header X-Content-Type-Options nosniff always;
+        add_header Content-Security-Policy "default-src 'none'" always;
     }
     location /og/ {
         add_header Cache-Control "public, max-age=3600" always;
@@ -62,7 +73,7 @@ server {
         add_header Strict-Transport-Security "max-age=31536000; includeSubDomains" always;
         add_header X-Content-Type-Options nosniff always;
         add_header Referrer-Policy strict-origin-when-cross-origin always;
-        add_header Content-Security-Policy "default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'" always;
+        add_header Content-Security-Policy "default-src 'none'; script-src 'self'; connect-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'" always;
         try_files $uri $uri/ =404;
     }
     location ~ /\. { return 404; }
