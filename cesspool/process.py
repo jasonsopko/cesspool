@@ -45,7 +45,7 @@ def run_checker(txs):
         return rows
 
 
-def tx_detail(t, f, miss_in=None):
+def tx_detail(t, f, fm_in=None):
     """The parts of a non-clean transaction the dissection page draws."""
     ins = []
     for i, v in enumerate(t["vin"]):
@@ -54,7 +54,7 @@ def tx_detail(t, f, miss_in=None):
         wit = v.get("txinwitness") or []
         ins.append({"type": spk.get("type", ""), "addr": spk.get("address"), "sats": sats(p.get("value", 0)),
                     "wbytes": sum(len(x) // 2 for x in wit),
-                    "data": max(f["data_in"][i] if i < len(f["data_in"]) else 0, miss_in[i] if miss_in else 0)})
+                    "data": max(f["data_in"][i] if i < len(f["data_in"]) else 0, fm_in[i] if fm_in else 0)})
     outs = []
     for i, o in enumerate(t["vout"]):
         spk = o["scriptPubKey"]
@@ -84,7 +84,7 @@ def process_block(b, rows):
         txd.append(txdetail.tx_record(t, row, c))
         tier = TIERS[c["tier"]]
         if tier:
-            d = tx_detail(t, {"data_in": row.get("data_in", []), "data_out": row.get("data_out", [])}, c.get("miss_in"))
+            d = tx_detail(t, {"data_in": row.get("data_in", []), "data_out": row.get("data_out", [])}, c.get("fm_in"))
             spam.append({"txid": t["txid"], "tier": c["tier"], "types": c["types"], "labels": c["labels"],
                          "data": c["data_bytes"], "missed": c["missed"], "w": t["weight"], "vsize": t["vsize"], "size": t["size"],
                          "fee": fee, "v": {k: c["reasons"][k]["reasons"] for k in ("core", "knots", "plumb")},

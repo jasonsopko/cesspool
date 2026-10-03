@@ -278,4 +278,4 @@ def classify(tx, verdict):
     else:
         tier = "clean"
     return {"tier": tier, "types": types, "labels": labels, "data_bytes": data_bytes,
-            "missed": missed, "reasons": v, "miss_in": fm_per_input if missed else None, "fm_in": fm_per_input}
+            "missed": missed, "reasons": v, "fm_in": fm_per_input}
