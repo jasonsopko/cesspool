@@ -1204,6 +1204,21 @@ def build(out, heights=None, all_blocks=False, og=True):
         write(out, f"pool/{miner.slug(name)}/index.html", html_)
         if og:
             render_png(og_svg("pool", p=cur, L=L), f"{out}/og/pool/{miner.slug(name)}.png")
+    # A name that left the index (a renamed pool) would leave its page behind, frozen at an old tip.
+    keep = {miner.slug(name) for name in pools}
+    pdir = f"{out}/pool"
+    for s in (sorted(os.listdir(pdir)) if keep and os.path.isdir(pdir) else []):
+        if s in keep:
+            continue
+        for path in (f"{pdir}/{s}/index.html", f"{out}/og/pool/{s}.png"):
+            try:
+                os.remove(path)
+            except OSError:
+                pass
+        try:
+            os.rmdir(f"{pdir}/{s}")
+        except OSError:
+            pass
     if og:
         render_png(og_svg("site"), f"{out}/og/site.png")
         _, _, ranked, _, _ = shame_tables(idx, "7d", 7 * 86400, 10)
