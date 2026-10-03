@@ -112,7 +112,7 @@ def process_range(heights):
         rec = process_block(b, rows)
         tmp = f"{BLOCKS}/{rec['h']}.json.tmp"
         with open(tmp, "w") as f:
-            json.dump(rec, f, separators=(",", ":"))
+            f.write(json.dumps(rec, separators=(",", ":")))  # dumps uses the C encoder; dump to a file does not
         os.replace(tmp, f"{BLOCKS}/{rec['h']}.json")
         out.append(rec)
     return out
