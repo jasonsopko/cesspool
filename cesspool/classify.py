@@ -241,6 +241,12 @@ def classify(tx, verdict):
         if not data_reasons:
             missed = True
 
+    if "fake-multisig" in types:
+        # The witness-data label for the same inputs is the generic name; the fake keys are the finding.
+        k = types.index("fake-multisig")
+        types.insert(0, types.pop(k))
+        labels.insert(0, labels.pop(k))
+
     if data_reasons or missed:
         tier = "sewage"
     elif data_bytes or types:
