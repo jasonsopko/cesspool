@@ -1,5 +1,5 @@
 """Render cesspool.lol as static files from the block records."""
-import collections, datetime, gzip, html, json, math, os, shutil, subprocess, tempfile, time
+import collections, datetime, functools, gzip, html, json, math, os, shutil, subprocess, tempfile, time
 
 from . import classify, miner
 from .types import TYPES, info, KNOTS, PLUMB, NONE, ALLOWED
@@ -223,6 +223,47 @@ def totals(blocks):
     return t
 
 
+def past(b):
+    """How many of the block's transactions Knots refuses at its defaults. Plumb refuses every one of them too."""
+    return sum(e[3] for e in b["ty"].values())
+
+
+def past_kinds(b):
+    return ", ".join(esc(info(t)["name"]) for t, e in sorted(b["ty"].items(), key=lambda x: -x[1][3]) if e[3])
+
+
+@functools.lru_cache(maxsize=None)
+def pool_addresses():
+    by = collections.defaultdict(set)
+    try:
+        with open(miner.CACHE) as f:
+            for e in json.load(f):
+                by[e["name"]] |= set(e.get("addresses") or [])
+    except (OSError, ValueError):
+        pass
+    return by
+
+
+@functools.lru_cache(maxsize=None)
+def named_by_payout(h, name):
+    """True when block h pays an address on file for the name it carries, False when it does not (so
+    only its coinbase text ties it to that name), None for an unknown miner or a missing record."""
+    if name.startswith("Unknown ("):
+        return None
+    try:
+        with open(f"{TXD}/{h}.json") as f:
+            cb = json.load(f).get("cb") or {}
+    except (OSError, ValueError):
+        return None
+    pay = {o.get("ad") for o in cb.get("o", []) if o.get("ad") and o.get("a", 0) > 0}
+    return bool(pay & pool_addresses().get(name, set()))
+
+
+def named_cell(b):
+    v = named_by_payout(b["h"], b["pool"])
+    return "" if v is None else ("payout address" if v else "coinbase text only")
+
+
 def type_stats(idx):
     st = {}
     for h in sorted(idx):
@@ -321,7 +362,7 @@ def plumb_cta(headline="Run Plumb and this stays out of your blocks.", body=None
 
 def page(path, title, body, *, nav="", desc="", og=None, tip=None):
     og = og or "/og/site.png"
-    nav_items = [("blocks", "/blocks/", "Blocks"), ("shame", "/shame/", "Hall of Shame"),
+    nav_items = [("blocks", "/blocks/", "Blocks"), ("shame", "/shame/", "Hall of Shame"), ("past", "/past-defaults/", "Past the Defaults"),
                  ("guide", "/guide/", "Field Guide"), ("plumb", "/plumb/", "Plumb"), ("about", "/about/", "About")]
     navh = "".join(f'<a href="{u}"{" class=\"on\"" if k == nav else ""}>{t}</a>' for k, u, t in nav_items)
     full_title = f"{title} · cesspool.lol" if title else "cesspool.lol · Bitcoin water quality, block by block"
@@ -495,6 +536,17 @@ def block_page(rec, s, prev_h, next_h, tip):
         verdict = f'No sewage. {n(s["gn"])} small note{"s" if s["gn"] != 1 else ""} inside the default 83-byte OP_RETURN allowance.'
     else:
         verdict = "Every transaction in this block is a payment. Not one byte of data."
+    k = past(s)
+    past_line = ""
+    if k:
+        what = "One of its transactions is one" if k == 1 else f"{n(k)} of its transactions are ones"
+        them = "it" if k == 1 else "them"
+        text_only = named_by_payout(rec["h"], pool) is False
+        past_line = (f'<p style="margin-top:10px;max-width:70ch"><b style="color:var(--miss)">Past the defaults.</b> '
+                     f'{what} Knots and Plumb refuse at their default settings. A node at those defaults does not accept {them} '
+                     f'from peers or put {them} in a block unless its operator overrides the refusal.'
+                     + (f' The name {esc(pool)} comes from this block&#39;s coinbase text alone, which anyone can write.' if text_only else "")
+                     + ' <a href="/past-defaults/">Every block like this</a>.</p>')
     nav = (f'<div class="navpn">{f"<a href=/block/{prev_h}/>&larr; {prev_h}</a>" if prev_h else ""}'
            f'{f"<a href=/block/{next_h}/>{next_h} &rarr;</a>" if next_h else ""}</div>')
     share_text = f"Block {rec['h']}, mined by {pool}: {label.lower()}" + (f", {pct(s['share'])} of the block is spam." if s["sn"] else ".")
@@ -502,7 +554,7 @@ def block_page(rec, s, prev_h, next_h, tip):
 <h1>Block {rec["h"]}</h1>
 <div class="meta"><span>Mined by <b>{pool_link(pool)}</b></span><span>{tm(rec["t"])}</span><span><b class="num">{n(rec["ntx"])}</b> transactions</span>
 <span><b class="num">{rec["w"] / 4e6 * 100:.0f}%</b> full</span><span>Fees <b class="num">{btc(total_fees)}</b> BTC</span></div>
-<p style="margin-top:14px;max-width:70ch">{verdict}</p>
+<p style="margin-top:14px;max-width:70ch">{verdict}</p>{past_line}
 <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">{nav}<button class="copy" data-copy="{esc(share_text)} {SITE}/block/{rec["h"]}/">Copy share link</button></div></div>
 <div class="stampbox">{stamp(s["grade"])}</div></div>
 <div class="mapbox"><canvas id="map" aria-label="Map of every transaction in the block, sized by virtual size"></canvas><div class="tip"></div></div>
@@ -709,12 +761,48 @@ def shame_page(idx, tip):
     tabs = "".join(f'<button data-pane="w-{k}"{" class=on" if k == "7d" else ""}>{l}</button>' for k, l, _, _ in WINDOWS)
     panes = "".join(shame_pane(idx, k, l, s, m) for k, l, s, m in WINDOWS)
     body = f'''<div class="hero"><div class="kicker">Hall of Shame</div><h1>Who is mining the sewage</h1>
-<p class="lede">Pools ranked by how much of their block space went to spam. A pool lands here by choosing what goes into its blocks, and it gets off the list the same way.</p></div>
+<p class="lede">Pools ranked by how much of their block space went to spam. A pool lands here by choosing what goes into its blocks, and it gets off the list the same way.</p>
+<p class="small muted" style="margin-top:8px">Blocks holding transactions that Knots and Plumb refuse at their defaults are listed on <a href="/past-defaults/">Past the defaults</a>.</p></div>
 <div class="tabs" data-group="shame">{tabs}</div>{panes}
 <p class="small muted" style="margin-top:22px">Grades: A under 0.05% of block space is sewage, B under 0.25%, C under 1%, D under 4%, F above that.
 On DATUM pools such as CONVOY, each miner builds the block template on their own node. There the pool name says where a block came from; the template's owner chose its contents.</p>
 {plumb_cta("Every pool on this page can leave it with one binary swap.")}'''
     return page("/shame/", "Hall of Shame", body, nav="shame", desc="Pools ranked by how much of their block space went to spam.", og="/og/shame.png", tip=tip)
+
+
+def past_page(idx, tip):
+    blocks = [idx[h] for h in sorted(idx)]
+    pb = [b for b in blocks if past(b)]
+    by = {}
+    for b in blocks:
+        by.setdefault(b["pool"], {"pool": b["pool"], "blocks": 0, "past": 0, "text": 0, "txs": 0, "last": None})["blocks"] += 1
+    for b in pb:
+        p = by[b["pool"]]
+        p["past"] += 1
+        p["text"] += named_by_payout(b["h"], b["pool"]) is False
+        p["txs"] += past(b)
+        p["last"] = b
+    pools = sorted([p for p in by.values() if p["past"]], key=lambda p: (-p["past"], -p["txs"]))
+    txs = sum(past(b) for b in pb)
+    prows = "".join(f'<tr><td>{pool_link(p["pool"])}</td><td class="r num">{n(p["past"])}</td><td class="r num">{n(p["blocks"])}</td>'
+                    f'<td class="r num">{pct(p["past"] / p["blocks"])}</td><td class="r num">{n(p["text"])}</td><td class="r num">{n(p["txs"])}</td>'
+                    f'<td><a href="/block/{p["last"]["h"]}/">{p["last"]["h"]}</a> <span class="faint">{tm(p["last"]["t"], False)}</span></td></tr>' for p in pools)
+    brows = "".join(f'<tr><td><a href="/block/{b["h"]}/">{b["h"]}</a></td><td>{tm(b["t"], False)}</td><td>{pool_link(b["pool"])}</td>'
+                    f'<td>{named_cell(b)}</td><td class="r num">{n(past(b))}</td><td>{past_kinds(b)}</td></tr>' for b in reversed(pb))
+    body = f'''<div class="hero"><div class="kicker">Past the defaults</div><h1>Blocks built past the default filters</h1>
+<p class="lede">Knots refuses every transaction counted here at its default settings, and Plumb refuses them too. A node at those defaults does not accept them from peers or put them in a block unless its operator overrides the refusal. Each block below holds at least one: it was built on a node without those rules, on one with them turned off or overridden, or by pool software that added transactions the node's mempool did not hold. Refusing is policy, not a consensus rule, so these blocks are valid.</p>
+<p class="small muted" style="margin-top:8px">Pool names come from each block's coinbase text and payout addresses, by the same rules as <a href="https://reorg.watch">reorg.watch</a>. "Named by" says whether the block pays an address on file for the name it carries. Where it does not, only its coinbase text, which anyone can write, ties it to that name.</p></div>
+<div class="tiles"><div class="tile"><div class="v">{n(len(pb))} <span class="muted" style="font-size:1rem">/ {n(len(blocks))}</span></div><div class="l">blocks past the defaults</div><div class="s">since the fork</div></div>
+<div class="tile"><div class="v">{n(txs)}</div><div class="l">transactions the defaults refuse, mined</div></div>
+<div class="tile"><div class="v">{n(len(pools))}</div><div class="l">pools and miners</div></div></div>
+<h3>By pool</h3>
+<div class="tw"><table><tr><th>Pool</th><th class="r">Blocks past the defaults</th><th class="r">Of its blocks</th><th class="r">Share</th><th class="r">Named by coinbase text only</th><th class="r">Refused txs</th><th>Last one</th></tr>{prows or '<tr><td colspan="7" class="muted">None.</td></tr>'}</table></div>
+<h3 style="margin-top:22px">Every block, newest first</h3>
+<div class="tw"><table><tr><th>Block</th><th>Time</th><th>Pool</th><th>Named by</th><th class="r">Refused txs</th><th>Kinds</th></tr>{brows or '<tr><td colspan="6" class="muted">None.</td></tr>'}</table></div>
+<p class="small muted" style="margin-top:22px">On DATUM pools such as CONVOY, each miner builds the block template on their own node. There the pool name says where a block came from; the template's owner chose its contents.</p>
+{plumb_cta("A Plumb node refuses every transaction on this page.")}'''
+    return page("/past-defaults/", "Past the defaults", body, nav="past",
+                desc=f"{n(len(pb))} blocks since the fork hold transactions that Knots and Plumb refuse at their defaults.", tip=tip)
 
 
 def daily_chart(blocks):
@@ -753,16 +841,42 @@ def pool_page(idx, name, tip):
     pall = pool_stats(allb)[name]
     cur = p30 or pall
     L = cur["letter"]
+    pb = sorted([b for b in allb if past(b)], key=lambda b: -b["h"])
     tiles = f'''<div class="tiles"><div class="tile"><div class="v g-raw">{pct(cur["share"], 2)}</div><div class="l">of its block space is sewage</div><div class="s">{"last 30 days" if p30 else "since the fork"}</div></div>
 <div class="tile"><div class="v">{n(cur["sn"])}</div><div class="l">sewage transactions mined</div><div class="s">in {n(cur["dirty"])} of {n(cur["blocks"])} blocks</div></div>
 <div class="tile"><div class="v">{btc(cur["sf"])}</div><div class="l">BTC in fees taken for them</div><div class="s">{pct(cur["fee_share"])} of its fee income</div></div>
-<div class="tile"><div class="v">{n(cur["pristine"])}</div><div class="l">pristine blocks</div><div class="s">not one byte of data</div></div></div>'''
+<div class="tile"><div class="v">{n(cur["pristine"])}</div><div class="l">pristine blocks</div><div class="s">not one byte of data</div></div>
+<div class="tile"><div class="v">{n(len(pb))} <span class="muted" style="font-size:1rem">/ {n(len(allb))}</span></div><div class="l">blocks past the defaults</div><div class="s">since the fork, <a href="/past-defaults/">what this means</a></div></div></div>'''
     worst = sorted([b for b in allb if b["sn"]], key=lambda b: -b["sw"])[:15]
     wrows = "".join(f'<tr><td><a href="/block/{b["h"]}/">{b["h"]}</a></td><td>{tm(b["t"], False)}</td><td>{stamp(b["grade"], True)}</td>'
                     f'<td class="r num">{pct(b["share"])}</td><td class="r num">{n(b["sn"])}</td><td class="r num">{size(b["sd"])}</td></tr>' for b in worst)
     tys = sorted(pall["ty"].items(), key=lambda x: -x[1])
     trows = "".join(f'<tr><td><a href="/guide/#{t}">{esc(info(t)["name"])}</a></td><td class="r num">{n(c)}</td><td>{status_chip(t)}</td></tr>' for t, c in tys)
     recent = sorted(allb, key=lambda b: -b["h"])[:12]
+    nb = len(allb)
+    of_its = f"{n(len(pb))} of its {n(nb)} blocks" if nb != 1 else "Its one block"
+    if pb:
+        prows = "".join(f'<tr><td><a href="/block/{b["h"]}/">{b["h"]}</a></td><td>{tm(b["t"], False)}</td><td class="r num">{n(past(b))}</td>'
+                        f'<td>{named_cell(b)}</td><td>{past_kinds(b)}</td></tr>' for b in pb)
+        tonly = sum(1 for b in pb if named_by_payout(b["h"], name) is False)
+        if not tonly:
+            basis = ""
+        elif len(pb) == 1:
+            basis = f" That block is named {esc(name)} by its coinbase text alone, which anyone can write."
+        elif tonly == len(pb):
+            basis = f" {'Both' if tonly == 2 else 'All of them'} are named {esc(name)} by their coinbase text alone, which anyone can write."
+        else:
+            basis = (f" {n(tonly)} of them {'is' if tonly == 1 else 'are'} named {esc(name)} by coinbase text alone, which anyone can write; "
+                     f"the rest pay an address on file for it.")
+        holds = ("holds a transaction" if past(pb[0]) == 1 else "holds transactions") if len(pb) == 1 else "hold transactions"
+        past_part = (f'<h3 style="margin-top:22px">Past the defaults</h3><p class="small muted" style="margin-bottom:8px">{of_its} since the fork '
+                     f'{holds} that Knots and Plumb refuse at their default settings.{basis} '
+                     f'<a href="/past-defaults/">Every pool and block</a>.</p>'
+                     f'<div class="tw"><table><tr><th>Block</th><th>Time</th><th class="r">Refused txs</th><th>Named by</th><th>Kinds</th></tr>{prows}</table></div>')
+    else:
+        none = f"None of its {n(nb)} blocks since the fork holds" if nb != 1 else "Its one block since the fork does not hold"
+        past_part = (f'<p class="small muted" style="margin-top:22px">{none} a transaction that Knots and Plumb '
+                     f'refuse at their default settings. <a href="/past-defaults/">What this means</a>.</p>')
     plumb_part = pct(cur["psw"] / cur["sw"]) if cur["sw"] else "0%"
     if cur["sn"]:
         operator = f'''<div class="panel" style="margin-top:22px"><h3>To the operator of {esc(name)}</h3>
@@ -779,7 +893,7 @@ def pool_page(idx, name, tip):
 <div class="strip">{"".join(cube_link(b) for b in recent)}</div>
 <div class="grid2"><div><h3>Worst blocks</h3><div class="tw"><table><tr><th>Block</th><th>Time</th><th>Grade</th><th class="r">Share</th><th class="r">Txs</th><th class="r">Payload</th></tr>{wrows or '<tr><td colspan="6" class="muted">None.</td></tr>'}</table></div></div>
 <div><h3>What it mined</h3><div class="tw"><table><tr><th>Kind</th><th class="r">Txs</th><th>Filter</th></tr>{trows or '<tr><td colspan="3" class="muted">Nothing.</td></tr>'}</table></div></div></div>
-{operator}{plumb_cta() if cur["sn"] else ""}'''
+{past_part}{operator}{plumb_cta() if cur["sn"] else ""}'''
     desc = f"Grade {L}. {pct(cur['share'], 2)} of {name}'s block space is spam."
     og = f"/og/pool/{miner.slug(name)}.png"
     return page(f"/pool/{miner.slug(name)}/", f"{name}: grade {L}", body, nav="shame", desc=desc, og=og, tip=tip), cur, L
@@ -1072,6 +1186,7 @@ def build(out, heights=None, all_blocks=False, og=True):
     write(out, "index.html", index_page(idx, tip))
     write(out, "blocks/index.html", blocks_page(idx, tip))
     write(out, "shame/index.html", shame_page(idx, tip))
+    write(out, "past-defaults/index.html", past_page(idx, tip))
     write(out, "guide/index.html", guide_page(idx, tip))
     write(out, "plumb/index.html", plumb_page(idx, tip))
     write(out, "about/index.html", about_page(tip))

@@ -297,7 +297,11 @@
     what.forEach(function (w) { sec.appendChild(w); });
     if (!tx.cb) sec.appendChild(verdicts(tx, cat, plumb, tier !== "sewage"));
     if (!tx.cb && !tx.e && tx.x && ["core", "knots", "plumb"].some(function (k) { return tx.x[k] && tx.x[k].length; })) {
-      var pol = el("p", { cls: "small muted", text: "Refusing is policy, not a consensus rule: a node that refuses it does not relay it or put it in a block it builds, but it still accepts a block that has it." });
+      var policy = "Refusing is policy, not a consensus rule: a node that refuses it does not relay it or put it in a block it builds, but it still accepts a block that has it.";
+      var pol = tx.x.knots && tx.x.knots.length
+        ? el("p", { cls: "small muted" }, el("b", { text: "Past the defaults. " }), "Knots and Plumb refuse it at their default settings; a node at those defaults takes it only when its operator overrides the refusal. ",
+            el("a", { href: "/past-defaults/", text: "Every block like this" }), ". " + policy)
+        : el("p", { cls: "small muted", text: policy });
       pol.style.marginTop = "10px"; sec.appendChild(pol);
     }
     var anat = el("div", { cls: "anat" });
