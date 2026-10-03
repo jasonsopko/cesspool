@@ -410,7 +410,7 @@ def verdict_html(v, missed):
             why = ", ".join(rs) + " (not a data rule)"
         else:
             res = '<span class="pass">Relays and mines it</span>'
-            why = "no rule matches" if not (k == "plumb" and missed) else "no filter for this shape yet"
+            why = "no rule matches" if not (k == "plumb" and missed) else "this one gets past its filters"
         cells.append(f'<div class="{"plumb" if k == "plumb" else ""}"><div class="who">{name}</div>{res}<div class="why">{esc(why)}</div></div>')
     return f'<div class="verd">{"".join(cells)}</div>'
 
@@ -487,7 +487,7 @@ def block_page(rec, s, prev_h, next_h, tip):
         verdict = (f'{n(s["sn"])} sewage transaction{"s" if s["sn"] != 1 else ""} took <b>{pct(s["share"])}</b> of this block '
                    f'and paid {esc(pool)} <b>{btc(s["sf"])} BTC</b>, {pct(s["sf"] / total_fees if total_fees else 0)} of its fees.')
         if s["sm"]:
-            verdict += (" One of them is" if s["sm"] == 1 else f' {n(s["sm"])} of them are') + f" a shape {PLUMB_NAME} does not catch yet."
+            verdict += (" One of them gets" if s["sm"] == 1 else f' {n(s["sm"])} of them get') + f" past {PLUMB_NAME}'s filters."
         caught = s["ps"]
         if caught:
             verdict += f' A Plumb node refuses {n(caught)} of the {n(s["sn"])}.'
@@ -642,7 +642,7 @@ def pool_page(idx, name, tip):
     if cur["sn"]:
         operator = f'''<div class="panel" style="margin-top:22px"><h3>To the operator of {esc(name)}</h3>
 <p>Your blocks carried {n(cur["sn"])} sewage transactions {"in the last 30 days" if p30 else "since the fork"}. They paid you {btc(cur["sf"])} BTC, {pct(cur["fee_share"])} of your fee income, to store {size(cur["sd"])} of other people's files and token bookkeeping on every node that will ever run.</p>
-<p>A Plumb node building your templates would have refused {plumb_part} of that block space.{" The rest is a shape Plumb does not catch yet; those filters are in review." if cur["psw"] < cur["sw"] else ""}</p></div>'''
+<p>A Plumb node building your templates would have refused {plumb_part} of that block space.{" The rest gets past Plumb's filters." if cur["psw"] < cur["sw"] else ""}</p></div>'''
     else:
         operator = f'''<div class="panel" style="margin-top:22px"><h3>Clean record</h3><p>{esc(name)} has not mined a single sewage transaction {"in the last 30 days" if p30 else "since the fork"}. That is what this page is for.</p></div>'''
     body = f'''<div class="bhead"><div class="t"><div class="kicker">Inspection report</div><h1>{esc(name)}</h1>
@@ -738,7 +738,7 @@ def about_page(tip):
 <li>{stamp("tainted", True)} sewage under 1% of the block's weight.</li>
 <li>{stamp("foul", True)} sewage from 1% to 10%.</li>
 <li>{stamp("raw", True)} sewage over 10%.</li></ul>
-<p>Sewage is any transaction a Plumb node refuses because it carries data, plus the known shapes Plumb does not catch yet. Those are marked in red as Plumb misses, so the gaps are on the page.</p>
+<p>Sewage is any transaction a Plumb node refuses because it carries data, plus known spam shapes that get past Plumb's filters. Those are marked in red as Plumb misses, so the gaps are on the page.</p>
 <h2>What we never show</h2>
 <p>The payload. No images, no text, no file names. A spam transaction gets its type, its size and where the bytes sit. Displaying the contents is the service the spammer paid for.</p>
 <h2>Who mined it</h2>
