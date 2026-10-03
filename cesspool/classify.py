@@ -186,16 +186,26 @@ def data_input(vin):
     return "witness-data", "Data in an input's witness or script"
 
 
+def sorted_keys(script_hex):
+    """True when a multisig script's keys are in BIP67 order, the way sortedmulti wallets write them."""
+    keys = [d for _, d in ops(script_hex)[1:-2]]
+    return keys == sorted(keys)
+
+
 def fake_multisig(tx):
     """Inputs revealing m-of-n scripts with eight or more unneeded keys.
 
     Plumb 3 counts these past ten unsigned keys a script (knots#422). The threshold keeps
-    real vaults out: no 1-of-3 or 2-of-5 spend comes near it.
+    real vaults out: no 1-of-3 or 2-of-5 spend comes near it. A script that asks for two
+    or more signatures over BIP67-sorted keys, with no more unneeded keys than the ten Plumb
+    allows, is a wallet's, such as a 4-of-12 sortedmulti.
     """
     per_input = []
     for vin in tx["vin"]:
         kind, script = witness_script(vin)
         ms = multisig(script) if kind in ("p2wsh", "p2sh") else None
+        if ms and ms[0] >= 2 and ms[1] - ms[0] <= 10 and sorted_keys(script):
+            ms = None
         per_input.append((ms[1] - ms[0]) * 33 if ms and ms[1] - ms[0] >= 8 else 0)
     return sum(1 for b in per_input if b), sum(per_input), per_input
 
