@@ -437,7 +437,9 @@ def dissection(s, pool, rate_ctx):
     if s["missed"]:
         tier_stamp += ' <span class="stamp sm" style="color:var(--miss)">Plumb miss</span>'
     vbytes = s["vsize"]
-    share = min(1, s["data"] / max(1, s.get("size", s["w"] / 4))) if s["data"] else 0
+    # A run type's payload is counted in the reveal; show the bytes the policy code counted here.
+    shown = sum(r["data"] for r in s["ins"]) + sum(r["data"] for r in s["outs"]) if i.get("staged") else s["data"]
+    share = min(1, shown / max(1, s.get("size", s["w"] / 4))) if shown else 0
     feerate = s["fee"] / vbytes if vbytes else 0
     others = "".join(f'<span class="chip">{esc(l)}</span>' for l in s["labels"][1:])
     note = ""
@@ -450,7 +452,7 @@ def dissection(s, pool, rate_ctx):
 {f'<p class="small">{others}</p>' if others else ""}
 <div class="anat"><div><h4>Inputs ({n(len(s["ins"]))})</h4><div class="io">{io_html(s["ins"], "in", missed=s["missed"])}</div></div>
 <div><h4>Outputs ({n(len(s["outs"]))})</h4><div class="io">{io_html(s["outs"], "out")}</div></div></div>
-<div class="small muted">{"Counted as data" if i.get("staged") else "Payload"}: <b class="num" style="color:var(--text)">{n(s["data"])} bytes</b> of a {n(s.get("size", vbytes))}-byte transaction ({n(vbytes)} vB).
+<div class="small muted">{"Counted as data" if i.get("staged") else "Payload"}: <b class="num" style="color:var(--text)">{n(shown)} bytes</b> of a {n(s.get("size", vbytes))}-byte transaction ({n(vbytes)} vB).
 Fee <span class="num">{n(s["fee"])}</span> sat ({feerate:.1f} sat/vB), paid to {esc(pool)}.</div>
 <div class="fill" title="Share of the transaction that is {"counted as data" if i.get("staged") else "payload"}"><span style="width:{share * 100:.1f}%;background:var(--sewage)"></span><span style="flex:1"></span></div>
 {verdict_html(s["v"], s["missed"])}
@@ -686,7 +688,7 @@ def guide_page(idx, tip):
         secs.append(f'''<section class="panel" id="{t}" style="margin:14px 0"><div class="ftype"><div>
 <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap"><h3 style="margin:0">{esc(i["name"])}</h3>{status_chip(t)}{prs}</div>
 <p style="margin-top:10px">{prose(i["what"])}</p><p class="muted">{prose(i["how"])}</p>{note}
-<p class="small muted">Seen {plural(s["n"], "time")} in {plural(s["blocks"], "block")}, {size(s["data"])} of payload. First at <a href="/block/{s["first"]}/">{s["first"]}</a>, latest at <a href="/block/{s["last"]}/">{s["last"]}</a>.</p></div>
+<p class="small muted">Seen {plural(s["n"], "time")} in {plural(s["blocks"], "block")}, {"its payload counted where the outputs are spent" if i.get("staged") else size(s["data"]) + " of payload"}. First at <a href="/block/{s["first"]}/">{s["first"]}</a>, latest at <a href="/block/{s["last"]}/">{s["last"]}</a>.</p></div>
 <div><div class="small muted" style="margin-bottom:4px">Refused, measured on every instance</div><div class="tw"><table class="meas">{"".join(measured)}</table></div></div></div></section>''')
     body = f'''<div class="hero"><div class="kicker">Field guide</div><h1>Every shape we have caught</h1>
 <p class="lede">Each kind of spam on the chain since the fork: what it is, how it hides the bytes, and which filter stops it. The refusal rates come from running each policy's code on every instance, so where the label and the measurement disagree, the measurement wins.</p>

@@ -238,9 +238,13 @@ def classify(tx, verdict):
     for vout in tx["vout"]:
         if vout["scriptPubKey"].get("type") == "nulldata":
             add(*nulldata(tx, vout["scriptPubKey"]["hex"]))
+    run_bytes = 0
     for i, n in enumerate(verdict.get("data_out", [])):
         if n and tx["vout"][i]["scriptPubKey"].get("type") != "nulldata":
-            add(*fake_output(tx, i, tx["vout"][i]))
+            t, label = fake_output(tx, i, tx["vout"][i])
+            add(t, label)
+            if t == "p2wsh-run":
+                run_bytes += n
     for i, n in enumerate(verdict.get("data_in", [])):
         if n:
             add(*data_input(tx["vin"][i]))
@@ -249,7 +253,9 @@ def classify(tx, verdict):
     if "bare-multisig" in plumb_reasons:
         add("bare-multisig", "Bare multisig outputs holding data keys")
 
-    data_bytes = v["plumb"]["data"] + v["plumb"]["data_nonstd"]
+    # A run's outputs commit to scripts that a later transaction reveals; the payload is
+    # counted there, so the policy code's bytes for the run itself are not payload.
+    data_bytes = v["plumb"]["data"] + v["plumb"]["data_nonstd"] - run_bytes
     fm_inputs, fm_bytes, fm_per_input = fake_multisig(tx)
     missed = False
     if fm_inputs:

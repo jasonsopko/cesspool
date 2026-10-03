@@ -131,7 +131,7 @@
     var t = h.q[0].t, s = t[3] >= 0 ? data.spam[t[3]] : null;
     var rate = t[0] ? (t[1] / t[0]).toFixed(1) : "0";
     var html = "<b>" + (s ? esc(s.n) : "Payment") + "</b><br>" + t[0].toLocaleString() + " vB &middot; " + rate + " sat/vB";
-    if (s) html += "<br>" + (s.d ? s.d.toLocaleString() + " bytes of payload" : "") + (s.m ? "<br><span style=\"color:var(--miss)\">" + esc(data.pn) + " relays this</span>" : "");
+    if (s) html += (s.d ? "<br>" + s.d.toLocaleString() + " bytes of payload" : "") + (s.m ? "<br><span style=\"color:var(--miss)\">" + esc(data.pn) + " relays this</span>" : "");
     tip.innerHTML = html;
     tip.style.display = "block";
     var bx = canvas.parentNode.getBoundingClientRect(), cb = canvas.getBoundingClientRect();
