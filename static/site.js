@@ -188,20 +188,84 @@
 
   function stamp(text, color) { var s = el("span", { cls: "stamp sm", text: text }); if (color) s.style.color = color; return s; }
 
+  // The same regular expression as classify.DATA_REASONS: the reasons that mean "carries data".
+  var DATA_REASON = /^(txn-datacarrier-|tokens-|parasite-|bare-datacarrier|multi-op-return|bare-multisig|bad-txns-input-.*datacarrier|bad-witness-.*datacarrier)/;
+  function sourceLink(cat, o) {
+    var s = cat.sources && cat.sources[o];
+    if (!s) return null;
+    var f = document.createDocumentFragment();
+    f.appendChild(document.createTextNode(" ("));
+    f.appendChild(el("a", { href: s[1], text: s[0] }));
+    f.appendChild(document.createTextNode(")"));
+    return f;
+  }
+  // One line per reason: the code, what it means, the option behind it. dc is the policy's
+  // [OP_RETURN bytes, other bytes] count, shown on the data-carrier reasons.
+  function ruleList(cat, rs, dc) {
+    var ul = el("ul", { cls: "rules" });
+    rs.forEach(function (r) {
+      var rule = (cat.rules && cat.rules[r]) || ["", null], words = rule[0];
+      if (dc && r === "txn-datacarrier-nonstandard") words = num(dc[1]) + " B of " + words;
+      else if (dc && r === "txn-datacarrier-exceeded") words = num(dc[0] + dc[1]) + " B of " + words;
+      var li = el("li", {}, el("code", { text: r }));
+      if (words) { li.appendChild(document.createTextNode(" ")); li.appendChild(prose(words)); }
+      if (rule[1]) { li.appendChild(document.createTextNode(" ")); li.appendChild(el("span", { cls: "opt", text: rule[1] })); }
+      ul.appendChild(li);
+    });
+    return ul;
+  }
+  // What a Plumb refusal rests on: its own filters, each measured with that filter alone off, or Knots' rules.
+  function plumbBy(cat, tx, dataRs) {
+    var knots = (tx.x && tx.x.knots) || [], fc = tx.fc || {}, dc = tx.dc || {};
+    var sum = function (a) { return (a || [0, 0]).reduce(function (x, y) { return x + y; }, 0); };
+    var added = sum(dc.plumb) - sum(dc.knots);
+    var own = Object.keys(fc), options = cat.plumb_options || [];
+    dataRs.forEach(function (r) {
+      var rule = cat.rules && cat.rules[r];
+      if (rule && rule[1] && options.indexOf(rule[1]) >= 0 && own.indexOf(rule[1]) < 0) own.push(rule[1]);
+    });
+    own.sort(function (a, b) { return (fc[b] || 0) - (fc[a] || 0); });
+    var parts = own.map(function (o) {
+      var f = document.createDocumentFragment();
+      f.appendChild(el("code", { text: o }));
+      if (fc[o]) f.appendChild(document.createTextNode(" counts " + num(fc[o]) + " B"));
+      var s = sourceLink(cat, o); if (s) f.appendChild(s);
+      return f;
+    });
+    // Two filters covering the same bytes: neither changes the count alone, together they do.
+    if (added > 0 && !Object.keys(fc).length) parts.push(document.createTextNode("its filters together count " + num(added) + " B that Knots does not"));
+    var box = el("div", { cls: "by" }), knotsRefuses = knots.some(function (r) { return DATA_REASON.test(r); });
+    if (!parts.length) {
+      if (knotsRefuses) { box.textContent = "Same rules as Knots. None of Plumb's added filters is needed here."; return box; }
+      box.appendChild(document.createTextNode("Knots relays it; the refusal comes from rules Knots does not have: "));
+      dataRs.filter(function (r) { return knots.indexOf(r) < 0; }).forEach(function (r, i) { if (i) box.appendChild(document.createTextNode(", ")); box.appendChild(el("code", { text: r })); });
+      box.appendChild(document.createTextNode("."));
+      return box;
+    }
+    box.appendChild(document.createTextNode(knotsRefuses ? "Knots' rules already refuse it. Plumb's own filters add: " : "Refused by Plumb's own filters: "));
+    parts.forEach(function (p, i) { if (i) box.appendChild(document.createTextNode("; ")); box.appendChild(p); });
+    box.appendChild(document.createTextNode("."));
+    return box;
+  }
   function verdicts(tx, cat, plumb, normal) {
     // On spam, relaying is the failure; on a normal transaction or a small note, refusing is.
     if (tx.e) return el("p", { cls: "note", text: "No verdicts: the policy check did not run on this transaction." });
     var box = el("div", { cls: "verd" + (normal ? " normal" : "") });
     cat.verdicts.forEach(function (v) {
       var k = v[0], name = v[1];
-      var rs = (tx.x && tx.x[k]) || [];
+      var rs = (tx.x && tx.x[k]) || [], dc = tx.dc && tx.dc[k], total = dc ? dc[0] + dc[1] : 0;
       var cell = el("div", { cls: k === "plumb" ? "plumb" : "" }, el("div", { cls: "who", text: name }));
       if (rs.length) {
+        var dataRs = rs.filter(function (r) { return DATA_REASON.test(r); });
         cell.appendChild(el("span", { cls: "stop", text: "Refuses it" }));
-        cell.appendChild(el("div", { cls: "why", text: rs.map(function (r) { return cat.reasons[r] || r; }).join("; ") }));
+        cell.appendChild(ruleList(cat, rs, dc));
+        if (!dataRs.length) cell.appendChild(el("div", { cls: "by", text: "Not a data rule." }));
+        else if (k === "plumb") cell.appendChild(plumbBy(cat, tx, dataRs));
       } else {
         cell.appendChild(el("span", { cls: "pass", text: "Relays and mines it" }));
-        cell.appendChild(el("div", { cls: "why", text: k === "plumb" && tx.m ? "this one gets past its filters" : "no rule matches" }));
+        var text = k === "plumb" && tx.m ? "this one gets past its filters" : "no rule matches";
+        text += total ? "; counts " + num(total) + " B of data" + (cat.dcsize ? ", inside the " + cat.dcsize + "-byte allowance" : "") : ", no data counted";
+        cell.appendChild(el("div", { cls: "why", text: text }));
       }
       box.appendChild(cell);
     });

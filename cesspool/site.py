@@ -430,7 +430,7 @@ def page(path, title, body, *, nav="", desc="", og=None, tip=None):
 '''
 
 
-ASSET_V = "14"
+ASSET_V = "16"
 
 
 def write(out, rel, text):
@@ -483,21 +483,68 @@ def io_html(rows, kind, limit=8, missed=False):
 VERDICT_NAMES = [("knots", "Knots 29.4.2"), ("plumb", PLUMB_NAME)]
 
 
-def verdict_html(v, missed):
+def source_link(opt):
+    s = FILTER_SOURCE.get(opt)
+    return f' (<a href="{esc(s[1])}">{esc(s[0])}</a>)' if s else ""
+
+
+def rule_list(rs, dc):
+    """One line per reason: the code, what it means, the option behind it. `dc` is the policy's
+    [OP_RETURN bytes, other bytes] count, shown on the data-carrier reasons."""
+    items = []
+    for r in rs:
+        words, opt = RULES.get(r, ("", None))
+        if dc and r == "txn-datacarrier-nonstandard":
+            words = f"{n(dc[1])} B of {words}"
+        elif dc and r == "txn-datacarrier-exceeded":
+            words = f"{n(dc[0] + dc[1])} B of {words}"
+        items.append(f'<li><code>{esc(r)}</code>' + (f" {prose(words)}" if words else "")
+                     + (f' <span class="opt">{esc(opt)}</span>' if opt else "") + "</li>")
+    return f'<ul class="rules">{"".join(items)}</ul>'
+
+
+def plumb_by(s, data_rs):
+    """What a Plumb refusal rests on: its own filters, each measured with that filter alone off, or Knots' rules."""
+    knots_rs = set(s["v"]["knots"])
+    fc = s.get("fc") or {}
+    dc = s.get("dc") or {}
+    added = sum(dc.get("plumb", [0, 0])) - sum(dc.get("knots", [0, 0]))
+    own = sorted(set(fc) | {RULES[r][1] for r in data_rs if r in RULES and RULES[r][1] in PLUMB_OPTIONS}, key=lambda o: -fc.get(o, 0))
+    parts = [f"<code>{esc(o)}</code>" + (f" counts {n(fc[o])} B" if fc.get(o) else "") + source_link(o) for o in own]
+    if added > 0 and not fc:
+        # Two filters covering the same bytes: neither changes the count alone, together they do.
+        parts.append(f"its filters together count {n(added)} B that Knots does not")
+    knots_refuses = any(classify.DATA_REASONS.match(r) for r in knots_rs)
+    if parts:
+        if knots_refuses:
+            return f'<div class="by">Knots&#39; rules already refuse it. Plumb&#39;s own filters add: {"; ".join(parts)}.</div>'
+        return f'<div class="by">Refused by Plumb&#39;s own filters: {"; ".join(parts)}.</div>'
+    if knots_refuses:
+        return '<div class="by">Same rules as Knots. None of Plumb&#39;s added filters is needed here.</div>'
+    extra = [r for r in data_rs if r not in knots_rs]
+    return f'<div class="by">Knots relays it; the refusal comes from rules Knots does not have: {", ".join(f"<code>{esc(r)}</code>" for r in extra)}.</div>'
+
+
+def verdict_html(s):
     cells = []
     for k, name in VERDICT_NAMES:
-        rs = v[k]
+        rs = s["v"][k]
+        dc = (s.get("dc") or {}).get(k)
+        total = sum(dc) if dc else 0
         data_rs = [r for r in rs if classify.DATA_REASONS.match(r)]
-        if data_rs:
+        if rs:
             res = '<span class="stop">Refuses it</span>'
-            why = ", ".join(data_rs)
-        elif rs:
-            res = '<span class="stop">Refuses it</span>'
-            why = ", ".join(rs) + " (not a data rule)"
+            why = rule_list(rs, dc)
+            if not data_rs:
+                why += '<div class="by">Not a data rule.</div>'
+            elif k == "plumb":
+                why += plumb_by(s, data_rs)
         else:
             res = '<span class="pass">Relays and mines it</span>'
-            why = "no rule matches" if not (k == "plumb" and missed) else "this one gets past its filters"
-        cells.append(f'<div class="{"plumb" if k == "plumb" else ""}"><div class="who">{name}</div>{res}<div class="why">{esc(why)}</div></div>')
+            text = "this one gets past its filters" if k == "plumb" and s["missed"] else "no rule matches"
+            text += f"; counts {n(total)} B of data, inside the {DATACARRIER_SIZE}-byte allowance" if total else ", no data counted"
+            why = f'<div class="why">{text}</div>'
+        cells.append(f'<div class="{"plumb" if k == "plumb" else ""}"><div class="who">{name}</div>{res}{why}</div>')
     return f'<div class="verd">{"".join(cells)}</div>'
 
 
@@ -541,7 +588,7 @@ def dissection(s, paid_to, rate_ctx):
 <div class="small muted">{"Counted as data" if i.get("staged") else "Payload"}: <b class="num" style="color:var(--text)">{n(shown)} bytes</b> of a {n(s.get("size", vbytes))}-byte transaction ({n(vbytes)} vB).
 Fee <span class="num">{n(s["fee"])}</span> sat ({feerate:.1f} sat/vB), paid {paid_to}.</div>
 <div class="fill" title="Share of the transaction that is {"counted as data" if i.get("staged") else "payload"}"><span style="width:{share * 100:.1f}%;background:var(--sewage)"></span><span style="flex:1"></span></div>
-{verdict_html(s["v"], s["missed"])}
+{verdict_html(s)}
 {f'<p class="small" style="margin:10px 0 0">{filter_line(t)}</p>' if filter_line(t) and not s["missed"] else ""}
 {note}
 </section>'''
@@ -624,21 +671,25 @@ def block_page(rec, s, prev_h, next_h, tip):
 
 # ---------------------------------------------------------------- transaction page
 
-# What each refusal reason means, for the transaction page. Anything not listed is shown as its code.
-REASONS = {
-    "txn-datacarrier-exceeded": "carries more data than the data carrier allowance",
-    "txn-datacarrier-nonstandard": "carries data outside an OP_RETURN output",
-    "tokens-runes": "a Runes message (-rejecttokens)",
-    "tokens-counterparty": "a Counterparty message (-rejecttokens)",
-    "tokens-olga": "OLGA / Stamps outputs (-rejecttokens)",
-    "tokens-json": "a JSON token message (-rejecttokenmessages)",
-    "tokens-omni": "an Omni Layer message (-rejecttokenmessages)",
-    "bare-datacarrier": "an OP_RETURN with no payment output beside it",
-    "multi-op-return": "more than one OP_RETURN output",
-    "bare-multisig": "a bare multisig output",
-    "parasite-cat21": "a CAT-21 mint (-rejectparasites)",
-    "scriptpubkey": "an output script the policy does not relay",
-    "dust": "an output below the dust limit",
+# The rule behind each refusal reason: what it means and the option it comes from, at the defaults.
+# A reason not listed is shown by its code alone. The options are stock Knots' unless PLUMB_OPTIONS has them.
+RULES = {
+    "tokens-olga": ("the OLGA `stamp:` framing in P2WSH outputs", "-rejecttokens"),
+    "tokens-runes": ("a Runes message in OP_RETURN", "-rejecttokens"),
+    "tokens-counterparty": ("a Counterparty message in OP_RETURN", "-rejecttokens"),
+    "tokens-json": ("a JSON token message in OP_RETURN", "-rejecttokenmessages"),
+    "tokens-omni": ("an Omni Layer message in OP_RETURN", "-rejecttokenmessages"),
+    "parasite-cat21": ("a CAT-21 mint, nLockTime 21", "-rejectparasites"),
+    "txn-datacarrier-nonstandard": ("data outside OP_RETURN", "-acceptnonstddatacarrier=0"),
+    "txn-datacarrier-exceeded": (f"data counted, over the {DATACARRIER_SIZE}-byte allowance", f"-datacarriersize={DATACARRIER_SIZE}"),
+    "bare-datacarrier": ("an OP_RETURN with no payment output beside it", "-permitbaredatacarrier=0"),
+    "bare-multisig": ("a bare multisig output", "-permitbaremultisig=0"),
+    "bare-pubkey": ("a bare public key output", "-permitbarepubkey=0"),
+    "multi-op-return": ("more than one OP_RETURN output", None),
+    "dust": ("an output below the dust limit", "-dustrelayfee"),
+    "scriptpubkey": ("an output script the policy does not relay", None),
+    "version": ("a transaction version outside 1 to 3", None),
+    "tx-size": ("a transaction over the size limit", None),
 }
 
 
@@ -744,7 +795,8 @@ def tx_catalog():
     """What the transaction page needs to name and explain a finding."""
     types = {t: {k: i[k] for k in ("name", "what", "how", "filter", "option", "note", "staged") if k in i} | {"prs": i.get("prs", [])}
              for t, i in TYPES.items()}
-    return {"plumb": PLUMB_NAME, "verdicts": VERDICT_NAMES, "reasons": REASONS, "types": types,
+    return {"plumb": PLUMB_NAME, "verdicts": VERDICT_NAMES, "rules": RULES, "sources": FILTER_SOURCE,
+            "plumb_options": sorted(PLUMB_OPTIONS), "dcsize": DATACARRIER_SIZE, "types": types,
             "filters": {"knots": KNOTS, "plumb": PLUMB, "none": NONE, "allowed": ALLOWED}}
 
 
@@ -824,6 +876,22 @@ SETTINGS_KNOTS = ("corepolicy=0", "rejecttokens=1", "rejectparasites=1", "dataca
                   "permitbarepubkey=0", "permitbaremultisig=0", "maxscriptsize=1650", "acceptnonstdtxn=0")
 SETTINGS_PLUMB = ("rejectfakeoutputs=1", "rejectdeadbranches=1", "rejectbareenvelopes=1", "rejectfakemultisig=1",
                   "rejecttokenmessages=1")
+
+
+def load_filters():
+    """Plumb's filter manifest, from the Plumb checkout when it is there."""
+    try:
+        with open(FILTERS) as f:
+            return json.load(f)
+    except (OSError, ValueError):
+        return []
+
+
+PLUMB_FILTERS = load_filters()
+# Each Plumb option with its source and link: the manifest, else the field guide's PR links.
+FILTER_SOURCE = ({x["option"]: (x["source"], x["url"]) for x in PLUMB_FILTERS}
+                 or {i["option"]: i["prs"][0] for i in TYPES.values() if i.get("filter") == PLUMB and i.get("prs")})
+PLUMB_OPTIONS = set(FILTER_SOURCE) | {"-" + x.split("=")[0] for x in SETTINGS_PLUMB}
 SETTINGS_GREP = 'grep -E "Bitcoin (Knots|Core) version|Using data directory|Plumb filter|arg: (\\[[a-z0-9]+\\] )?(corepolicy|reject|datacarrier|acceptnonstd|permitbare|maxscriptsize)"'
 SETTINGS_CHECK = SETTINGS_GREP + " ~/.bitcoin/debug.log"
 UMBREL_LOG = "~/umbrel/app-data/bitcoin-knots/data/bitcoin/debug.log"
@@ -1139,12 +1207,7 @@ def guide_page(idx, tip):
 def plumb_page(idx, tip):
     allb = window_blocks(idx, None)
     tot = totals(allb)
-    filters = []
-    try:
-        with open(FILTERS) as f:
-            filters = json.load(f)
-    except OSError:
-        pass
+    filters = PLUMB_FILTERS
     frows = "".join(f'<tr><td><code>{esc(x["option"])}</code></td><td class="wrapc">{esc(x["summary"])}</td><td><a href="{esc(x["url"])}">{esc(x["source"])}</a></td></tr>' for x in filters)
     body = f'''<div class="hero"><div class="kicker">The fix</div><h1>Plumb keeps it out of the block</h1>
 <p class="lede">Plumb is Bitcoin Knots plus every spam filter that has been reviewed and tested, on by default, in every release. It changes what a node relays and puts in its block templates. It does not change consensus.</p></div>
@@ -1168,6 +1231,7 @@ def about_page(tip):
 <div class="prose">
 <h2>Verdicts come from the shipped code</h2>
 <p>Each transaction, with the coins it spends, goes through the policy checks of Plumb {PLUMB_VERSION}: <code>IsStandardTx</code>, <code>AreInputsStandard</code>, the data-carrier count and <code>IsWitnessStandard</code>, once with each software's default policy: stock Knots 29.4.2 (Plumb's filters off) and Plumb. Bitcoin Core is not compared: it has no BLAKE2b proof of work, so no Core node follows this chain. Nothing here reimplements a filter, so this page and a Plumb node cannot disagree about a transaction.</p>
+<p>Each refusal on a block or transaction page names the rule it comes from and the option behind it. Plumb's count is also taken with each of its four data-counting filters turned off alone, so the bytes a filter is responsible for come from the code too (the fifth, <code>-rejecttokenmessages</code>, names itself in its reason), and a refusal that rests on Knots' own rules says so.</p>
 <p>Not modeled: fee floors, mempool limits, replacement rules and address reuse. Those depend on the mempool at the time, not on what the transaction carries.</p>
 <h2>Grades</h2>
 <ul><li>{stamp("pristine", True)} every transaction is a payment. Not one byte of data.</li>
