@@ -141,7 +141,7 @@ def summarize(rec):
         "sm": rec["sewage"]["missed"], "gn": rec["gray"]["n"], "gw": rec["gray"]["w"],
         "ps": plumb_stops, "psw": plumb_stops_w, "ksw": knots_stops_w,
         "share": share, "grade": grade(rec["sewage"]["n"], rec["gray"]["n"], share),
-        "ty": ty, "top": top,
+        "ty": ty, "top": top, "bld": rec.get("bld", ""), "dtag": rec.get("dtag", ""), "via": rec.get("via", False),
     }
 
 
@@ -180,7 +180,8 @@ def load_index():
 def pool_stats(blocks):
     by = {}
     for b in blocks:
-        p = by.setdefault(b["pool"], {"pool": b["pool"], "blocks": 0, "dirty": 0, "pristine": 0, "w": 0, "sw": 0,
+        k = who(b)
+        p = by.setdefault(k, {"pool": k, "blocks": 0, "dirty": 0, "pristine": 0, "w": 0, "sw": 0,
                                        "sn": 0, "sf": 0, "sd": 0, "sm": 0, "fees": 0, "psw": 0, "worst": None,
                                        "ty": collections.Counter()})
         p["blocks"] += 1
@@ -264,6 +265,43 @@ def named_cell(b):
     return "" if v is None else ("payout address" if v else "coinbase text only")
 
 
+def who(b):
+    """The name a block's contents are charged to: its pool, or the DATUM miners building templates through it."""
+    return miner.who(b["pool"], b.get("via"))
+
+
+def short_who(b):
+    return f'DATUM miner via {b["pool"]}' if who(b) != b["pool"] else b["pool"]
+
+
+def by_html(b):
+    """'mined by X', or 'built by a DATUM miner via X' when a DATUM gateway with the pool upstream built the template."""
+    if who(b) != b["pool"]:
+        return f'built by <a href="/pool/{miner.slug(who(b))}/">a DATUM miner</a> via {pool_link(b["pool"])}'
+    return f'mined by {pool_link(b["pool"])}'
+
+
+def by_text(b):
+    return f'built by a DATUM miner via {b["pool"]}' if who(b) != b["pool"] else f'mined by {b["pool"]}'
+
+
+def dtm_line(rec):
+    """For a block a DATUM gateway built: who chose its contents, and where the site counts it."""
+    if who(rec) == rec["pool"]:
+        return ""
+    tag = rec.get("dtag") or ""
+    tagged = f', which tags its blocks "{esc(tag)}"' if tag else ", which set no tag of its own"
+    return (f'<p class="small muted" style="margin-top:10px;max-width:70ch">A DATUM gateway with {pool_link(rec["pool"])} upstream built this template{tagged}. '
+            f'With DATUM the gateway&#39;s node chooses the transactions, normally the miner&#39;s own; the pool sets who the coinbase pays and its first tag, not what goes in the block. '
+            f'This block counts toward <a href="/pool/{miner.slug(who(rec))}/">{esc(who(rec))}</a>, not {esc(rec["pool"])}.</p>')
+
+
+DATUM_NOTE = ("A block whose template came from a DATUM gateway with the pool upstream is listed under DATUM miners via that pool, "
+              "apart from the pool's own blocks, because the gateway's node chose what went in, normally the miner's own. "
+              "A block whose name is not a pool's, such as a miner known by payout address or tag, keeps that name. "
+              "A pool that serves a stratum port through its own gateway looks the same from the chain.")
+
+
 def type_stats(idx):
     st = {}
     for h in sorted(idx):
@@ -334,7 +372,7 @@ def cube(b, w=128):
 def cube_link(b):
     label, cls = GRADE[b["grade"]]
     return (f'<a class="cube" href="/block/{b["h"]}/">{cube(b)}<div class="h">{b["h"]}</div>'
-            f'<div class="p">{esc(b["pool"])}</div><div class="g {cls}">{label}'
+            f'<div class="p">{esc(short_who(b))}</div><div class="g {cls}">{label}'
             f'{" " + pct(b["share"]) if b["sn"] else ""}</div></a>')
 
 
@@ -390,7 +428,7 @@ def page(path, title, body, *, nav="", desc="", og=None, tip=None):
 '''
 
 
-ASSET_V = "4"
+ASSET_V = "5"
 
 
 def write(out, rel, text):
@@ -473,7 +511,7 @@ def filter_line(t):
     return ""
 
 
-def dissection(s, pool, rate_ctx):
+def dissection(s, paid_to, rate_ctx):
     t = s["types"][0] if s["types"] else "unknown"
     i = info(t)
     cls = "dis" + (" gray" if s["tier"] == "gray" else "") + (" missed" if s["missed"] else "")
@@ -497,7 +535,7 @@ def dissection(s, pool, rate_ctx):
 <div class="anat"><div><h4>Inputs ({n(len(s["ins"]))})</h4><div class="io">{io_html(s["ins"], "in", missed=s["missed"])}</div></div>
 <div><h4>Outputs ({n(len(s["outs"]))})</h4><div class="io">{io_html(s["outs"], "out")}</div></div></div>
 <div class="small muted">{"Counted as data" if i.get("staged") else "Payload"}: <b class="num" style="color:var(--text)">{n(shown)} bytes</b> of a {n(s.get("size", vbytes))}-byte transaction ({n(vbytes)} vB).
-Fee <span class="num">{n(s["fee"])}</span> sat ({feerate:.1f} sat/vB), paid to {esc(pool)}.</div>
+Fee <span class="num">{n(s["fee"])}</span> sat ({feerate:.1f} sat/vB), paid {paid_to}.</div>
 <div class="fill" title="Share of the transaction that is {"counted as data" if i.get("staged") else "payload"}"><span style="width:{share * 100:.1f}%;background:var(--sewage)"></span><span style="flex:1"></span></div>
 {verdict_html(s["v"], s["missed"])}
 {f'<p class="small" style="margin:10px 0 0">{filter_line(t)}</p>' if filter_line(t) and not s["missed"] else ""}
@@ -526,10 +564,12 @@ def block_page(rec, s, prev_h, next_h, tip):
     mapdata = {"h": rec["h"], "pn": PLUMB_NAME, "map": rec["map"], "spam": [{"id": x["txid"][:16], "n": info(x["types"][0])["name"] if x["types"] else "Data",
                                              "d": x["data"], "m": 1 if x["missed"] else 0} for x in rec["spam"]]}
     pool = rec["pool"]
+    dtm = who(rec) != pool
     total_fees = rec["fees"]
     if s["sn"]:
+        paid = "paid" if dtm else f"paid {esc(pool)}"
         verdict = (f'{n(s["sn"])} sewage transaction{"s" if s["sn"] != 1 else ""} took <b>{pct(s["share"])}</b> of this block '
-                   f'and paid {esc(pool)} <b>{btc(s["sf"])} BTC</b>, {pct(s["sf"] / total_fees if total_fees else 0)} of its fees.')
+                   f'and {paid} <b>{btc(s["sf"])} BTC</b>, {pct(s["sf"] / total_fees if total_fees else 0)} of its fees.')
         if s["sm"]:
             verdict += (" One of them gets" if s["sm"] == 1 else f' {n(s["sm"])} of them get') + f" past {PLUMB_NAME}'s filters."
         caught = s["ps"]
@@ -552,12 +592,12 @@ def block_page(rec, s, prev_h, next_h, tip):
                      + ' <a href="/past-defaults/">Every block like this</a>.</p>')
     nav = (f'<div class="navpn">{f"<a href=/block/{prev_h}/>&larr; {prev_h}</a>" if prev_h else ""}'
            f'{f"<a href=/block/{next_h}/>{next_h} &rarr;</a>" if next_h else ""}</div>')
-    share_text = f"Block {rec['h']}, mined by {pool}: {label.lower()}" + (f", {pct(s['share'])} of the block is spam." if s["sn"] else ".")
+    share_text = f"Block {rec['h']}, {by_text(rec)}: {label.lower()}" + (f", {pct(s['share'])} of the block is spam." if s["sn"] else ".")
     body = f'''<div class="bhead"><div class="t"><div class="kicker">Block {n(rec["h"])} · sample report</div>
 <h1>Block {rec["h"]}</h1>
-<div class="meta"><span>Mined by <b>{pool_link(pool)}</b></span><span>{tm(rec["t"])}</span><span><b class="num">{n(rec["ntx"])}</b> transactions</span>
+<div class="meta"><span>{by_html(rec)[0].upper() + by_html(rec)[1:]}</span><span>{tm(rec["t"])}</span><span><b class="num">{n(rec["ntx"])}</b> transactions</span>
 <span><b class="num">{rec["w"] / 4e6 * 100:.0f}%</b> full</span><span>Fees <b class="num">{btc(total_fees)}</b> BTC</span></div>
-<p style="margin-top:14px;max-width:70ch">{verdict}</p>{past_line}
+<p style="margin-top:14px;max-width:70ch">{verdict}</p>{past_line}{dtm_line(rec)}
 <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">{nav}<button class="copy" data-copy="{esc(share_text)} {SITE}/block/{rec["h"]}/">Copy share link</button></div></div>
 <div class="stampbox">{stamp(s["grade"])}</div></div>
 <div class="mapbox"><canvas id="map" aria-label="Map of every transaction in the block, sized by virtual size"></canvas><div class="tip"></div></div>
@@ -567,14 +607,14 @@ def block_page(rec, s, prev_h, next_h, tip):
 '''
     if sew:
         body += f'<h2>Dissection</h2><p class="muted">Every sewage transaction in the block, what it hides and where, and what each node policy does with it.</p>'
-        body += "".join(dissection(x, pool, None) for x in sew[:200])
+        body += "".join(dissection(x, "into this block&#39;s coinbase" if dtm else f"to {esc(pool)}", None) for x in sew[:200])
         if len(sew) > 200:
             body += f'<p class="muted">{n(len(sew) - 200)} more sewage transactions not shown.</p>'
         if s["ps"]:
             body += plumb_cta(f"A Plumb node refuses {n(s['ps'])} of these {n(s['sn'])}.")
     body += gray_table(gray)
     og = f"/og/block/{rec['h']}.png" if s["sn"] else None
-    desc = f"Mined by {pool}. " + (f"{pct(s['share'])} of the block is spam: {n(s['sn'])} transactions." if s["sn"] else f"{label}: no sewage.")
+    desc = f"{by_text(rec)[0].upper() + by_text(rec)[1:]}. " + (f"{pct(s['share'])} of the block is spam: {n(s['sn'])} transactions." if s["sn"] else f"{label}: no sewage.")
     return page(f"/block/{rec['h']}/", f"Block {rec['h']}: {label}", body, nav="blocks", desc=desc, og=og, tip=tip)
 
 
@@ -738,7 +778,7 @@ def shame_pane(idx, key, label, seconds, min_blocks):
     table = f'''<div class="tw"><table><tr><th>#</th><th>Pool</th><th>Grade</th><th>Sewage share of block space</th><th class="r">Sewage txs</th>
 <th class="r">Dirty blocks</th><th class="r">Payload</th><th class="r">Spam fees BTC</th><th class="r">Of fee income</th><th>Worst block</th></tr>{"".join(rows)}</table></div>'''
     worst_blocks = sorted([b for b in blocks if b["sn"]], key=lambda b: -b["sd"])[:10]
-    wb = "".join(f'<tr><td><a href="/block/{b["h"]}/">{b["h"]}</a></td><td>{pool_link(b["pool"])}</td><td>{stamp(b["grade"], True)}</td>'
+    wb = "".join(f'<tr><td><a href="/block/{b["h"]}/">{b["h"]}</a></td><td>{pool_link(who(b))}</td><td>{stamp(b["grade"], True)}</td>'
                  f'<td class="r num">{pct(b["share"])}</td><td class="r num">{n(b["sn"])}</td><td class="r num">{size(b["sd"])}</td>'
                  f'<td>{esc(info(b["top"][1])["name"]) if b["top"] else ""}</td></tr>' for b in worst_blocks)
     hon = "".join(f'<tr><td>{pool_link(p["pool"])}</td><td class="r num">{n(p["blocks"])}</td><td class="r num">{n(p["pristine"])}</td></tr>' for p in honor)
@@ -768,7 +808,7 @@ def shame_page(idx, tip):
 <p class="small muted" style="margin-top:8px">Blocks holding transactions that Knots and Plumb refuse at their defaults are listed on <a href="/past-defaults/">Past the defaults</a>.</p></div>
 <div class="tabs" data-group="shame">{tabs}</div>{panes}
 <p class="small muted" style="margin-top:22px">Grades: A under 0.05% of block space is sewage, B under 0.25%, C under 1%, D under 4%, F above that.
-On DATUM pools such as CONVOY, each miner builds the block template on their own node. There the pool name says where a block came from; the template's owner chose its contents.</p>
+{DATUM_NOTE}</p>
 {plumb_cta("Every pool on this page can leave it with one binary swap.")}'''
     return page("/shame/", "Hall of Shame", body, nav="shame", desc="Pools ranked by how much of their block space went to spam.", og="/og/shame.png", tip=tip)
 
@@ -778,9 +818,9 @@ def past_page(idx, tip):
     pb = [b for b in blocks if past(b)]
     by = {}
     for b in blocks:
-        by.setdefault(b["pool"], {"pool": b["pool"], "blocks": 0, "past": 0, "text": 0, "txs": 0, "last": None})["blocks"] += 1
+        by.setdefault(who(b), {"pool": who(b), "blocks": 0, "past": 0, "text": 0, "txs": 0, "last": None})["blocks"] += 1
     for b in pb:
-        p = by[b["pool"]]
+        p = by[who(b)]
         p["past"] += 1
         p["text"] += named_by_payout(b["h"], b["pool"]) is False
         p["txs"] += past(b)
@@ -790,7 +830,7 @@ def past_page(idx, tip):
     prows = "".join(f'<tr><td>{pool_link(p["pool"])}</td><td class="r num">{n(p["past"])}</td><td class="r num">{n(p["blocks"])}</td>'
                     f'<td class="r num">{pct(p["past"] / p["blocks"])}</td><td class="r num">{n(p["text"])}</td><td class="r num">{n(p["txs"])}</td>'
                     f'<td><a href="/block/{p["last"]["h"]}/">{p["last"]["h"]}</a> <span class="faint">{tm(p["last"]["t"], False)}</span></td></tr>' for p in pools)
-    brows = "".join(f'<tr><td><a href="/block/{b["h"]}/">{b["h"]}</a></td><td>{tm(b["t"], False)}</td><td>{pool_link(b["pool"])}</td>'
+    brows = "".join(f'<tr><td><a href="/block/{b["h"]}/">{b["h"]}</a></td><td>{tm(b["t"], False)}</td><td>{pool_link(who(b))}</td>'
                     f'<td>{named_cell(b)}</td><td class="r num">{n(past(b))}</td><td>{past_kinds(b)}</td></tr>' for b in reversed(pb))
     body = f'''<div class="hero"><div class="kicker">Past the defaults</div><h1>Blocks built past the default filters</h1>
 <p class="lede">Knots refuses every transaction counted here at its default settings, and Plumb refuses them too. A node at those defaults does not accept them from peers or put them in a block unless its operator overrides the refusal. Each block below holds at least one: it was built on a node without those rules, on one with them turned off or overridden, or by pool software that added transactions the node's mempool did not hold. Refusing is policy, not a consensus rule, so these blocks are valid.</p>
@@ -802,7 +842,7 @@ def past_page(idx, tip):
 <div class="tw"><table><tr><th>Pool</th><th class="r">Blocks past the defaults</th><th class="r">Of its blocks</th><th class="r">Share</th><th class="r">Named by coinbase text only</th><th class="r">Refused txs</th><th>Last one</th></tr>{prows or '<tr><td colspan="7" class="muted">None.</td></tr>'}</table></div>
 <h3 style="margin-top:22px">Every block, newest first</h3>
 <div class="tw"><table><tr><th>Block</th><th>Time</th><th>Pool</th><th>Named by</th><th class="r">Refused txs</th><th>Kinds</th></tr>{brows or '<tr><td colspan="6" class="muted">None.</td></tr>'}</table></div>
-<p class="small muted" style="margin-top:22px">On DATUM pools such as CONVOY, each miner builds the block template on their own node. There the pool name says where a block came from; the template's owner chose its contents.</p>
+<p class="small muted" style="margin-top:22px">{DATUM_NOTE}</p>
 {plumb_cta("A Plumb node refuses every transaction on this page.")}'''
     return page("/past-defaults/", "Past the defaults", body, nav="past",
                 desc=f"{n(len(pb))} blocks since the fork hold transactions that Knots and Plumb refuse at their defaults.", tip=tip)
@@ -837,9 +877,19 @@ def daily_chart(blocks):
 
 
 def pool_page(idx, name, tip):
-    allb = [b for b in window_blocks(idx, None) if b["pool"] == name]
+    everything = window_blocks(idx, None)
+    allb = [b for b in everything if who(b) == name]
+    dtm = name.startswith(miner.DATUM_PREFIX)
+    base = name[len(miner.DATUM_PREFIX):] if dtm else name
+    via = [] if dtm else [b for b in everything if b["pool"] == name and who(b) != name]
+    via_link = f'<a href="/pool/{miner.slug(miner.DATUM_PREFIX + name)}/">{esc(miner.DATUM_PREFIX + name)}</a>'
     if not allb:
-        return None
+        if not via:
+            return None
+        body = f'''<div class="hero"><div class="kicker">Inspection report</div><h1>{esc(name)}</h1>
+<p class="lede">{plural(len(via), "block")} mined through {esc(name)} since the fork, and a DATUM gateway with {esc(name)} upstream built {"its" if len(via) == 1 else "every"} template.
+The gateway&#39;s node chooses the transactions, normally the miner&#39;s own, so {"that block is" if len(via) == 1 else "those blocks are"} counted under {via_link}.</p></div>'''
+        return page(f"/pool/{miner.slug(name)}/", name, body, nav="shame", desc=f"Every block mined through {name} was built by a DATUM miner.", tip=tip), None, None
     p30 = pool_stats(window_blocks(idx, 30 * 86400)).get(name)
     pall = pool_stats(allb)[name]
     cur = p30 or pall
@@ -847,7 +897,7 @@ def pool_page(idx, name, tip):
     pb = sorted([b for b in allb if past(b)], key=lambda b: -b["h"])
     tiles = f'''<div class="tiles"><div class="tile"><div class="v g-raw">{pct(cur["share"], 2)}</div><div class="l">of its block space is sewage</div><div class="s">{"last 30 days" if p30 else "since the fork"}</div></div>
 <div class="tile"><div class="v">{n(cur["sn"])}</div><div class="l">sewage transactions mined</div><div class="s">in {n(cur["dirty"])} of {n(cur["blocks"])} blocks</div></div>
-<div class="tile"><div class="v">{btc(cur["sf"])}</div><div class="l">BTC in fees taken for them</div><div class="s">{pct(cur["fee_share"])} of its fee income</div></div>
+<div class="tile"><div class="v">{btc(cur["sf"])}</div><div class="l">BTC in fees {"paid" if dtm else "taken"} for them</div><div class="s">{pct(cur["fee_share"])} of {"the fees in these blocks" if dtm else "its fee income"}</div></div>
 <div class="tile"><div class="v">{n(cur["pristine"])}</div><div class="l">pristine blocks</div><div class="s">not one byte of data</div></div>
 <div class="tile"><div class="v">{n(len(pb))} <span class="muted" style="font-size:1rem">/ {n(len(allb))}</span></div><div class="l">blocks past the defaults</div><div class="s">since the fork, <a href="/past-defaults/">what this means</a></div></div></div>'''
     worst = sorted([b for b in allb if b["sn"]], key=lambda b: -b["sw"])[:15]
@@ -861,15 +911,15 @@ def pool_page(idx, name, tip):
     if pb:
         prows = "".join(f'<tr><td><a href="/block/{b["h"]}/">{b["h"]}</a></td><td>{tm(b["t"], False)}</td><td class="r num">{n(past(b))}</td>'
                         f'<td>{named_cell(b)}</td><td>{past_kinds(b)}</td></tr>' for b in pb)
-        tonly = sum(1 for b in pb if named_by_payout(b["h"], name) is False)
+        tonly = sum(1 for b in pb if named_by_payout(b["h"], b["pool"]) is False)
         if not tonly:
             basis = ""
         elif len(pb) == 1:
-            basis = f" That block is named {esc(name)} by its coinbase text alone, which anyone can write."
+            basis = f" That block is named {esc(base)} by its coinbase text alone, which anyone can write."
         elif tonly == len(pb):
-            basis = f" {'Both' if tonly == 2 else 'All of them'} are named {esc(name)} by their coinbase text alone, which anyone can write."
+            basis = f" {'Both' if tonly == 2 else 'All of them'} are named {esc(base)} by their coinbase text alone, which anyone can write."
         else:
-            basis = (f" {n(tonly)} of them {'is' if tonly == 1 else 'are'} named {esc(name)} by coinbase text alone, which anyone can write; "
+            basis = (f" {n(tonly)} of them {'is' if tonly == 1 else 'are'} named {esc(base)} by coinbase text alone, which anyone can write; "
                      f"the rest pay an address on file for it.")
         holds = ("holds a transaction" if past(pb[0]) == 1 else "holds transactions") if len(pb) == 1 else "hold transactions"
         past_part = (f'<h3 style="margin-top:22px">Past the defaults</h3><p class="small muted" style="margin-bottom:8px">{of_its} since the fork '
@@ -881,15 +931,31 @@ def pool_page(idx, name, tip):
         past_part = (f'<p class="small muted" style="margin-top:22px">{none} a transaction that Knots and Plumb '
                      f'refuse at their default settings. <a href="/past-defaults/">What this means</a>.</p>')
     plumb_part = pct(cur["psw"] / cur["sw"]) if cur["sw"] else "0%"
-    if cur["sn"]:
+    if dtm:
+        tags = collections.Counter(b.get("dtag") or "" for b in allb)
+        tl = ", ".join(f'{esc(t) if t else "no tag"} ({n(c)})' for t, c in tags.most_common(12))
+        intro = (f'<p style="margin-top:12px;max-width:70ch">These are the blocks mined through {pool_link(base)} whose templates a DATUM gateway with the pool upstream built. '
+                 f'The gateway&#39;s node chooses the transactions, normally the miner&#39;s own; the pool sets who the coinbase pays and its first tag, not what goes in the block. '
+                 f'A pool serving a stratum port through its own gateway looks the same from the chain.</p>'
+                 f'<p class="small muted" style="margin-top:6px">Tags the gateways wrote, with block counts: {tl}{"; more not shown" if len(tags) > 12 else ""}.</p>')
+    elif via:
+        intro = (f'<p class="small muted" style="margin-top:12px;max-width:70ch">{plural(len(via), "more block")} mined through {esc(name)} '
+                 f'{"was" if len(via) == 1 else "were"} built by DATUM gateways with {esc(name)} upstream, so {"it is" if len(via) == 1 else "they are"} counted under {via_link}.</p>')
+    else:
+        intro = ""
+    if cur["sn"] and dtm:
+        operator = f'''<div class="panel" style="margin-top:22px"><h3>To the DATUM miners on {esc(base)}</h3>
+<p>Your nodes built these templates. They carried {n(cur["sn"])} sewage transactions {"in the last 30 days" if p30 else "since the fork"}, which paid {btc(cur["sf"])} BTC in fees, {pct(cur["fee_share"])} of the fees in these blocks, to store {size(cur["sd"])} of other people's files and token bookkeeping on every node that will ever run.</p>
+<p>A Plumb node behind your gateway would have refused {plumb_part} of that block space.{" The rest gets past Plumb's filters." if cur["psw"] < cur["sw"] else ""}</p></div>'''
+    elif cur["sn"]:
         operator = f'''<div class="panel" style="margin-top:22px"><h3>To the operator of {esc(name)}</h3>
 <p>Your blocks carried {n(cur["sn"])} sewage transactions {"in the last 30 days" if p30 else "since the fork"}. They paid you {btc(cur["sf"])} BTC, {pct(cur["fee_share"])} of your fee income, to store {size(cur["sd"])} of other people's files and token bookkeeping on every node that will ever run.</p>
 <p>A Plumb node building your templates would have refused {plumb_part} of that block space.{" The rest gets past Plumb's filters." if cur["psw"] < cur["sw"] else ""}</p></div>'''
     else:
-        operator = f'''<div class="panel" style="margin-top:22px"><h3>Clean record</h3><p>{esc(name)} has not mined a single sewage transaction {"in the last 30 days" if p30 else "since the fork"}. That is what this page is for.</p></div>'''
+        operator = f'''<div class="panel" style="margin-top:22px"><h3>Clean record</h3><p>{f"No block a DATUM miner built through {esc(base)} carried" if dtm else f"{esc(name)} has not mined"} a single sewage transaction {"in the last 30 days" if p30 else "since the fork"}. That is what this page is for.</p></div>'''
     body = f'''<div class="bhead"><div class="t"><div class="kicker">Inspection report</div><h1>{esc(name)}</h1>
 <div class="meta"><span><b class="num">{n(pall["blocks"])}</b> blocks since the fork</span><span>last block <a href="/block/{recent[0]["h"]}/">{recent[0]["h"]}</a> {tm(recent[0]["t"])}</span></div>
-<p style="margin-top:12px"><button class="copy" data-copy="{esc(name)}: grade {L} at cesspool.lol. {pct(cur["share"], 2)} of its block space is spam. {SITE}/pool/{miner.slug(name)}/">Copy share link</button></p></div>
+{intro}<p style="margin-top:12px"><button class="copy" data-copy="{esc(name)}: grade {L} at cesspool.lol. {pct(cur["share"], 2)} of its block space is spam. {SITE}/pool/{miner.slug(name)}/">Copy share link</button></p></div>
 <div class="stampbox" style="text-align:center"><span class="letter gr-{L}">{L}</span><div class="small muted" style="margin-top:10px">{LETTER_TEXT[L]}</div></div></div>
 {tiles}
 <h2>Since the fork</h2>{daily_chart(allb)}
@@ -984,7 +1050,7 @@ def about_page(tip):
 <h2>What we never show</h2>
 <p>The payload. No images, no text, no file names. A spam transaction gets its type, its size and where the bytes sit. Displaying the contents is the service the spammer paid for.</p>
 <h2>Who mined it</h2>
-<p>Pools are named from the coinbase tag and payout addresses against Kilombino's pools-v2 list, with the same rules as <a href="https://reorg.watch">reorg.watch</a>. On DATUM pools each miner builds the template on their own node; the pool name says where the block came from.</p>
+<p>Pools are named from the coinbase tag and payout addresses against Kilombino's pools-v2 list, with the same rules as <a href="https://reorg.watch">reorg.watch</a>. {esc(DATUM_NOTE)}</p>
 <h2>Data</h2><p>One Plumb node's REST interface, checked every minute. Blocks replaced in a reorg are reprocessed.
 The foul and raw-sewage blocks are also an <a href="/feed.xml">Atom feed</a>.</p>
 </div>'''
@@ -993,7 +1059,7 @@ The foul and raw-sewage blocks are also an <a href="/feed.xml">Atom feed</a>.</p
 
 def blocks_page(idx, tip):
     hs = sorted(idx, reverse=True)[:288]
-    rows = "".join(f'<tr><td><a href="/block/{h}/">{h}</a></td><td>{tm(idx[h]["t"])}</td><td>{pool_link(idx[h]["pool"])}</td>'
+    rows = "".join(f'<tr><td><a href="/block/{h}/">{h}</a></td><td>{tm(idx[h]["t"])}</td><td>{pool_link(who(idx[h]))}</td>'
                    f'<td>{stamp(idx[h]["grade"], True)}</td><td class="r num">{pct(idx[h]["share"]) if idx[h]["sn"] else ""}</td>'
                    f'<td class="r num">{n(idx[h]["sn"]) if idx[h]["sn"] else ""}</td><td class="r num">{n(idx[h]["gn"])}</td><td class="r num">{n(idx[h]["ntx"])}</td></tr>' for h in hs)
     body = f'''<div class="hero"><div class="kicker">Blocks</div><h1>The last two days of samples</h1>
@@ -1019,7 +1085,7 @@ def index_page(idx, tip):
     if wk:
         b = wk[0]
         dump = f'''<div class="panel" style="display:flex;gap:20px;align-items:center;flex-wrap:wrap"><a class="cube" href="/block/{b["h"]}/">{cube(b)}</a>
-<div style="flex:1;min-width:240px"><div class="kicker">Biggest dump this week</div><h3 style="font-size:1.5rem">Block {b["h"]}, mined by {pool_link(b["pool"])}</h3>
+<div style="flex:1;min-width:240px"><div class="kicker">Biggest dump this week</div><h3 style="font-size:1.5rem">Block {b["h"]}, {by_html(b)}</h3>
 <p>{pct(b["share"])} of the block is sewage: {n(b["sn"])} transactions, {size(b["sd"])} of payload{", mostly " + esc(info(b["top"][1])["name"].lower()) if b["top"] else ""}.</p>
 <p><a class="btn ghost" href="/block/{b["h"]}/">Dissect it</a></p></div>{stamp(b["grade"])}</div>'''
     honor = ", ".join(pool_link(p["pool"]) for p in honor7[:8])
@@ -1031,7 +1097,7 @@ def index_page(idx, tip):
 <h1>Clean blocks carry payments. The rest is sewage.</h1>
 <p class="lede">Every block since the fork, every transaction, tested with the policy code a Plumb node runs. See what got mined, who mined it, and which filter would have kept it out.</p></div>
 <a class="sample" href="/block/{tb["h"]}/"><div class="kicker">Latest sample</div><div class="bigcube">{cube(tb)}</div>
-<div class="sh">Block {tb["h"]}</div><div class="muted small">{esc(tb["pool"])} · {tm(tb["t"])}</div>
+<div class="sh">Block {tb["h"]}</div><div class="muted small">{esc(short_who(tb))} · {tm(tb["t"])}</div>
 <div style="margin:12px 0 6px">{stamp(tb["grade"])}</div><div class="small muted">{tline}</div></a></div>
 <div class="strip">{"".join(cube_link(b) for b in latest[1:])}</div>
 <h2 style="margin-top:12px">Last 24 hours</h2>
@@ -1057,9 +1123,9 @@ def feed(idx):
     bad = [idx[h] for h in sorted(idx, reverse=True) if idx[h]["grade"] in ("foul", "raw")][:50]
     def iso(t):
         return datetime.datetime.fromtimestamp(t, datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
-    entries = "".join(f'''<entry><title>Block {b["h"]}, {esc(b["pool"])}: {GRADE[b["grade"]][0].lower()}, {pct(b["share"])} spam</title>
+    entries = "".join(f'''<entry><title>Block {b["h"]}, {esc(short_who(b))}: {GRADE[b["grade"]][0].lower()}, {pct(b["share"])} spam</title>
 <link href="{SITE}/block/{b["h"]}/"/><id>{SITE}/block/{b["h"]}/</id><updated>{iso(b["t"])}</updated>
-<summary>{plural(b["sn"], "spam transaction")}, {size(b["sd"])} of payload, {btc(b["sf"])} BTC in fees to {esc(b["pool"])}.</summary></entry>''' for b in bad)
+<summary>{plural(b["sn"], "spam transaction")}, {size(b["sd"])} of payload, {btc(b["sf"])} BTC in fees{", mined through " if who(b) != b["pool"] else " to "}{esc(b["pool"])}.</summary></entry>''' for b in bad)
     upd = iso(bad[0]["t"]) if bad else iso(time.time())
     return (f'''<?xml version="1.0" encoding="utf-8"?>
 <feed xmlns="http://www.w3.org/2005/Atom"><title>cesspool.lol: foul and raw-sewage blocks</title>
@@ -1082,7 +1148,7 @@ def og_svg(kind, **k):
         cube_svg = cube(b).replace('<svg viewBox="0 0 128 132" role="img">', '<svg x="820" y="150" width="300" height="310" viewBox="0 0 128 132">')
         cube_svg = cube_svg.replace("var(--panel2)", "#172a30").replace("var(--panel)", "#122126").replace("var(--line)", "#233a41").replace("var(--faint)", "#5d757b")
         return (head + f'<text x="70" y="210" font-family="IBM Plex Sans" font-weight="650" font-size="84" fill="{fg}">Block {b["h"]}</text>'
-                f'<text x="70" y="268" font-family="IBM Plex Sans" font-size="36" fill="{mut}">mined by {esc(b["pool"][:28])}</text>'
+                f'<text x="70" y="268" font-family="IBM Plex Sans" font-size="{36 if len(by_text(b)) <= 40 else 28}" fill="{mut}">{esc(by_text(b)[:52])}</text>'
                 f'<g transform="rotate(-3 300 380)"><rect x="70" y="330" width="{60 + 34 * len(label)}" height="86" fill="none" stroke="{color}" stroke-width="6"/>'
                 f'<text x="100" y="391" font-family="IBM Plex Mono" font-weight="700" font-size="48" letter-spacing="6" fill="{color}">{label.upper()}</text></g>'
                 f'<text x="70" y="500" font-family="IBM Plex Sans" font-size="38" fill="{fg}">{pct(b["share"])} of the block is spam: {n(b["sn"])} transaction{"s" if b["sn"] != 1 else ""}</text>'
@@ -1091,11 +1157,17 @@ def og_svg(kind, **k):
     if kind == "pool":
         p, L = k["p"], k["L"]
         color = {"A": "#8fe6ff", "B": "#3aa8d8", "C": "#b5a165", "D": "#c19243", "F": "#e0533b"}[L]
-        return (head + f'<text x="70" y="230" font-family="IBM Plex Sans" font-weight="650" font-size="78" fill="{fg}">{esc(p["pool"][:22])}</text>'
-                f'<text x="70" y="290" font-family="IBM Plex Sans" font-size="34" fill="{mut}">Spam inspection report, last 30 days</text>'
+        if p["pool"].startswith(miner.DATUM_PREFIX):
+            base = p["pool"][len(miner.DATUM_PREFIX):]
+            name = (f'<text x="70" y="180" font-family="IBM Plex Sans" font-weight="650" font-size="46" fill="{mut}">DATUM miners via</text>'
+                    f'<text x="70" y="246" font-family="IBM Plex Sans" font-weight="650" font-size="{62 if len(base) <= 15 else 44}" fill="{fg}">{esc(base[:24])}</text>')
+        else:
+            name = f'<text x="70" y="230" font-family="IBM Plex Sans" font-weight="650" font-size="78" fill="{fg}">{esc(p["pool"][:22])}</text>'
+        return (head + name +
+                f'<text x="70" y="296" font-family="IBM Plex Sans" font-size="34" fill="{mut}">Spam inspection report, last 30 days</text>'
                 f'<text x="70" y="400" font-family="IBM Plex Mono" font-weight="600" font-size="64" fill="{fg}">{pct(p["share"], 2)}</text>'
                 f'<text x="70" y="450" font-family="IBM Plex Sans" font-size="32" fill="{mut}">of its block space is spam</text>'
-                f'<text x="70" y="540" font-family="IBM Plex Sans" font-size="32" fill="{fg}">{n(p["sn"])} spam transactions, {btc(p["sf"])} BTC in fees taken</text>'
+                f'<text x="70" y="540" font-family="IBM Plex Sans" font-size="32" fill="{fg}">{n(p["sn"])} spam transactions, {btc(p["sf"])} BTC in fees {"paid" if p["pool"].startswith(miner.DATUM_PREFIX) else "taken"}</text>'
                 f'<g transform="rotate(-4 960 320)"><rect x="840" y="200" width="240" height="240" rx="18" fill="none" stroke="{color}" stroke-width="12"/>'
                 f'<text x="960" y="385" text-anchor="middle" font-family="IBM Plex Mono" font-weight="700" font-size="190" fill="{color}">{L}</text></g></svg>')
     if kind == "site":
@@ -1113,7 +1185,7 @@ def og_svg(kind, **k):
         for i, p in enumerate(k["ranked"][:5]):
             y = 250 + i * 70
             rows += (f'<text x="70" y="{y}" font-family="IBM Plex Mono" font-size="34" fill="{mut}">{i + 1}</text>'
-                     f'<text x="130" y="{y}" font-family="IBM Plex Sans" font-weight="600" font-size="40" fill="{fg}">{esc(p["pool"][:26])}</text>'
+                     f'<text x="130" y="{y}" font-family="IBM Plex Sans" font-weight="600" font-size="40" fill="{fg}">{esc(p["pool"][:34])}</text>'
                      f'<text x="1130" y="{y}" text-anchor="end" font-family="IBM Plex Mono" font-weight="600" font-size="40" fill="#b98a3c">{pct(p["share"], 2)}</text>')
         return (head + f'<text x="70" y="175" font-family="IBM Plex Sans" font-weight="650" font-size="56" fill="{fg}">Hall of Shame, last 7 days</text>' + rows + "</svg>")
     raise ValueError(kind)
@@ -1199,14 +1271,19 @@ def build(out, heights=None, all_blocks=False, og=True):
     # named by its payout from one named by its coinbase text alone, as the block page does.
     addrs = pool_addresses()
     write_gz(f"{out}/d/pools.json.gz", {name: sorted(addrs[name]) for name in sorted({b["pool"] for b in idx.values()}) if addrs.get(name)})
-    pools = sorted({b["pool"] for b in idx.values()})
+    pools = sorted({who(b) for b in idx.values()} | {b["pool"] for b in idx.values()})
     for name in pools:
         r = pool_page(idx, name, tip)
         if not r:
             continue
         html_, cur, L = r
         write(out, f"pool/{miner.slug(name)}/index.html", html_)
-        if og:
+        if cur is None:
+            try:
+                os.remove(f"{out}/og/pool/{miner.slug(name)}.png")
+            except OSError:
+                pass
+        if og and cur is not None:
             render_png(og_svg("pool", p=cur, L=L), f"{out}/og/pool/{miner.slug(name)}.png")
     # A name that left the index (a renamed pool) would leave its page behind, frozen at an old tip.
     keep = {miner.slug(name) for name in pools}

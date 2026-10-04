@@ -269,7 +269,7 @@
     var title, st, sec = el("section", { cls: "dis" + (tier === "gray" ? " gray" : tier === "clean" ? " normal" : tier === "coinbase" ? " coinbase" : "") + (tx.m ? " missed" : "") }), what = [];
     if (tier === "coinbase") {
       title = "Coinbase"; st = [stamp("Block reward", "var(--water)")];
-      what.push(el("p", { text: "Pays out the block subsidy and the fees of every transaction in block " + b.h + ", across " + plural(tx.o.filter(function (o) { return o.t !== "nulldata"; }).length, "paying output") + ". " + b.pool + " mined the block." }));
+      what.push(el("p", { text: "Pays out the block subsidy and the fees of every transaction in block " + b.h + ", across " + plural(tx.o.filter(function (o) { return o.t !== "nulldata"; }).length, "paying output") + ". " + ((b.ws && b.ws !== b.ps) ? "A DATUM miner built the block through " + b.pool + "." : b.pool + " mined the block.") }));
     } else if (tier === "sewage") {
       title = info.name; st = [stamp("Sewage", "var(--sewage)")];
       if (tx.m) st.push(stamp(plumb + " miss", "var(--miss)"));
@@ -310,7 +310,9 @@
     sec.appendChild(el("div", { cls: "txid", text: tx.id }));
     var t = new Date(b.t * 1000).toISOString().replace("T", " ").slice(0, 16) + " UTC";
     var meta = el("div", { cls: "meta small" }, el("span", {}, "Block ", el("a", { href: "/block/" + b.h + "/", text: String(b.h) })), el("span", { text: t }),
-      el("span", {}, "Mined by ", el("a", { href: "/pool/" + b.ps + "/", text: b.pool })));
+      (b.ws && b.ws !== b.ps)
+        ? el("span", {}, "Built by ", el("a", { href: "/pool/" + b.ws + "/", text: "a DATUM miner" }), " via ", el("a", { href: "/pool/" + b.ps + "/", text: b.pool }))
+        : el("span", {}, "Mined by ", el("a", { href: "/pool/" + b.ps + "/", text: b.pool })));
     if (!tx.cb) meta.appendChild(el("span", { text: "Fee " + num(tx.f) + " sat (" + (tx.f / tx.vs).toFixed(1) + " sat/vB)" }));
     meta.appendChild(el("span", { text: num(tx.s) + " B, " + num(tx.vs) + " vB" }));
     meta.appendChild(copy);
@@ -337,6 +339,8 @@
           })
           .catch(function () {});
       }
+      if (tx.x.knots && tx.x.knots.length && (b.ws && b.ws !== b.ps))
+        pol.appendChild(document.createTextNode(" A DATUM gateway with " + b.pool + " upstream built this block's template, so the node behind that gateway chose this transaction, normally the miner's own, not " + b.pool + "."));
     }
     var anat = el("div", { cls: "anat" });
     if (!tx.cb) anat.appendChild(ioSection("Inputs", tx.i, "in"));

@@ -93,13 +93,14 @@ def process_block(b, rows):
         else:
             tmap.append([t["vsize"], fee, 0, -1])
     pool, tag = miner.identify(cb)
+    bld, dtag, via = miner.builder(cb, pool)
     txd = {"h": b["height"], "hash": b["hash"], "t": b["time"], "pool": pool, "ps": miner.slug(pool),
-           "cb": txdetail.coinbase_record(cb), "tx": txd}
+           "bld": bld, "ws": miner.slug(miner.who(pool, via)), "cb": txdetail.coinbase_record(cb), "tx": txd}
     sewage = [s for s in spam if s["tier"] == "sewage"]
     gray = [s for s in spam if s["tier"] == "gray"]
     return txd, {
         "h": b["height"], "hash": b["hash"], "prev": b.get("previousblockhash"), "t": b["time"],
-        "pool": pool, "tag": tag, "ntx": len(txs), "w": b["weight"],
+        "pool": pool, "tag": tag, "bld": bld, "dtag": dtag, "via": via, "ntx": len(txs), "w": b["weight"],
         "size": b["size"], "reward": reward, "fees": total_fee, "txw": total_w,
         "sewage": {"n": len(sewage), "w": sum(s["w"] for s in sewage), "fee": sum(s["fee"] for s in sewage),
                    "data": sum(s["data"] for s in sewage), "missed": sum(1 for s in sewage if s["missed"])},
