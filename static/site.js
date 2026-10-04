@@ -15,14 +15,23 @@
     if (el.hasAttribute("data-ago")) el.textContent = ago(t);
   });
 
-  // Height jump
+  // Height jump. Anything that is not a height since the fork or a transaction id says so instead of doing nothing.
   var jump = document.querySelector(".jump");
-  if (jump) jump.addEventListener("submit", function (e) {
-    e.preventDefault();
-    var v = jump.querySelector("input").value.trim();
-    if (/^\d+$/.test(v)) location.href = "/block/" + v + "/";
-    else if (/^[0-9a-fA-F]{64}$/.test(v)) location.href = "/tx/?" + v.toLowerCase();
-  });
+  if (jump) {
+    var jin = jump.querySelector("input");
+    jin.addEventListener("input", function () { jin.setCustomValidity(""); });
+    jump.addEventListener("submit", function (e) {
+      e.preventDefault();
+      var v = jin.value.trim(), msg = "";
+      if (/^\d+$/.test(v)) {
+        if (parseInt(v, 10) >= 961640) { location.href = "/block/" + parseInt(v, 10) + "/"; return; }
+        msg = "cesspool covers blocks from 961640 on.";
+      } else if (/^[0-9a-fA-F]{64}$/.test(v)) { location.href = "/tx/?" + v.toLowerCase(); return; }
+      else msg = "Enter a block height or a 64-character transaction id.";
+      jin.setCustomValidity(msg);
+      jin.reportValidity();
+    });
+  }
 
   // Tabs: <div class="tabs" data-group="x"><button data-pane="id">
   document.querySelectorAll(".tabs").forEach(function (tabs) {
