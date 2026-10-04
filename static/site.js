@@ -307,10 +307,10 @@
     } else {
       var sh = shape(tx); title = sh[0]; st = [stamp("Normal", "var(--ok)")];
       what.push(el("p", { text: sh[1] }));
-      var anyRefusal = tx.x && ["core", "knots", "plumb"].some(function (k) { return tx.x[k].length; });
+      var anyRefusal = tx.x && ["knots", "plumb"].some(function (k) { return tx.x[k].length; });
       what.push(el("p", {}, el("b", { text: "Not spam. " }), anyRefusal
         ? "No input or output carries data that the policy code counts. One of the policies below refuses it for a reason that is not a data rule."
-        : "No input or output carries data that Bitcoin Core, Knots or " + plumb + " counts, and all three relay it."));
+        : "No input or output carries data that Knots or " + plumb + " counts, and both relay it."));
     }
     var hd = el("div", { cls: "hd" }, ...st, el("h3", { text: title }));
     sec.appendChild(hd);
@@ -328,7 +328,7 @@
     sec.appendChild(meta);
     what.forEach(function (w) { sec.appendChild(w); });
     if (!tx.cb) sec.appendChild(verdicts(tx, cat, plumb, tier !== "sewage"));
-    if (!tx.cb && !tx.e && tx.x && ["core", "knots", "plumb"].some(function (k) { return tx.x[k] && tx.x[k].length; })) {
+    if (!tx.cb && !tx.e && tx.x && ["knots", "plumb"].some(function (k) { return tx.x[k] && tx.x[k].length; })) {
       var policy = "Refusing is policy, not a consensus rule: a node that refuses it does not relay it or put it in a block it builds, but it still accepts a block that has it.";
       var pol = tx.x.knots && tx.x.knots.length
         ? el("p", { cls: "small muted" }, el("b", { text: "Past the defaults. " }), "Knots and Plumb refuse it at their default settings; a node at those defaults takes it only when its operator overrides the refusal. ",

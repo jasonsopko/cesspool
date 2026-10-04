@@ -428,7 +428,7 @@ def page(path, title, body, *, nav="", desc="", og=None, tip=None):
 '''
 
 
-ASSET_V = "7"
+ASSET_V = "10"
 
 
 def write(out, rel, text):
@@ -476,7 +476,9 @@ def io_html(rows, kind, limit=8, missed=False):
     return "".join(parts)
 
 
-VERDICT_NAMES = [("core", "Bitcoin Core 31"), ("knots", "Knots 29.4.2"), ("plumb", PLUMB_NAME)]
+# Bitcoin Core is graded too (plumb_check's core profile) but not shown: it has no BLAKE2b proof of work,
+# so no Core node follows this chain.
+VERDICT_NAMES = [("knots", "Knots 29.4.2"), ("plumb", PLUMB_NAME)]
 
 
 def verdict_html(v, missed):
@@ -641,7 +643,7 @@ REASONS = {
 def tx_page(tip):
     body = f'''<div id="txapp" data-plumb="{esc(PLUMB_NAME)}">
 <div class="hero"><div class="kicker">Transaction</div><h1>Look up a transaction</h1>
-<p class="lede">Paste a transaction id from any block since the fork. The page shows what the transaction does, what it carries, and what Bitcoin Core, Knots and {esc(PLUMB_NAME)} would do with it.</p></div>
+<p class="lede">Paste a transaction id from any block since the fork. The page shows what the transaction does, what it carries, and what Knots and {esc(PLUMB_NAME)} would do with it.</p></div>
 <form class="txform"><input class="mono" spellcheck="false" autocomplete="off" placeholder="Transaction id (64 hex characters)" aria-label="Transaction id"><button class="btn">Look up</button></form>
 <div class="txout" aria-live="polite"></div>
 <noscript><p class="muted">This page needs JavaScript to load the transaction.</p></noscript></div>'''
@@ -1160,10 +1162,10 @@ def plumb_page(idx, tip):
 
 def about_page(tip):
     body = f'''<div class="hero prose"><div class="kicker">About</div><h1>How the water gets tested</h1>
-<p class="lede">Every block since the BLAKE2b fork at height {FORK}, every transaction in it, run through three node policies.</p></div>
+<p class="lede">Every block since the BLAKE2b fork at height {FORK}, every transaction in it, run through the Knots and Plumb policy checks.</p></div>
 <div class="prose">
 <h2>Verdicts come from the shipped code</h2>
-<p>Each transaction, with the coins it spends, goes through the policy checks of Plumb {PLUMB_VERSION}: <code>IsStandardTx</code>, <code>AreInputsStandard</code>, the data-carrier count and <code>IsWitnessStandard</code>, three times over, each with that software's default policy: Bitcoin Core 31 (Knots' <code>-corepolicy</code>, plus the 2,500 legacy-sigop limit and multiple OP_RETURN outputs that Core has had since 30), stock Knots 29.4.2 (Plumb's filters off), and Plumb. No Core node follows this chain, so the Core column is what its defaults would relay. Core 31 allows OP_RETURN outputs up to 100 kB, but BIP110 caps them at 83 bytes by consensus here, so that difference never shows. Nothing here reimplements a filter, so this page and a Plumb node cannot disagree about a transaction.</p>
+<p>Each transaction, with the coins it spends, goes through the policy checks of Plumb {PLUMB_VERSION}: <code>IsStandardTx</code>, <code>AreInputsStandard</code>, the data-carrier count and <code>IsWitnessStandard</code>, once with each software's default policy: stock Knots 29.4.2 (Plumb's filters off) and Plumb. Bitcoin Core is not compared: it has no BLAKE2b proof of work, so no Core node follows this chain. Nothing here reimplements a filter, so this page and a Plumb node cannot disagree about a transaction.</p>
 <p>Not modeled: fee floors, mempool limits, replacement rules and address reuse. Those depend on the mempool at the time, not on what the transaction carries.</p>
 <h2>Grades</h2>
 <ul><li>{stamp("pristine", True)} every transaction is a payment. Not one byte of data.</li>

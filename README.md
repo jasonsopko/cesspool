@@ -11,6 +11,8 @@ kept it out.
   transaction three ways, each with that software's defaults: Bitcoin Core 31 (`-corepolicy` plus Core 30's legacy-sigop limit and multiple OP_RETURN outputs), stock Knots 29.4.2
   (Plumb's filters off) and Plumb, and reports every reason each one
   trips plus where Plumb counts data bytes. Nothing reimplements a filter.
+  The site shows the Knots and Plumb verdicts only: Bitcoin Core has no
+  BLAKE2b proof of work, so no Core node follows this chain.
 - `cesspool/classify.py` names the protocol and finds the shapes Plumb does
   not count yet (fake multisig keys), so a miss shows as a miss.
 - `cesspool/miner.py` names the pool with reorg-watch's own rules.

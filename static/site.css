@@ -185,7 +185,7 @@ tr.rank1 td { background: color-mix(in srgb, var(--sewage) 18%, transparent); }
 @media (prefers-color-scheme: light) { :root:not([data-theme="dark"]) .io .row .db { color: #6e4f1c; } }
 .fill { height: 12px; border-radius: 3px; background: var(--water); overflow: hidden; display: flex; margin: 6px 0 2px; }
 .fill span { display: block; height: 100%; }
-.verd { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-top: 12px; }
+.verd { display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px; margin-top: 12px; }
 @media (max-width: 760px) { .verd { grid-template-columns: 1fr; } }
 .verd > div { border: 1px solid var(--line); border-radius: 6px; padding: 9px 11px; font-size: .85rem; background: var(--panel2); }
 .verd .who { font-weight: 600; font-size: .8rem; text-transform: uppercase; letter-spacing: .06em; }
