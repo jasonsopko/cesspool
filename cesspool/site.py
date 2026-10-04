@@ -401,7 +401,7 @@ def plumb_cta(headline="Run Plumb and this stays out of your blocks.", body=None
 def page(path, title, body, *, nav="", desc="", og=None, tip=None):
     og = og or "/og/site.png"
     nav_items = [("blocks", "/blocks/", "Blocks"), ("shame", "/shame/", "Hall of Shame"), ("past", "/past-defaults/", "Past the Defaults"),
-                 ("guide", "/guide/", "Field Guide"), ("plumb", "/plumb/", "Plumb"), ("about", "/about/", "About")]
+                 ("check", "/check/", "Check Node"), ("guide", "/guide/", "Field Guide"), ("plumb", "/plumb/", "Plumb"), ("about", "/about/", "About")]
     navh = "".join(f'<a href="{u}"{" class=\"on\"" if k == nav else ""}>{t}</a>' for k, u, t in nav_items)
     full_title = f"{title} · cesspool.lol" if title else "cesspool.lol · Bitcoin water quality, block by block"
     foot_tip = f'Tip {tip["h"]}, {tm(tip["t"])}. ' if tip else ""
@@ -428,7 +428,7 @@ def page(path, title, body, *, nav="", desc="", og=None, tip=None):
 '''
 
 
-ASSET_V = "6"
+ASSET_V = "7"
 
 
 def write(out, rel, text):
@@ -820,20 +820,120 @@ SETTINGS_KNOTS = ("corepolicy=0", "rejecttokens=1", "rejectparasites=1", "dataca
                   "permitbarepubkey=0", "permitbaremultisig=0", "maxscriptsize=1650", "acceptnonstdtxn=0")
 SETTINGS_PLUMB = ("rejectfakeoutputs=1", "rejectdeadbranches=1", "rejectbareenvelopes=1", "rejectfakemultisig=1",
                   "rejecttokenmessages=1")
-SETTINGS_CHECK = 'grep -E "arg: (\\[[a-z0-9]+\\] )?(corepolicy|reject|datacarrier|acceptnonstd|permitbare|maxscriptsize)" ~/.bitcoin/debug.log'
+SETTINGS_GREP = 'grep -E "Bitcoin (Knots|Core) version|Using data directory|Plumb filter|arg: (\\[[a-z0-9]+\\] )?(corepolicy|reject|datacarrier|acceptnonstd|permitbare|maxscriptsize)"'
+SETTINGS_CHECK = SETTINGS_GREP + " ~/.bitcoin/debug.log"
+UMBREL_LOG = "~/umbrel/app-data/bitcoin-knots/data/bitcoin/debug.log"
 LOWER_LIMITS = f"{PLUMB_REPO}/blob/29.x-plumb/plumb/FILTERS.md#lower-data-limits"
-SETTINGS_LINK = '<a href="/past-defaults/#settings">Settings that keep them out</a>'
+SETTINGS_LINK = '<a href="/check/">Settings that keep them out</a>'
 
 
 def settings_section():
     conf = "\n".join(("# Knots and Plumb",) + SETTINGS_KNOTS + ("# Plumb only; Knots ignores them",) + SETTINGS_PLUMB)
-    return f'''<h3 id="settings" style="margin-top:22px">Keep your node at the defaults</h3>
+    return f'''<h3 id="settings" style="margin-top:22px">The bitcoin.conf lines</h3>
 <p class="small" style="max-width:75ch">Knots and Plumb have every one of these filters on by default. The usual ways one gets turned off are <code>corepolicy=1</code>, a filter set to 0, <code>acceptnonstdtxn=1</code>, or a setting changed in the Knots GUI. To put the defaults back, set these in <code>bitcoin.conf</code>. Change any line already there for the same option rather than adding a second one: the first line in the file wins, and a line under <code>[main]</code> wins over lines outside it. They are the default values, so on a node nobody changed they change nothing. Keep any stricter value you set on purpose, such as <code>datacarrier=0</code> or a lower <code>datacarriersize</code>.</p>
 <pre class="conf">{esc(conf)}</pre>
 <p><button class="copy" data-copy="{esc(conf)}">Copy these lines</button></p>
 <p class="small" style="max-width:75ch">The Knots GUI saves these settings to <code>settings.json</code> and <code>bitcoin_rw.conf</code> in the data directory, and both win over <code>bitcoin.conf</code>, as does anything on the command line or in a service file. Remove the matching entries there. After a restart, this shows each value and where it came from:</p>
 <pre class="conf">{esc(SETTINGS_CHECK)}</pre>
 <p class="small" style="max-width:75ch">When <code>bitcoin.conf</code> sets an option more than once, a line under <code>[main]</code> is the one in use, even though it is listed last; otherwise the first line is. <code>~/.bitcoin</code> is the default data directory on Linux; use yours if it differs. A Plumb node also logs one <code>Plumb filter</code> line per filter. For a node stricter than the defaults, Plumb&#39;s filter guide measures what <a href="{LOWER_LIMITS}">lower data limits</a> would also refuse.</p>'''
+
+
+# What /check/ reads from a node's startup lines. Defaults and the -corepolicy values are Knots 29.4.2's
+# (src/policy/policy.h, src/init.cpp); what each filter refuses is from src/policy/policy.cpp. Knots 29.4
+# has the same defaults except rejecttokens, which is off, and refuses Runes and OLGA but not Counterparty.
+# Older Knots differ in more (no datacarriersize cap before 29.3.knots20260508), so the checker covers
+# 29.4 and later and tells anything older to upgrade. std marks the checks acceptnonstdtxn=1
+# turns off (IsStandardTx, AreInputsStandard, IsWitnessStandard in src/validation.cpp); the data byte
+# limits in ValidateInputs/PreChecks run either way.
+CHECK_SPEC = {
+    "since": "v29.4.1",
+    "oldest": "v29.4",
+    "options": [
+        {"name": "rejecttokens", "label": "Runes, Counterparty and OLGA", "kind": "bool", "def": True, "core": False, "good": True, "std": True,
+         "before": [["v29.4.1", False]], "oldLabel": "Runes and OLGA; this Knots has no Counterparty check"},
+        {"name": "rejectparasites", "label": "CAT-21 mints", "kind": "bool", "def": True, "core": False, "good": True, "std": True},
+        {"name": "datacarrier", "label": "OP_RETURN data at all; 0 refuses every OP_RETURN", "kind": "bool", "def": True, "good": True, "falseIs": "stricter"},
+        {"name": "datacarriersize", "label": "most data bytes allowed", "kind": "num", "def": 83, "max": 83, "over": "capped"},
+        {"name": "datacarrierfullcount", "label": "count data outside OP_RETURN too", "kind": "bool", "def": True, "core": False, "good": True},
+        {"name": "datacarriercost", "label": "fee weight of each data byte", "kind": "num", "def": 1, "core": 0.25, "min": 1, "under": "looser"},
+        {"name": "acceptnonstddatacarrier", "label": "data outside OP_RETURN", "kind": "bool", "def": False, "core": True, "good": False},
+        {"name": "permitbaredatacarrier", "label": "an OP_RETURN with no payment beside it", "kind": "bool", "def": False, "core": True, "good": False, "std": True},
+        {"name": "permitbarepubkey", "label": "bare public-key outputs", "kind": "bool", "def": False, "core": True, "good": False, "std": True},
+        {"name": "permitbaremultisig", "label": "bare multisig outputs", "kind": "bool", "def": False, "core": True, "good": False, "std": True},
+        {"name": "maxscriptsize", "label": "largest script and witness, in bytes", "kind": "num", "def": 1650, "core": 4294967295, "max": 1650, "over": "looser", "std": True},
+    ],
+    "plumb": [
+        {"name": "rejectfakeoutputs", "label": "fake output hashes and keys"},
+        {"name": "rejectdeadbranches", "label": "dead conditional branches"},
+        {"name": "rejectbareenvelopes", "label": "bare data envelopes"},
+        {"name": "rejectfakemultisig", "label": "fake multisig keys"},
+        {"name": "rejecttokenmessages", "label": "token messages", "std": True},
+    ],
+}
+
+
+# Each platform's own names for the filter switches, with the recommended setting, which is Knots 29.4.2's
+# default. Umbrel: Retropex/umbrel-bitcoin libs/settings/settings.meta.ts (Settings, Policy tab).
+# StartOS 0.3: Retropex/knots-startos scripts/services/getConfig.ts (Config, Mempool). StartOS 0.4:
+# startos/fileModels/bitcoin.conf.ts and actions/config/mempool.ts (Actions, Mempool Settings), where an
+# unset switch writes nothing and leaves Knots' default.
+PLATFORM_SWITCHES = {
+    "umbrel": [("Reject tokens transactions", "on", "the app has started it off; on Knots 29.4 it does not refuse Counterparty"), ("Reject parasitic transactions", "on", ""),
+               ("Relay Transactions Containing Arbitrary Data", "on", ""), ("Max Allowed Size of Arbitrary Data in Transactions", "83", ""),
+               ("Datacarrier cost", "1", ""), ("Accept non standard datacarrier", "off", ""), ("Permit Bare Datacarrier", "off", ""),
+               ("Permit Bare Pubkey", "off", ""), ("Relay Bare Multisig Transactions", "off", ""), ("Max script size", "1650", "")],
+    "startos03": [("Reject Tokens", "on", "the package starts it off; on Knots 29.4 it does not refuse Counterparty"), ("Reject Parasites", "on", ""), ("Datacarrier", "on", ""),
+                  ("Datacarrier Size", "83", ""), ("Datacarrier cost", "1", ""), ("Accept non standard datacarrier", "off", ""),
+                  ("Permit bare datacarrier", "off", ""), ("Permit Bare Pubkey", "off", ""), ("Permit Bare Multisig", "off", ""),
+                  ("Max Script Size", "1650", "")],
+    "startos04": [("Reject Tokens", "unset or on", ""),
+                  ("Reject Parasites", "unset or on", ""), ("Relay OP_RETURN Transactions", "unset or on", ""),
+                  ("Max OP_RETURN Size", "unset or 83", ""), ("Datacarrier Cost", "1", ""),
+                  ("Accept Non-Standard Datacarrier", "unset or off", ""), ("Permit Bare Datacarrier", "unset or off", ""),
+                  ("Permit Bare Pubkey", "unset or off", ""), ("Permit Bare Multisig", "unset or off", ""), ("Max Script Size", "unset or 1650", "")],
+}
+
+
+def switch_list(key):
+    items = "".join(f'<li><b>{esc(name)}</b>: {esc(value)}' + (f' <span class="flag">({esc(note)})</span>' if note else "") + "</li>"
+                    for name, value, note in PLATFORM_SWITCHES[key])
+    return f'<ul class="switches">{items}</ul>'
+
+
+def check_page(tip):
+    grep_umbrel = f"{SETTINGS_GREP} {UMBREL_LOG}"
+    body = f'''<div class="hero"><div class="kicker">Check your node</div><h1>Is your node filtering?</h1>
+<p class="lede">Knots and Plumb refuse spam at their default settings. A setting changed anywhere, or one a node package ships with, can turn a filter off without saying so. Here is how to check.</p></div>
+<h2>Recommended settings</h2>
+<p style="max-width:75ch">The recommended setting for every filter is Knots&#39; own default. Here it is on each platform, under the names each one uses. Where a platform starts a switch somewhere else, it says so. A stricter value you chose on purpose, such as a lower data size, is fine to keep.</p>
+<h3>Umbrel</h3>
+<p style="max-width:75ch">The Bitcoin Knots app in the Umbrel App Store is at version 1.2.13, which runs Knots 29.4. That Knots has no Counterparty check and no BLAKE2b proof of work, and its <b>Reject tokens transactions</b> switch starts off. The app update with Knots 29.4.2, version 1.2.18, has been waiting on the App Store since 21 September (<a href="https://github.com/getumbrel/umbrel-apps/pull/6108">umbrel-apps#6108</a>).</p>
+<p style="max-width:75ch">Builds of the app that run Knots 29.4.1 or later, such as the BLAKE2b Knots app in the PaulsCode community store, have also started that switch off, although that Knots turns it on. They write <code>rejecttokens=0</code> for the node, so a default node there relays and mines Runes and Counterparty transactions.</p>
+<p style="max-width:75ch">Open the app, go to Settings, choose the Policy tab, set these, and save. The app restarts the node with them.</p>
+{switch_list("umbrel")}
+<h3>StartOS 0.3</h3>
+<p style="max-width:75ch">Bitcoin Knots for StartOS 0.3 runs Knots 29.4 at its newest, with the same limits as above, and starts Reject Tokens off. Under Config, Mempool:</p>
+{switch_list("startos03")}
+<h3>StartOS 0.4</h3>
+<p style="max-width:75ch">Under Actions, Mempool Settings. A switch left unset writes nothing, so Knots&#39; own default applies, whatever the footnote under it says. Plumb&#39;s StartOS package uses the same screen; its five extra filters are on and have no switches there.</p>
+{switch_list("startos04")}
+<h3>Knots or Plumb, anywhere else</h3>
+<p style="max-width:75ch">Set them in <code>bitcoin.conf</code>: <a href="#settings">the lines are below</a>.</p>
+<h2>Any node: read its startup lines</h2>
+<p style="max-width:75ch">Each time it starts, the node writes its version and every setting it was given, with where each one came from, to <code>debug.log</code>. Run this where the node runs, paste the result, and the checker below says which filters are on and what turned any of them off.</p>
+<pre class="conf">{esc(SETTINGS_CHECK)}</pre>
+<p><button class="copy" data-copy="{esc(SETTINGS_CHECK)}">Copy the command</button></p>
+<p class="small" style="max-width:75ch">On Umbrel, over SSH, for the App Store&#39;s Bitcoin Knots app. Other Knots apps keep their data under their own folder in <code>~/umbrel/app-data</code>.</p>
+<pre class="conf">{esc(grep_umbrel)}</pre>
+<p><button class="copy" data-copy="{esc(grep_umbrel)}">Copy the Umbrel command</button></p>
+<div id="checkapp"><form class="checkform"><textarea class="mono" rows="8" spellcheck="false" autocomplete="off" aria-label="Startup lines from debug.log" placeholder="Paste the lines here"></textarea>
+<p><button class="btn">Check</button> <span class="small muted">Nothing you paste leaves this page.</span></p></form>
+<div class="checkout" aria-live="polite"></div></div>
+<script type="application/json" id="checkdata">{json.dumps(CHECK_SPEC, separators=(",", ":"))}</script>
+<script src="/static/check.js?v={ASSET_V}" defer></script>
+{settings_section()}'''
+    return page("/check/", "Check your node", body, nav="check",
+                desc="Which spam filters your Knots or Plumb node is using, what turned any of them off, and the settings that put them back.", tip=tip)
 
 
 def past_page(idx, tip):
@@ -865,7 +965,8 @@ def past_page(idx, tip):
 <div class="tw"><table><tr><th>Pool</th><th class="r">Blocks past the defaults</th><th class="r">Of its blocks</th><th class="r">Share</th><th class="r">Named by coinbase text only</th><th class="r">Refused txs</th><th>Last one</th></tr>{prows or '<tr><td colspan="7" class="muted">None.</td></tr>'}</table></div>
 <h3 style="margin-top:22px">Every block, newest first</h3>
 <div class="tw"><table><tr><th>Block</th><th>Time</th><th>Pool</th><th>Named by</th><th class="r">Refused txs</th><th>Kinds</th></tr>{brows or '<tr><td colspan="6" class="muted">None.</td></tr>'}</table></div>
-{settings_section()}
+<h3 id="settings" style="margin-top:22px">Keep your node at the defaults</h3>
+<p class="small" style="max-width:75ch"><a href="/check/">Check your node</a> has the settings that keep every filter on, the steps for Umbrel and StartOS, and a checker that reads your node&#39;s own startup lines.</p>
 <p class="small muted" style="margin-top:22px">{DATUM_NOTE}</p>
 {plumb_cta("A Plumb node refuses every transaction on this page.")}'''
     return page("/past-defaults/", "Past the defaults", body, nav="past",
@@ -1049,7 +1150,7 @@ def plumb_page(idx, tip):
 <div class="tile"><div class="v">{n(tot["sm"])}</div><div class="l">sewage transaction{"" if tot["sm"] == 1 else "s"} {PLUMB_NAME} misses</div><div class="s">{"a fake multisig reveal" if tot["sm"] == 1 else "fake multisig reveals"} small enough to stay under the limit</div></div></div>
 <h2>What it adds to Knots</h2><div class="tw"><table><tr><th>Option</th><th>What it counts as data</th><th>Source</th></tr>{frows}</table></div>
 <p class="small muted" style="margin-top:8px">Everything Knots already refuses stays refused: runestones, Counterparty, inscriptions, CAT-21, bare multisig.</p>
-<h2>Run it</h2><div class="grid2"><div class="panel"><h3>A node</h3><p class="muted">Build from the signed tag and replace <code>bitcoind</code>. Same config, same data directory, same RPC. Already on Knots or Plumb? <a href="/past-defaults/#settings">Check your settings</a>.</p>
+<h2>Run it</h2><div class="grid2"><div class="panel"><h3>A node</h3><p class="muted">Build from the signed tag and replace <code>bitcoind</code>. Same config, same data directory, same RPC. Already on Knots or Plumb? <a href="/check/">Check your node</a>.</p>
 <p><a class="btn" href="{PLUMB_RELEASE}">Latest release</a><a class="btn ghost" href="{PLUMB_REPO}">Source</a></p></div>
 <div class="panel"><h3>A mining node</h3><p class="muted">If you mine through a DATUM pool, your node builds the template. Point your gateway at a Plumb node and your blocks come out clean.</p>
 <p><a class="btn ghost" href="{INSTALLER}">knots-datum-node installer</a></p></div></div>
@@ -1227,7 +1328,7 @@ def render_png(svg, path):
 def copy_static(out):
     sdir = os.path.join(out, "static")
     os.makedirs(f"{sdir}/fonts", exist_ok=True)
-    for name in ("site.css", "site.js", "favicon.svg"):
+    for name in ("site.css", "site.js", "check.js", "favicon.svg"):
         shutil.copy2(os.path.join(SRC, "static", name), f"{sdir}/{name}")
     fonts = os.path.expanduser("~/.local/share/fonts/plumb")
     for name in ("IBMPlexSans.ttf", "IBMPlexMono-Regular.ttf", "IBMPlexMono-Medium.ttf"):
@@ -1286,6 +1387,7 @@ def build(out, heights=None, all_blocks=False, og=True):
     write(out, "blocks/index.html", blocks_page(idx, tip))
     write(out, "shame/index.html", shame_page(idx, tip))
     write(out, "past-defaults/index.html", past_page(idx, tip))
+    write(out, "check/index.html", check_page(tip))
     write(out, "guide/index.html", guide_page(idx, tip))
     write(out, "plumb/index.html", plumb_page(idx, tip))
     write(out, "about/index.html", about_page(tip))

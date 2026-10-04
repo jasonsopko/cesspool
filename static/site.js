@@ -333,7 +333,7 @@
       var pol = tx.x.knots && tx.x.knots.length
         ? el("p", { cls: "small muted" }, el("b", { text: "Past the defaults. " }), "Knots and Plumb refuse it at their default settings; a node at those defaults takes it only when its operator overrides the refusal. ",
             el("a", { href: "/past-defaults/", text: "Every block like this" }), ". ",
-            el("a", { href: "/past-defaults/#settings", text: "Settings that keep it out" }), ". " + policy)
+            el("a", { href: "/check/", text: "Settings that keep it out" }), ". " + policy)
         : el("p", { cls: "small muted", text: policy });
       pol.style.marginTop = "10px"; sec.appendChild(pol);
       // As on the block page: say when only the coinbase text ties the block to the name it carries.
