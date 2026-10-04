@@ -589,7 +589,7 @@ def block_page(rec, s, prev_h, next_h, tip):
                      f'{what} Knots and Plumb refuse at their default settings. A node at those defaults does not accept {them} '
                      f'from peers or put {them} in a block unless its operator overrides the refusal.'
                      + (f' The name {esc(pool)} comes from this block&#39;s coinbase text alone, which anyone can write.' if text_only else "")
-                     + ' <a href="/past-defaults/">Every block like this</a>.</p>')
+                     + f' <a href="/past-defaults/">Every block like this</a>. {SETTINGS_LINK}.</p>')
     nav = (f'<div class="navpn">{f"<a href=/block/{prev_h}/>&larr; {prev_h}</a>" if prev_h else ""}'
            f'{f"<a href=/block/{next_h}/>{next_h} &rarr;</a>" if next_h else ""}</div>')
     share_text = f"Block {rec['h']}, {by_text(rec)}: {label.lower()}" + (f", {pct(s['share'])} of the block is spam." if s["sn"] else ".")
@@ -813,6 +813,29 @@ def shame_page(idx, tip):
     return page("/shame/", "Hall of Shame", body, nav="shame", desc="Pools ranked by how much of their block space went to spam.", og="/og/shame.png", tip=tip)
 
 
+# The filter options at their Knots 29.4.2 and Plumb defaults, written out. Tested on regtest: both
+# binaries start with them, stock Knots warns once for each Plumb line and ignores it.
+SETTINGS_KNOTS = ("corepolicy=0", "rejecttokens=1", "rejectparasites=1", "datacarrier=1", "datacarriersize=83",
+                  "datacarrierfullcount=1", "datacarriercost=1", "acceptnonstddatacarrier=0", "permitbaredatacarrier=0",
+                  "permitbarepubkey=0", "permitbaremultisig=0", "maxscriptsize=1650", "acceptnonstdtxn=0")
+SETTINGS_PLUMB = ("rejectfakeoutputs=1", "rejectdeadbranches=1", "rejectbareenvelopes=1", "rejectfakemultisig=1",
+                  "rejecttokenmessages=1")
+SETTINGS_CHECK = 'grep -E "arg: (\\[[a-z0-9]+\\] )?(corepolicy|reject|datacarrier|acceptnonstd|permitbare|maxscriptsize)" ~/.bitcoin/debug.log'
+LOWER_LIMITS = f"{PLUMB_REPO}/blob/29.x-plumb/plumb/FILTERS.md#lower-data-limits"
+SETTINGS_LINK = '<a href="/past-defaults/#settings">Settings that keep them out</a>'
+
+
+def settings_section():
+    conf = "\n".join(("# Knots and Plumb",) + SETTINGS_KNOTS + ("# Plumb only; Knots ignores them",) + SETTINGS_PLUMB)
+    return f'''<h3 id="settings" style="margin-top:22px">Keep your node at the defaults</h3>
+<p class="small" style="max-width:75ch">Knots and Plumb have every one of these filters on by default. The usual ways one gets turned off are <code>corepolicy=1</code>, a filter set to 0, <code>acceptnonstdtxn=1</code>, or a setting changed in the Knots GUI. To put the defaults back, set these in <code>bitcoin.conf</code>. Change any line already there for the same option rather than adding a second one: the first line in the file wins, and a line under <code>[main]</code> wins over lines outside it. They are the default values, so on a node nobody changed they change nothing. Keep any stricter value you set on purpose, such as <code>datacarrier=0</code> or a lower <code>datacarriersize</code>.</p>
+<pre class="conf">{esc(conf)}</pre>
+<p><button class="copy" data-copy="{esc(conf)}">Copy these lines</button></p>
+<p class="small" style="max-width:75ch">The Knots GUI saves these settings to <code>settings.json</code> and <code>bitcoin_rw.conf</code> in the data directory, and both win over <code>bitcoin.conf</code>, as does anything on the command line or in a service file. Remove the matching entries there. After a restart, this shows each value and where it came from:</p>
+<pre class="conf">{esc(SETTINGS_CHECK)}</pre>
+<p class="small" style="max-width:75ch">When <code>bitcoin.conf</code> sets an option more than once, a line under <code>[main]</code> is the one in use, even though it is listed last; otherwise the first line is. <code>~/.bitcoin</code> is the default data directory on Linux; use yours if it differs. A Plumb node also logs one <code>Plumb filter</code> line per filter. For a node stricter than the defaults, Plumb&#39;s filter guide measures what <a href="{LOWER_LIMITS}">lower data limits</a> would also refuse.</p>'''
+
+
 def past_page(idx, tip):
     blocks = [idx[h] for h in sorted(idx)]
     pb = [b for b in blocks if past(b)]
@@ -842,6 +865,7 @@ def past_page(idx, tip):
 <div class="tw"><table><tr><th>Pool</th><th class="r">Blocks past the defaults</th><th class="r">Of its blocks</th><th class="r">Share</th><th class="r">Named by coinbase text only</th><th class="r">Refused txs</th><th>Last one</th></tr>{prows or '<tr><td colspan="7" class="muted">None.</td></tr>'}</table></div>
 <h3 style="margin-top:22px">Every block, newest first</h3>
 <div class="tw"><table><tr><th>Block</th><th>Time</th><th>Pool</th><th>Named by</th><th class="r">Refused txs</th><th>Kinds</th></tr>{brows or '<tr><td colspan="6" class="muted">None.</td></tr>'}</table></div>
+{settings_section()}
 <p class="small muted" style="margin-top:22px">{DATUM_NOTE}</p>
 {plumb_cta("A Plumb node refuses every transaction on this page.")}'''
     return page("/past-defaults/", "Past the defaults", body, nav="past",
@@ -924,7 +948,7 @@ The gateway&#39;s node chooses the transactions, normally the miner&#39;s own, s
         holds = ("holds a transaction" if past(pb[0]) == 1 else "holds transactions") if len(pb) == 1 else "hold transactions"
         past_part = (f'<h3 style="margin-top:22px">Past the defaults</h3><p class="small muted" style="margin-bottom:8px">{of_its} since the fork '
                      f'{holds} that Knots and Plumb refuse at their default settings.{basis} '
-                     f'<a href="/past-defaults/">Every pool and block</a>.</p>'
+                     f'<a href="/past-defaults/">Every pool and block</a>. {SETTINGS_LINK}.</p>'
                      f'<div class="tw"><table><tr><th>Block</th><th>Time</th><th class="r">Refused txs</th><th>Named by</th><th>Kinds</th></tr>{prows}</table></div>')
     else:
         none = f"None of its {n(nb)} blocks since the fork holds" if nb != 1 else "Its one block since the fork does not hold"
@@ -1025,7 +1049,7 @@ def plumb_page(idx, tip):
 <div class="tile"><div class="v">{n(tot["sm"])}</div><div class="l">sewage transaction{"" if tot["sm"] == 1 else "s"} {PLUMB_NAME} misses</div><div class="s">{"a fake multisig reveal" if tot["sm"] == 1 else "fake multisig reveals"} small enough to stay under the limit</div></div></div>
 <h2>What it adds to Knots</h2><div class="tw"><table><tr><th>Option</th><th>What it counts as data</th><th>Source</th></tr>{frows}</table></div>
 <p class="small muted" style="margin-top:8px">Everything Knots already refuses stays refused: runestones, Counterparty, inscriptions, CAT-21, bare multisig.</p>
-<h2>Run it</h2><div class="grid2"><div class="panel"><h3>A node</h3><p class="muted">Build from the signed tag and replace <code>bitcoind</code>. Same config, same data directory, same RPC.</p>
+<h2>Run it</h2><div class="grid2"><div class="panel"><h3>A node</h3><p class="muted">Build from the signed tag and replace <code>bitcoind</code>. Same config, same data directory, same RPC. Already on Knots or Plumb? <a href="/past-defaults/#settings">Check your settings</a>.</p>
 <p><a class="btn" href="{PLUMB_RELEASE}">Latest release</a><a class="btn ghost" href="{PLUMB_REPO}">Source</a></p></div>
 <div class="panel"><h3>A mining node</h3><p class="muted">If you mine through a DATUM pool, your node builds the template. Point your gateway at a Plumb node and your blocks come out clean.</p>
 <p><a class="btn ghost" href="{INSTALLER}">knots-datum-node installer</a></p></div></div>

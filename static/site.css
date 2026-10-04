@@ -269,3 +269,4 @@ table.iot .db { color: var(--text); font-weight: 600; }
 .dis.normal { border-left-color: var(--ok); }
 .dis.coinbase { border-left-color: var(--water); }
 .txout code { overflow-wrap: anywhere; }
+.conf { font-family: "Plex Mono", ui-monospace, Menlo, Consolas, monospace; background: var(--bg2); color: var(--text); border: 1px solid var(--line); border-radius: 4px; padding: 10px 12px; font-size: .85rem; line-height: 1.5; overflow-x: auto; white-space: pre; max-width: 75ch; margin: 10px 0; }
