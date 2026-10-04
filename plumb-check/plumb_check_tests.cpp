@@ -4,8 +4,10 @@
 // Reads PLUMB_CHECK_IN: one transaction per line, "txid txhex spk:sats,..."
 // (prevouts in input order). Writes PLUMB_CHECK_OUT: one JSON object per line
 // with, for each of the core, knots and plumb profiles, every policy reason
-// the transaction trips, plus the per-input and per-output data byte counts
-// under the plumb profile.
+// the transaction trips and the data bytes it counts, plus, under the plumb
+// profile, the per-input and per-output data byte counts and the bytes each
+// of Plumb's filters is responsible for ("fc": the count with that filter
+// alone turned off, taken from the full count).
 #include <chainparams.h>
 #include <coins.h>
 #include <common/args.h>
@@ -141,8 +143,14 @@ BOOST_AUTO_TEST_CASE(plumb_check)
     // datacarriersize cannot matter here: BIP110 caps OP_RETURN outputs at 83 bytes by consensus.
     profiles.push_back(MakeProfile("core", {{"-corepolicy", "1"}, {"-maxtxlegacysigops", "2500"}}, defaults));
     // Stock Knots 29.4.2: none of Plumb's filters exist there.
-    profiles.push_back(MakeProfile("knots", {{"-rejectfakeoutputs", "0"}, {"-rejectdeadbranches", "0"}, {"-rejectbareenvelopes", "0"}, {"-rejectfakemultisig", "0"}}, defaults));
+    profiles.push_back(MakeProfile("knots", {{"-rejectfakeoutputs", "0"}, {"-rejectdeadbranches", "0"}, {"-rejectbareenvelopes", "0"}, {"-rejectfakemultisig", "0"}, {"-rejecttokenmessages", "0"}}, defaults));
     profiles.push_back(MakeProfile("plumb", {}, defaults));
+    // Plumb with one data-counting filter off at a time, to measure what each adds to the
+    // count. -rejecttokenmessages needs no measurement: its reasons name it.
+    std::vector<Profile> plumb_without;
+    for (const char* option : {"-rejectfakeoutputs", "-rejectdeadbranches", "-rejectbareenvelopes", "-rejectfakemultisig"}) {
+        plumb_without.push_back(MakeProfile(option, {{option, "0"}}, defaults));
+    }
 
     std::ifstream in{in_path};
     std::ofstream out{out_path};
@@ -220,6 +228,18 @@ BOOST_AUTO_TEST_CASE(plumb_check)
             BOOST_CHECK_EQUAL(total, dcb.first + dcb.second);
             row.pushKV("data_in", ins);
             row.pushKV("data_out", outs);
+            // Bytes each filter is responsible for; a filter that changes nothing is left out.
+            UniValue fc{UniValue::VOBJ};
+            for (const auto& q : plumb_without) {
+                Activate(q);
+                std::vector<std::string> unused;
+                std::pair<size_t, size_t> without;
+                DatacarrierReasons(tx, view, q.opts, unused, without);
+                const int64_t diff{int64_t(total) - int64_t(without.first + without.second)};
+                if (diff) fc.pushKV(q.name, diff);
+            }
+            Activate(p);
+            row.pushKV("fc", fc);
         }
         Activate({"", {}, defaults.weight_per_data_byte, defaults.script_size_limit, defaults.reject_dead_branches,
                   defaults.reject_bare_envelopes, defaults.reject_fake_multisig, defaults.bytes_per_sigop, defaults.bytes_per_sigop_strict});

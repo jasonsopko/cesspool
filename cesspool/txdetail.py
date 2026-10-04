@@ -2,7 +2,8 @@
 
 One file per block lists every transaction with what the page draws: amounts,
 address types, how each input is spent, witness item sizes, the data bytes the
-policy code counted in each input and output, and the verdicts. It never holds
+policy code counted in each input and output, the verdicts with each policy's
+data count and the bytes each Plumb filter adds. It never holds
 a payload: no witness or script bytes and no OP_RETURN contents. No output of a
 type the policy code counted data in, in that transaction, shows its address:
 for OLGA and other fake outputs the address is the payload, and the rule also
@@ -91,6 +92,7 @@ def tx_record(t, row, c):
     # tell them from payload.
     data_types = {o["scriptPubKey"].get("type", "") for i, o in enumerate(t["vout"])
                   if i < len(data_out) and data_out[i] and o["scriptPubKey"].get("type") != "nulldata"}
+    token = bool(row and "v" in row and "tokens-json" in row["v"]["plumb"]["reasons"])
     outs = []
     for i, o in enumerate(t["vout"]):
         spk = o["scriptPubKey"]
@@ -98,7 +100,7 @@ def tx_record(t, row, c):
         d = data_out[i] if i < len(data_out) else 0
         r = {"a": sats(o["value"]), "t": ptype, "n": len(spk["hex"]) // 2}
         if ptype == "nulldata":
-            r["l"] = classify.nulldata(t, spk["hex"])[1]
+            r["l"] = classify.nulldata(t, spk["hex"], token=token)[1]
         elif ptype in data_types:
             # 1: the policy code counted this output as data; 2: another output of its type was
             r["hid"] = 1 if d else 2
@@ -119,6 +121,13 @@ def tx_record(t, row, c):
             rec["m"] = 1
     if row and "v" in row and any(row["v"][k]["reasons"] for k in ("core", "knots", "plumb")):
         rec["x"] = {k: row["v"][k]["reasons"] for k in ("core", "knots", "plumb")}
+    if row and "v" in row:
+        # Data bytes each policy counts, [in OP_RETURN, elsewhere], and the bytes each of Plumb's filters adds.
+        dc = {k: [row["v"][k]["data"], row["v"][k]["data_nonstd"]] for k in ("knots", "plumb")}
+        if any(sum(x) for x in dc.values()):
+            rec["dc"] = dc
+        if row.get("fc"):
+            rec["fc"] = row["fc"]
     if row is None or "error" in row:
         rec["e"] = 1
     return rec

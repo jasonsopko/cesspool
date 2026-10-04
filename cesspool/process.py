@@ -88,6 +88,8 @@ def process_block(b, rows):
             spam.append({"txid": t["txid"], "tier": c["tier"], "types": c["types"], "labels": c["labels"],
                          "data": c["data_bytes"], "missed": c["missed"], "w": t["weight"], "vsize": t["vsize"], "size": t["size"],
                          "fee": fee, "v": {k: c["reasons"][k]["reasons"] for k in ("core", "knots", "plumb")},
+                         "dc": {k: [c["reasons"][k]["data"], c["reasons"][k]["data_nonstd"]] for k in ("core", "knots", "plumb")},
+                         "fc": row.get("fc", {}),
                          **d})
             tmap.append([t["vsize"], fee, tier, len(spam) - 1])
         else:

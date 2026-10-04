@@ -14,8 +14,9 @@ SITE = "https://cesspool.lol"
 PLUMB_REPO = "https://github.com/plumb-node/plumb"
 PLUMB_RELEASE = "https://github.com/plumb-node/plumb/releases/latest"
 INSTALLER = "https://github.com/jasonsopko/knots-datum-node"
-PLUMB_VERSION = "plumb3 (v29.4.2.knots20260508.plumb3)"
-PLUMB_NAME = "Plumb 3"
+PLUMB_VERSION = "plumb5 (v29.4.2.knots20260508.plumb5)"
+PLUMB_NAME = "Plumb 5"
+DATACARRIER_SIZE = 83  # the Knots and Plumb default -datacarriersize
 FORK = 961640
 
 GRADES = [  # key, label, css
