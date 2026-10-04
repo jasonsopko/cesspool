@@ -235,6 +235,8 @@ table.meas td { padding: 7px 9px; font-size: .84rem; }
 footer { border-top: 1px solid var(--line); margin-top: 60px; padding: 26px 0 40px; color: var(--faint); font-size: .84rem; }
 footer a { color: var(--muted); }
 footer .wrap { display: flex; gap: 24px; flex-wrap: wrap; justify-content: space-between; }
+footer .discord { flex-basis: 100%; display: inline-flex; align-items: center; gap: 10px; color: var(--text); font-weight: 600; font-size: .9rem; }
+footer .discord img { width: 28px; height: 28px; border-radius: 50%; flex: none; }
 .prose { max-width: 72ch; }
 .prose h2 { margin-top: 2rem; }
 .prose li { margin-bottom: .4em; }

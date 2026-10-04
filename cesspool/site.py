@@ -423,12 +423,13 @@ def page(path, title, body, *, nav="", desc="", og=None, tip=None):
 <main class="wrap">{body}</main>
 <footer><div class="wrap"><div>Verdicts from the policy code in Plumb {PLUMB_VERSION}, run on every transaction.<br>
 {foot_tip}Pool names follow <a href="https://reorg.watch">reorg.watch</a>.</div>
-<div>We never display what spam carries.<br><a href="/about/">How this works</a></div></div></footer>
+<div>We never display what spam carries.<br><a href="/about/">How this works</a></div>
+<a class="discord" href="https://discord.gg/QxhQMdxrJ7"><img src="/static/beh-discord.png?v={ASSET_V}" width="28" height="28" alt=""><span>Bitcoin Education Hub on Discord: discuss Bitcoin openly, without being banned for your ideas.</span></a></div></footer>
 <script src="/static/site.js?v={ASSET_V}" defer></script></body></html>
 '''
 
 
-ASSET_V = "12"
+ASSET_V = "14"
 
 
 def write(out, rel, text):
@@ -1330,7 +1331,7 @@ def render_png(svg, path):
 def copy_static(out):
     sdir = os.path.join(out, "static")
     os.makedirs(f"{sdir}/fonts", exist_ok=True)
-    for name in ("site.css", "site.js", "check.js", "favicon.svg"):
+    for name in ("site.css", "site.js", "check.js", "favicon.svg", "beh-discord.png"):
         shutil.copy2(os.path.join(SRC, "static", name), f"{sdir}/{name}")
     fonts = os.path.expanduser("~/.local/share/fonts/plumb")
     for name in ("IBMPlexSans.ttf", "IBMPlexMono-Regular.ttf", "IBMPlexMono-Medium.ttf"):
