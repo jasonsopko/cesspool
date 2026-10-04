@@ -84,8 +84,9 @@ def multisig(script_hex):
     return m, n
 
 
-def nulldata(tx, spk_hex):
-    """Name an OP_RETURN output."""
+def nulldata(tx, spk_hex, token=False):
+    """Name an OP_RETURN output. `token`: the policy code read the transaction's OP_RETURN as a
+    JSON token message (reason tokens-json), so a payload that opens a JSON object is one."""
     o = ops(spk_hex)
     rest = o[1:]
     if rest and rest[0][0] == OP_13:
@@ -97,6 +98,8 @@ def nulldata(tx, spk_hex):
         return "opreturn-empty", "Empty OP_RETURN"
     if payload.startswith(b"omni"):
         return "omni", "Omni Layer token message"
+    if token and payload[:1] == b"{":
+        return "token-json", "JSON token message (BRC-20 format)"
     if payload[:2] in (b"X2", b"id") and len(payload) > 2 and payload[2:3] in (b"[", b"^", b"$", b"p", b"x", b"#"):
         return "stacks", "Stacks commitment"
     if payload.startswith(b"CNTRPRTY"):
@@ -111,11 +114,19 @@ def nulldata(tx, spk_hex):
     return "opreturn-data", f"Binary note, {len(payload)} bytes"
 
 
-def olga_header(vout):
-    """True for a P2WSH output whose hash starts an OLGA payload (Stamps framing)."""
-    spk = vout["scriptPubKey"]
-    prog = bytes.fromhex(spk["hex"])[2:]
-    return spk.get("type") == "witness_v0_scripthash" and (prog[2:8] == b"stamp:" or prog[2:6] == b"ACME")
+def olga_tag(tx):
+    """The tag of the OLGA header among the P2WSH outputs: b"stamp:" (the Stamps form Knots
+    checks for, in either case) or b"ACME" (the variant that changed it); None without one."""
+    for o in tx["vout"]:
+        spk = o["scriptPubKey"]
+        if spk.get("type") != "witness_v0_scripthash":
+            continue
+        prog = bytes.fromhex(spk["hex"])[2:]
+        if prog[2:8].lower() == b"stamp:":
+            return b"stamp:"
+        if prog[2:6] == b"ACME":
+            return b"ACME"
+    return None
 
 
 def fake_output(tx, idx, vout):
@@ -125,8 +136,11 @@ def fake_output(tx, idx, vout):
     prog = bytes.fromhex(spk["hex"])[2:]
     if t == "witness_v0_scripthash":
         # The header output names the payload; the P2WSH outputs after it carry the rest of it.
-        if any(olga_header(o) for o in tx["vout"]):
+        tag = olga_tag(tx)
+        if tag == b"stamp:":
             return "olga", "OLGA payload in P2WSH hashes (Stamps framing)"
+        if tag == b"ACME":
+            return "olga-acme", "ACME payload in P2WSH hashes (OLGA framing, changed tag)"
         return "p2wsh-run", "Run of dust P2WSH outputs set up for a script reveal"
     if t == "witness_v0_keyhash":
         if printable(prog):
@@ -203,7 +217,7 @@ def sorted_keys(script_hex):
 def fake_multisig(tx):
     """Inputs revealing m-of-n scripts with eight or more unneeded keys.
 
-    Plumb 3 counts these past ten unsigned keys a script (knots#422). The threshold keeps
+    Plumb counts these past ten unsigned keys a script (knots#422). The threshold keeps
     real vaults out: no 1-of-3 or 2-of-5 spend comes near it. A script that asks for two
     or more signatures over BIP67-sorted keys, with no more unneeded keys than the ten Plumb
     allows, is a wallet's, such as a 4-of-12 sortedmulti.
@@ -237,7 +251,7 @@ def classify(tx, verdict):
 
     for vout in tx["vout"]:
         if vout["scriptPubKey"].get("type") == "nulldata":
-            add(*nulldata(tx, vout["scriptPubKey"]["hex"]))
+            add(*nulldata(tx, vout["scriptPubKey"]["hex"], token="tokens-json" in plumb_reasons))
     run_bytes = 0
     for i, n in enumerate(verdict.get("data_out", [])):
         if n and tx["vout"][i]["scriptPubKey"].get("type") != "nulldata":

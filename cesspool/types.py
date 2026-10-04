@@ -29,8 +29,14 @@ TYPES = {
     },
     "olga": {
         "name": "OLGA / Stamps in P2WSH",
-        "what": "The Stamps OLGA framing: a length prefix and a magic tag, then the payload in consecutive P2WSH output hashes.",
-        "how": "Knots catches the original `stamp:` tag. The `ACME` variant changed four bytes and walked past it until Plumb's output filter.",
+        "what": "The Stamps OLGA framing: a length prefix and the `stamp:` tag, then the payload in consecutive P2WSH output hashes.",
+        "how": "Knots refuses the `stamp:` tag with `-rejecttokens`, and its data-carrier count books the framed outputs as data outside OP_RETURN, so either rule alone stops it. Plumb inherits both.",
+        "filter": KNOTS, "option": "-rejecttokens",
+    },
+    "olga-acme": {
+        "name": "ACME in P2WSH",
+        "what": "The OLGA framing with the tag changed to `ACME`: a length prefix, then the payload in consecutive P2WSH output hashes.",
+        "how": "Four changed bytes walk past Knots' `stamp:` check, so stock Knots relays it. Plumb's output filter counts the outputs: three or more P2WSH outputs sharing one dust value, or a hash that reads as data, mark the whole run.",
         "filter": PLUMB, "option": "-rejectfakeoutputs",
         "prs": [("knots#389", "https://github.com/bitcoinknots/bitcoin/pull/389")],
     },
@@ -139,11 +145,19 @@ TYPES = {
         "how": "Knots rejects bare multisig by default.",
         "filter": KNOTS, "option": "-permitbaremultisig=0",
     },
+    "token-json": {
+        "name": "JSON token message",
+        "what": "A token operation written as a JSON object in OP_RETURN: the BRC-20 format that ico-20, crc-20 and others copy, with a `\"p\"` field naming the protocol and `\"op\"` the operation.",
+        "how": "The message itself fits the default 83-byte OP_RETURN allowance, so stock Knots relays it unless the transaction carries other data too. Plumb reads the object and refuses it with `-rejecttokenmessages`.",
+        "filter": PLUMB, "option": "-rejecttokenmessages",
+        "prs": [("plumb#2", "https://github.com/plumb-node/plumb/pull/2")],
+    },
     "omni": {
         "name": "Omni Layer",
         "what": "An Omni token message in OP_RETURN.",
-        "how": "Small enough to fit the default OP_RETURN allowance.",
-        "filter": ALLOWED,
+        "how": "Small enough for the default 83-byte OP_RETURN allowance, so stock Knots relays it. Plumb refuses it with `-rejecttokenmessages`.",
+        "filter": PLUMB, "option": "-rejecttokenmessages",
+        "prs": [("plumb#2", "https://github.com/plumb-node/plumb/pull/2")],
     },
     "stacks": {
         "name": "Stacks commitment",
