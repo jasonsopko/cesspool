@@ -243,6 +243,8 @@ footer .wrap { display: flex; gap: 24px; flex-wrap: wrap; justify-content: space
 
 /* home hero */
 .herogrid { display: grid; grid-template-columns: minmax(0, 1.5fr) minmax(260px, 1fr); gap: 30px; align-items: center; }
+.herogrid h1 { max-width: none; }
+.herogrid h1 span { display: inline-block; }
 @media (max-width: 860px) { .herogrid { grid-template-columns: 1fr; gap: 0; } .sample { margin-bottom: 10px; } }
 .sample { display: block; color: var(--text); text-align: center; background: radial-gradient(ellipse at 50% 40%, var(--panel2), transparent 70%); padding: 26px 16px 18px; border-radius: 12px; }
 .sample:hover { text-decoration: none; }

@@ -428,7 +428,7 @@ def page(path, title, body, *, nav="", desc="", og=None, tip=None):
 '''
 
 
-ASSET_V = "10"
+ASSET_V = "12"
 
 
 def write(out, rel, text):
@@ -1221,7 +1221,7 @@ def index_page(idx, tip):
     tline = (f'{pct(tb["share"])} sewage, {n(tb["sn"])} transaction{"s" if tb["sn"] != 1 else ""}.' if tb["sn"]
              else ("Not one byte of data." if tb["grade"] == "pristine" else f'No sewage. {n(tb["gn"])} small note{"s" if tb["gn"] != 1 else ""}.'))
     body = f'''<div class="herogrid"><div class="hero"><div class="kicker">Bitcoin water quality, block by block</div>
-<h1>Clean blocks carry payments. The rest is sewage.</h1>
+<h1><span>Clean blocks carry payments.</span> <span>The rest is sewage.</span></h1>
 <p class="lede">Every block since the fork, every transaction, tested with the policy code a Plumb node runs. See what got mined, who mined it, and which filter would have kept it out.</p></div>
 <a class="sample" href="/block/{tb["h"]}/"><div class="kicker">Latest sample</div><div class="bigcube">{cube(tb)}</div>
 <div class="sh">Block {tb["h"]}</div><div class="muted small">{esc(short_who(tb))} · {tm(tb["t"])}</div>
