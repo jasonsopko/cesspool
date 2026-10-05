@@ -17,6 +17,10 @@ INSTALLER = "https://github.com/jasonsopko/knots-datum-node"
 PLUMB_VERSION = "plumb5 (v29.4.2.knots20260508.plumb5)"
 PLUMB_NAME = "Plumb 5"
 DATACARRIER_SIZE = 83  # the Knots and Plumb default -datacarriersize
+MAXSCRIPTSIZE_DEFAULT = 1650  # the Knots and Plumb default -maxscriptsize
+DUSTRELAYFEE_DEFAULT = 3000  # the default -dustrelayfee, in sat/kvB
+MIN_USEFUL_SCRIPT_LIMIT = 520  # plumb-check offers no -maxscriptsize below this
+MAX_DUST_RATE = 100000  # plumb-check searches -dustrelayfee up to this, in sat/kvB
 FORK = 961640
 
 GRADES = [  # key, label, css
@@ -430,7 +434,7 @@ def page(path, title, body, *, nav="", desc="", og=None, tip=None):
 '''
 
 
-ASSET_V = "16"
+ASSET_V = "17"
 
 
 def write(out, rel, text):
@@ -503,13 +507,59 @@ def rule_list(rs, dc):
     return f'<ul class="rules">{"".join(items)}</ul>'
 
 
+def plumb_own(s, data_rs):
+    """Plumb's own filters behind a refusal, most bytes first: those measured in fc, plus any a reason names."""
+    fc = s.get("fc") or {}
+    return sorted(set(fc) | {RULES[r][1] for r in data_rs if r in RULES and RULES[r][1] in PLUMB_OPTIONS}, key=lambda o: -fc.get(o, 0))
+
+
+def feerate_conf(sat_per_kvb):
+    """A sat/kvB rate the way bitcoin.conf takes it, in BTC/kvB."""
+    return f"0.{sat_per_kvb:08d}"
+
+
+def refuse_with(k, name, s, counted):
+    """For a transaction `name` relays: the settings whose value would refuse it. plumb-check found each
+    value by rerunning the policy checks with that one setting changed ("fix"); nothing here is reasoned
+    from the transaction. A setting no value of refuses it is left out; -maxscriptsize is offered only
+    at MIN_USEFUL_SCRIPT_LIMIT or more."""
+    fix = (s.get("fix") or {}).get(k)
+    if fix is None:
+        return ""
+    parts = []
+    if "dcs" in fix:
+        setting = "<code>datacarrier=0</code>" if fix["dcs"] == 0 else f'<code>datacarriersize={fix["dcs"]}</code> or lower'
+        parts.append(f"{setting} (counts {n(counted)} B; default {DATACARRIER_SIZE})")
+    if "mss" in fix:
+        parts.append(f'<code>maxscriptsize={fix["mss"]}</code> or lower (default {n(MAXSCRIPTSIZE_DEFAULT)})')
+    if "dust" in fix:
+        # The dust line depends on the output type, so name the output the engine saw fall under it
+        outs = s.get("outs") or []
+        o = outs[fix["dusti"]] if fix.get("dusti") is not None and fix["dusti"] < len(outs) else None
+        kind = TYPE_SHORT.get(o["type"], o["type"]) if o else None
+        which = f"a {kind} output of {n(o['sats'])} sat" if o else "one of its outputs"
+        if fix["dust"] == DUSTRELAYFEE_DEFAULT + 1:
+            parts.append(f"any <code>dustrelayfee</code> above the default {feerate_conf(DUSTRELAYFEE_DEFAULT)} ({which} sits on the dust line)")
+        else:
+            also = f", and every {kind} output that small with it" if kind else ""
+            parts.append(f'<code>dustrelayfee={feerate_conf(fix["dust"])}</code> or higher (default {feerate_conf(DUSTRELAYFEE_DEFAULT)}), '
+                         f'which makes {which} dust{also}')
+    if parts:
+        return f'<div class="by">Would refuse it with: {"; ".join(parts)}.</div>'
+    # Name Plumb's filter only when Plumb refuses the transaction; fc alone measures bytes
+    own = plumb_own(s, [r for r in s["v"]["plumb"] if classify.DATA_REASONS.match(r)]) if k == "knots" and s["v"]["plumb"] else []
+    does = f" {esc(PLUMB_NAME)}&#39;s {', '.join(f'<code>{esc(o)}</code>' for o in own)} {'do' if len(own) > 1 else 'does'}." if own else ""
+    return (f'<div class="by">No <code>datacarriersize</code>, no <code>maxscriptsize</code> of {MIN_USEFUL_SCRIPT_LIMIT} or more and no '
+            f'<code>dustrelayfee</code> up to {feerate_conf(MAX_DUST_RATE)} refuses it.{does}</div>')
+
+
 def plumb_by(s, data_rs):
     """What a Plumb refusal rests on: its own filters, each measured with that filter alone off, or Knots' rules."""
     knots_rs = set(s["v"]["knots"])
     fc = s.get("fc") or {}
     dc = s.get("dc") or {}
     added = sum(dc.get("plumb", [0, 0])) - sum(dc.get("knots", [0, 0]))
-    own = sorted(set(fc) | {RULES[r][1] for r in data_rs if r in RULES and RULES[r][1] in PLUMB_OPTIONS}, key=lambda o: -fc.get(o, 0))
+    own = plumb_own(s, data_rs)
     parts = [f"<code>{esc(o)}</code>" + (f" counts {n(fc[o])} B" if fc.get(o) else "") + source_link(o) for o in own]
     if added > 0 and not fc:
         # Two filters covering the same bytes: neither changes the count alone, together they do.
@@ -543,7 +593,7 @@ def verdict_html(s):
             res = '<span class="pass">Relays and mines it</span>'
             text = "this one gets past its filters" if k == "plumb" and s["missed"] else "no rule matches"
             text += f"; counts {n(total)} B of data, inside the {DATACARRIER_SIZE}-byte allowance" if total else ", no data counted"
-            why = f'<div class="why">{text}</div>'
+            why = f'<div class="why">{text}</div>' + refuse_with(k, name, s, total)
         cells.append(f'<div class="{"plumb" if k == "plumb" else ""}"><div class="who">{name}</div>{res}{why}</div>')
     return f'<div class="verd">{"".join(cells)}</div>'
 
@@ -797,6 +847,8 @@ def tx_catalog():
              for t, i in TYPES.items()}
     return {"plumb": PLUMB_NAME, "verdicts": VERDICT_NAMES, "rules": RULES, "sources": FILTER_SOURCE,
             "plumb_options": sorted(PLUMB_OPTIONS), "dcsize": DATACARRIER_SIZE, "types": types,
+            "limits": {"dcsize": DATACARRIER_SIZE, "mss": MAXSCRIPTSIZE_DEFAULT, "dust": DUSTRELAYFEE_DEFAULT,
+                       "mss_floor": MIN_USEFUL_SCRIPT_LIMIT, "dust_max": MAX_DUST_RATE},
             "filters": {"knots": KNOTS, "plumb": PLUMB, "none": NONE, "allowed": ALLOWED}}
 
 
@@ -1073,6 +1125,25 @@ def daily_chart(blocks):
             f'<span>daily sewage share, peak {pct(mx, 1)}</span><span>{datetime.date.fromtimestamp(hi * 86400)}</span></div>')
 
 
+def gateway_table(blocks, pool):
+    """One row per gateway tag among blocks DATUM gateways built with `pool` upstream: blocks, sewage,
+    share of block space, payload, last block. Sorted by sewage transactions, then blocks."""
+    by = collections.defaultdict(list)
+    for b in blocks:
+        by[b.get("dtag") or ""].append(b)
+    rows = []
+    for tag, bs in sorted(by.items(), key=lambda kv: (-sum(b["sn"] for b in kv[1]), -len(kv[1]), kv[0])):
+        w, sw = sum(b["w"] for b in bs), sum(b["sw"] for b in bs)
+        last = max(bs, key=lambda b: b["h"])
+        rows.append(f'<tr><td>{esc(tag) if tag else "<span class=muted>no tag</span>"}</td><td class="r num">{n(len(bs))}</td>'
+                    f'<td class="r num">{n(sum(b["sn"] for b in bs))}</td><td class="r num">{pct(sw / w) if w else "0%"}</td>'
+                    f'<td class="r num">{size(sum(b["sd"] for b in bs))}</td><td><a href="/block/{last["h"]}/">{last["h"]}</a> {tm(last["t"], False)}</td></tr>')
+    return (f'<h3 style="margin-top:22px">Gateways with {esc(pool)} upstream</h3>'
+            f'<p class="small muted" style="margin:0 0 8px;max-width:75ch">One row per tag the gateways wrote. The tag is the second coinbase tag, set by whoever runs the gateway, and anyone can write any tag. '
+            f'A gateway&#39;s version is not on the chain. The DATUM protocol sends it to {esc(pool)} in the handshake, where the pool operator can see it next to the connection; nothing here can.</p>'
+            f'<div class="tw"><table><tr><th>Gateway tag</th><th class="r">Blocks</th><th class="r">Sewage txs</th><th class="r">Sewage share</th><th class="r">Payload</th><th>Last block</th></tr>{"".join(rows)}</table></div>')
+
+
 def pool_page(idx, name, tip):
     everything = window_blocks(idx, None)
     allb = [b for b in everything if who(b) == name]
@@ -1128,16 +1199,16 @@ The gateway&#39;s node chooses the transactions, normally the miner&#39;s own, s
         past_part = (f'<p class="small muted" style="margin-top:22px">{none} a transaction that Knots and Plumb '
                      f'refuse at their default settings. <a href="/past-defaults/">What this means</a>.</p>')
     plumb_part = pct(cur["psw"] / cur["sw"]) if cur["sw"] else "0%"
+    gateways = ""
     if dtm:
-        tags = collections.Counter(b.get("dtag") or "" for b in allb)
-        tl = ", ".join(f'{esc(t) if t else "no tag"} ({n(c)})' for t, c in tags.most_common(12))
         intro = (f'<p style="margin-top:12px;max-width:70ch">These are the blocks mined through {pool_link(base)} whose templates a DATUM gateway with the pool upstream built. '
                  f'The gateway&#39;s node chooses the transactions, normally the miner&#39;s own; the pool sets who the coinbase pays and its first tag, not what goes in the block. '
-                 f'A pool serving a stratum port through its own gateway looks the same from the chain.</p>'
-                 f'<p class="small muted" style="margin-top:6px">Tags the gateways wrote, with block counts: {tl}{"; more not shown" if len(tags) > 12 else ""}.</p>')
+                 f'A pool serving a stratum port through its own gateway looks the same from the chain.</p>')
+        gateways = gateway_table(allb, base)
     elif via:
         intro = (f'<p class="small muted" style="margin-top:12px;max-width:70ch">{plural(len(via), "more block")} mined through {esc(name)} '
                  f'{"was" if len(via) == 1 else "were"} built by DATUM gateways with {esc(name)} upstream, so {"it is" if len(via) == 1 else "they are"} counted under {via_link}.</p>')
+        gateways = gateway_table(via, name)
     else:
         intro = ""
     if cur["sn"] and dtm:
@@ -1155,6 +1226,7 @@ The gateway&#39;s node chooses the transactions, normally the miner&#39;s own, s
 {intro}<p style="margin-top:12px"><button class="copy" data-copy="{esc(name)}: grade {L} at cesspool.lol. {pct(cur["share"], 2)} of its block space is spam. {SITE}/pool/{miner.slug(name)}/">Copy share link</button></p></div>
 <div class="stampbox" style="text-align:center"><span class="letter gr-{L}">{L}</span><div class="small muted" style="margin-top:10px">{LETTER_TEXT[L]}</div></div></div>
 {tiles}
+{gateways}
 <h2>Since the fork</h2>{daily_chart(allb)}
 <div class="strip">{"".join(cube_link(b) for b in recent)}</div>
 <div class="grid2"><div><h3>Worst blocks</h3><div class="tw"><table><tr><th>Block</th><th>Time</th><th>Grade</th><th class="r">Share</th><th class="r">Txs</th><th class="r">Payload</th></tr>{wrows or '<tr><td colspan="6" class="muted">None.</td></tr>'}</table></div></div>
@@ -1232,6 +1304,7 @@ def about_page(tip):
 <h2>Verdicts come from the shipped code</h2>
 <p>Each transaction, with the coins it spends, goes through the policy checks of Plumb {PLUMB_VERSION}: <code>IsStandardTx</code>, <code>AreInputsStandard</code>, the data-carrier count and <code>IsWitnessStandard</code>, once with each software's default policy: stock Knots 29.4.2 (Plumb's filters off) and Plumb. Bitcoin Core is not compared: it has no BLAKE2b proof of work, so no Core node follows this chain. Nothing here reimplements a filter, so this page and a Plumb node cannot disagree about a transaction.</p>
 <p>Each refusal on a block or transaction page names the rule it comes from and the option behind it. Plumb's count is also taken with each of its four data-counting filters turned off alone, so the bytes a filter is responsible for come from the code too (the fifth, <code>-rejecttokenmessages</code>, names itself in its reason), and a refusal that rests on Knots' own rules says so.</p>
+<p>Where Knots or Plumb relays a transaction shown here, the engine also tries three settings one at a time and keeps the value that would refuse it: the largest <code>datacarriersize</code>; the largest <code>maxscriptsize</code> of {MIN_USEFUL_SCRIPT_LIMIT} or more, the size of the largest push a script may hold, since a limit below that starts refusing ordinary multisig witnesses (a 3-of-5 P2WSH witness is about 395 bytes); and the smallest <code>dustrelayfee</code> up to {feerate_conf(MAX_DUST_RATE)} (100 sat/vB, where a P2TR output under 11,000 sat is already dust; higher rates were not tried). Each value comes from rerunning the same checks with only that setting changed. A setting that refuses the transaction at no value in its range is left out, and a verdict that offers none names the three that were tried.</p>
 <p>Not modeled: fee floors, mempool limits, replacement rules and address reuse. Those depend on the mempool at the time, not on what the transaction carries.</p>
 <h2>Grades</h2>
 <ul><li>{stamp("pristine", True)} every transaction is a payment. Not one byte of data.</li>

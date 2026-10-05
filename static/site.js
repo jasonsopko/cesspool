@@ -214,17 +214,77 @@
     });
     return ul;
   }
-  // What a Plumb refusal rests on: its own filters, each measured with that filter alone off, or Knots' rules.
-  function plumbBy(cat, tx, dataRs) {
-    var knots = (tx.x && tx.x.knots) || [], fc = tx.fc || {}, dc = tx.dc || {};
-    var sum = function (a) { return (a || [0, 0]).reduce(function (x, y) { return x + y; }, 0); };
-    var added = sum(dc.plumb) - sum(dc.knots);
-    var own = Object.keys(fc), options = cat.plumb_options || [];
+  // Plumb's own filters behind a refusal, most bytes first: those measured in fc, plus any a reason names.
+  function plumbOwn(cat, tx, dataRs) {
+    var fc = tx.fc || {}, own = Object.keys(fc), options = cat.plumb_options || [];
     dataRs.forEach(function (r) {
       var rule = cat.rules && cat.rules[r];
       if (rule && rule[1] && options.indexOf(rule[1]) >= 0 && own.indexOf(rule[1]) < 0) own.push(rule[1]);
     });
     own.sort(function (a, b) { return (fc[b] || 0) - (fc[a] || 0); });
+    return own;
+  }
+  function text(s) { return document.createTextNode(s); }
+  // For a transaction this software relays: the settings whose value would refuse it. The engine found
+  // each value by rerunning the policy checks with that one setting changed (tx.fx); a setting no value
+  // of refuses it is left out.
+  function refuseWith(cat, tx, k, counted) {
+    var fix = tx.fx && tx.fx[k];
+    if (!fix) return null;
+    var lim = cat.limits || {}, box = el("div", { cls: "by" }), parts = [];
+    var conf = function (r) { return "0." + ("00000000" + r).slice(-8); };
+    if ("dcs" in fix) {
+      var f = document.createDocumentFragment();
+      if (fix.dcs === 0) f.appendChild(el("code", { text: "datacarrier=0" }));
+      else { f.appendChild(el("code", { text: "datacarriersize=" + fix.dcs })); f.appendChild(text(" or lower")); }
+      f.appendChild(text(" (counts " + num(counted) + " B; default " + lim.dcsize + ")"));
+      parts.push(f);
+    }
+    if ("mss" in fix) {
+      var g = document.createDocumentFragment();
+      g.appendChild(el("code", { text: "maxscriptsize=" + fix.mss }));
+      g.appendChild(text(" or lower (default " + num(lim.mss) + ")"));
+      parts.push(g);
+    }
+    if ("dust" in fix) {
+      // The dust line depends on the output type, so name the output the engine saw fall under it
+      var h = document.createDocumentFragment(), o = (fix.dusti !== undefined && tx.o && tx.o[fix.dusti]) || null;
+      var kind = o ? (SHORT[o.t] || o.t) : null, which = o ? "a " + kind + " output of " + num(o.a) + " sat" : "one of its outputs";
+      if (fix.dust === lim.dust + 1) {
+        h.appendChild(text("any ")); h.appendChild(el("code", { text: "dustrelayfee" }));
+        h.appendChild(text(" above the default " + conf(lim.dust) + " (" + which + " sits on the dust line)"));
+      } else {
+        h.appendChild(el("code", { text: "dustrelayfee=" + conf(fix.dust) }));
+        h.appendChild(text(" or higher (default " + conf(lim.dust) + "), which makes " + which + " dust" + (kind ? ", and every " + kind + " output that small with it" : "")));
+      }
+      parts.push(h);
+    }
+    if (parts.length) {
+      box.appendChild(text("Would refuse it with: "));
+      parts.forEach(function (p, i) { if (i) box.appendChild(text("; ")); box.appendChild(p); });
+      box.appendChild(text("."));
+      return box;
+    }
+    // Name Plumb's filter only when Plumb refuses the transaction; fc alone measures bytes
+    var plumbAll = (tx.x && tx.x.plumb) || [], plumbRs = plumbAll.filter(function (r) { return DATA_REASON.test(r); });
+    var own = k === "knots" && plumbAll.length ? plumbOwn(cat, tx, plumbRs) : [];
+    box.appendChild(text("No ")); box.appendChild(el("code", { text: "datacarriersize" }));
+    box.appendChild(text(", no ")); box.appendChild(el("code", { text: "maxscriptsize" }));
+    box.appendChild(text(" of " + lim.mss_floor + " or more and no ")); box.appendChild(el("code", { text: "dustrelayfee" }));
+    box.appendChild(text(" up to " + conf(lim.dust_max) + " refuses it."));
+    if (own.length) {
+      box.appendChild(text(" " + cat.plumb + "'s "));
+      own.forEach(function (o, i) { if (i) box.appendChild(text(", ")); box.appendChild(el("code", { text: o })); });
+      box.appendChild(text(own.length > 1 ? " do." : " does."));
+    }
+    return box;
+  }
+  // What a Plumb refusal rests on: its own filters, each measured with that filter alone off, or Knots' rules.
+  function plumbBy(cat, tx, dataRs) {
+    var knots = (tx.x && tx.x.knots) || [], fc = tx.fc || {}, dc = tx.dc || {};
+    var sum = function (a) { return (a || [0, 0]).reduce(function (x, y) { return x + y; }, 0); };
+    var added = sum(dc.plumb) - sum(dc.knots);
+    var own = plumbOwn(cat, tx, dataRs);
     var parts = own.map(function (o) {
       var f = document.createDocumentFragment();
       f.appendChild(el("code", { text: o }));
@@ -266,6 +326,8 @@
         var text = k === "plumb" && tx.m ? "this one gets past its filters" : "no rule matches";
         text += total ? "; counts " + num(total) + " B of data" + (cat.dcsize ? ", inside the " + cat.dcsize + "-byte allowance" : "") : ", no data counted";
         cell.appendChild(el("div", { cls: "why", text: text }));
+        var rw = refuseWith(cat, tx, k, total);
+        if (rw) cell.appendChild(rw);
       }
       box.appendChild(cell);
     });

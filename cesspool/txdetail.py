@@ -128,6 +128,9 @@ def tx_record(t, row, c):
             rec["dc"] = dc
         if row.get("fc"):
             rec["fc"] = row["fc"]
+        # Settings whose value would refuse it, per software that relays it (plumb-check "fix").
+        if row.get("fix"):
+            rec["fx"] = row["fix"]
     if row is None or "error" in row:
         rec["e"] = 1
     return rec

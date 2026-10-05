@@ -7,7 +7,9 @@
 // the transaction trips and the data bytes it counts, plus, under the plumb
 // profile, the per-input and per-output data byte counts and the bytes each
 // of Plumb's filters is responsible for ("fc": the count with that filter
-// alone turned off, taken from the full count).
+// alone turned off, taken from the full count). For a transaction the knots
+// or plumb profile relays while the other side sees data in it, "fix" says
+// what a node on that profile could set to refuse it (see Fix below).
 #include <chainparams.h>
 #include <coins.h>
 #include <common/args.h>
@@ -20,19 +22,25 @@
 #include <primitives/transaction.h>
 #include <script/script.h>
 #include <test/util/setup_common.h>
+#include <tinyformat.h>
 #include <univalue.h>
 #include <util/strencodings.h>
+#include <util/string.h>
 
 #include <boost/test/unit_test.hpp>
 
 #include <cstdlib>
 #include <fstream>
+#include <map>
 #include <sstream>
 
 namespace {
 
+using Settings = std::vector<std::pair<std::string, std::string>>;
+
 struct Profile {
     std::string name;
+    Settings set;
     kernel::MemPoolOptions opts;
     unsigned int weight_per_data_byte;
     unsigned int script_size_limit;
@@ -55,12 +63,12 @@ struct Globals {
 
 // Same steps init.cpp takes: the -corepolicy soft-sets, then the mempool
 // options and the policy globals.
-Profile MakeProfile(const std::string& name, const std::vector<std::pair<std::string, std::string>>& set, const Globals& defaults)
+Profile MakeProfile(const std::string& name, const Settings& set, const Globals& defaults)
 {
     ArgsManager args;
     for (const auto& [k, v] : set) args.ForceSetArg(k, v);
     InitParameterInteraction(args);
-    Profile p{name, kernel::MemPoolOptions{}, defaults.weight_per_data_byte, defaults.script_size_limit,
+    Profile p{name, set, kernel::MemPoolOptions{}, defaults.weight_per_data_byte, defaults.script_size_limit,
               defaults.reject_dead_branches, defaults.reject_bare_envelopes, defaults.reject_fake_multisig, defaults.bytes_per_sigop, defaults.bytes_per_sigop_strict};
     BOOST_REQUIRE(ApplyArgsManOptions(args, Params(), p.opts));
     if (auto parsed = args.GetFixedPointArg("-datacarriercost", 2)) {
@@ -118,6 +126,79 @@ void DatacarrierReasons(const CTransaction& tx, const CCoinsViewCache& view, con
     }
 }
 
+// Every reason the profile's policy gives against the transaction, same checks as the node.
+std::vector<std::string> Reasons(const Profile& p, const CTransaction& tx, const CCoinsViewCache& view, std::pair<size_t, size_t>& dcb)
+{
+    Activate(p);
+    std::vector<std::string> reasons;
+    Collect([&](std::string& r, const ignore_rejects_type& ig) { return IsStandardTx(tx, p.opts, r, ig); }, reasons);
+    Collect([&](std::string& r, const ignore_rejects_type& ig) { return AreInputsStandard(tx, view, p.opts, "bad-txns-input-", r, ig); }, reasons);
+    DatacarrierReasons(tx, view, p.opts, reasons, dcb);
+    if (tx.HasWitness()) {
+        Collect([&](std::string& r, const ignore_rejects_type& ig) { return IsWitnessStandard(tx, view, "bad-witness-", r, ig); }, reasons);
+    }
+    if (p.name == "core") std::erase(reasons, std::string{"multi-op-return"});
+    return reasons;
+}
+
+// Below this, a -maxscriptsize refuses ordinary spends too (a 3-of-5 P2WSH witness is about
+// 400 bytes), so a value under it is not offered as a way to refuse one transaction.
+constexpr unsigned int MIN_USEFUL_SCRIPT_LIMIT{520};
+// -dustrelayfee is searched up to this, in sat/kvB (the default is 3000).
+constexpr int MAX_DUST_RATE{100'000};
+
+// What a node on profile p could set to refuse a transaction p relays, each value found by
+// rerunning the same checks with that one setting changed:
+//   dcs   the largest -datacarriersize that refuses it (0: -datacarrier=0 does the same)
+//   mss   the largest -maxscriptsize that refuses it, when that is MIN_USEFUL_SCRIPT_LIMIT or more
+//   dust  the smallest -dustrelayfee, in sat/kvB, that refuses it, up to MAX_DUST_RATE, and
+//   dusti the first output that rate makes dust and the rate below does not, so the page can name it
+// A key is left out when no value of that setting in its range refuses the transaction.
+UniValue Fix(const Profile& p, const CTransaction& tx, const CCoinsViewCache& view, size_t counted, const Globals& defaults)
+{
+    const auto refuses = [&](const std::string& key, const std::string& value) {
+        Settings set{p.set};
+        set.emplace_back(key, value);
+        std::pair<size_t, size_t> unused;
+        return !Reasons(MakeProfile(p.name, set, defaults), tx, view, unused).empty();
+    };
+    UniValue fix{UniValue::VOBJ};
+    if (counted > 0 && refuses("-datacarriersize", util::ToString(counted - 1))) {
+        fix.pushKV("dcs", uint64_t(counted - 1));
+    }
+    // Refusal is monotone in the limit: true below the largest script or witness size the
+    // policy measures, false from it up. Find the largest refusing limit in the useful range.
+    if (p.script_size_limit > MIN_USEFUL_SCRIPT_LIMIT && refuses("-maxscriptsize", util::ToString(MIN_USEFUL_SCRIPT_LIMIT))) {
+        unsigned int lo{MIN_USEFUL_SCRIPT_LIMIT}, hi{p.script_size_limit - 1};
+        while (lo < hi) {
+            const unsigned int mid{lo + (hi - lo + 1) / 2};
+            if (refuses("-maxscriptsize", util::ToString(mid))) lo = mid; else hi = mid - 1;
+        }
+        fix.pushKV("mss", uint64_t(lo));
+    }
+    // Monotone the other way: a higher dust rate refuses more. Find the smallest refusing rate.
+    const auto rate = [](int sat_per_kvb) { return strprintf("0.%08d", sat_per_kvb); };
+    const int base_rate{int(p.opts.dust_relay_feerate.GetFeePerK())};
+    if (base_rate < MAX_DUST_RATE && refuses("-dustrelayfee", rate(MAX_DUST_RATE))) {
+        int lo{base_rate + 1}, hi{MAX_DUST_RATE};
+        while (lo < hi) {
+            const int mid{lo + (hi - lo) / 2};
+            if (refuses("-dustrelayfee", rate(mid))) hi = mid; else lo = mid + 1;
+        }
+        fix.pushKV("dust", lo);
+        // The output that rate catches: dust at it and not one step below. A zero-value anchor
+        // is dust at every rate and permitted, so the first dust output alone could name it.
+        const CFeeRate at{CAmount{lo}}, below{CAmount{lo - 1}};
+        for (size_t o{0}; o < tx.vout.size(); ++o) {
+            if (IsDust(tx.vout[o], at) && !IsDust(tx.vout[o], below)) {
+                fix.pushKV("dusti", uint64_t(o));
+                break;
+            }
+        }
+    }
+    return fix;
+}
+
 UniValue Strings(const std::vector<std::string>& v)
 {
     UniValue a{UniValue::VARR};
@@ -151,6 +232,8 @@ BOOST_AUTO_TEST_CASE(plumb_check)
     for (const char* option : {"-rejectfakeoutputs", "-rejectdeadbranches", "-rejectbareenvelopes", "-rejectfakemultisig"}) {
         plumb_without.push_back(MakeProfile(option, {{option, "0"}}, defaults));
     }
+    const Profile restore{"", {}, {}, defaults.weight_per_data_byte, defaults.script_size_limit, defaults.reject_dead_branches,
+                          defaults.reject_bare_envelopes, defaults.reject_fake_multisig, defaults.bytes_per_sigop, defaults.bytes_per_sigop_strict};
 
     std::ifstream in{in_path};
     std::ofstream out{out_path};
@@ -187,17 +270,13 @@ BOOST_AUTO_TEST_CASE(plumb_check)
         }
 
         UniValue verdicts{UniValue::VOBJ};
+        std::map<std::string, std::vector<std::string>> reasons_of;
+        std::map<std::string, size_t> counted_of;
         for (const auto& p : profiles) {
-            Activate(p);
-            std::vector<std::string> reasons;
-            Collect([&](std::string& r, const ignore_rejects_type& ig) { return IsStandardTx(tx, p.opts, r, ig); }, reasons);
-            Collect([&](std::string& r, const ignore_rejects_type& ig) { return AreInputsStandard(tx, view, p.opts, "bad-txns-input-", r, ig); }, reasons);
             std::pair<size_t, size_t> dcb;
-            DatacarrierReasons(tx, view, p.opts, reasons, dcb);
-            if (tx.HasWitness()) {
-                Collect([&](std::string& r, const ignore_rejects_type& ig) { return IsWitnessStandard(tx, view, "bad-witness-", r, ig); }, reasons);
-            }
-            if (p.name == "core") std::erase(reasons, std::string{"multi-op-return"});
+            const auto reasons{Reasons(p, tx, view, dcb)};
+            reasons_of[p.name] = reasons;
+            counted_of[p.name] = dcb.first + dcb.second;
             UniValue v{UniValue::VOBJ};
             v.pushKV("reasons", Strings(reasons));
             v.pushKV("data", uint64_t(dcb.first));
@@ -238,11 +317,20 @@ BOOST_AUTO_TEST_CASE(plumb_check)
                 const int64_t diff{int64_t(total) - int64_t(without.first + without.second)};
                 if (diff) fc.pushKV(q.name, diff);
             }
-            Activate(p);
             row.pushKV("fc", fc);
         }
-        Activate({"", {}, defaults.weight_per_data_byte, defaults.script_size_limit, defaults.reject_dead_branches,
-                  defaults.reject_bare_envelopes, defaults.reject_fake_multisig, defaults.bytes_per_sigop, defaults.bytes_per_sigop_strict});
+        // Settings that would refuse what a profile relays, for the transactions the site
+        // shows: anything some profile refuses or counts data in. Clean transactions skip it.
+        const bool shown{!reasons_of["plumb"].empty() || counted_of["plumb"] > 0 || counted_of["knots"] > 0};
+        if (shown) {
+            UniValue fix{UniValue::VOBJ};
+            for (const auto& p : profiles) {
+                if (p.name == "core" || !reasons_of[p.name].empty()) continue;
+                fix.pushKV(p.name, Fix(p, tx, view, counted_of[p.name], defaults));
+            }
+            if (!fix.empty()) row.pushKV("fix", fix);
+        }
+        Activate(restore);
         row.pushKV("v", verdicts);
         out << row.write() << "\n";
     }

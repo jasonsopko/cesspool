@@ -89,7 +89,7 @@ def process_block(b, rows):
                          "data": c["data_bytes"], "missed": c["missed"], "w": t["weight"], "vsize": t["vsize"], "size": t["size"],
                          "fee": fee, "v": {k: c["reasons"][k]["reasons"] for k in ("core", "knots", "plumb")},
                          "dc": {k: [c["reasons"][k]["data"], c["reasons"][k]["data_nonstd"]] for k in ("core", "knots", "plumb")},
-                         "fc": row.get("fc", {}),
+                         "fc": row.get("fc", {}), "fix": row.get("fix", {}),
                          **d})
             tmap.append([t["vsize"], fee, tier, len(spam) - 1])
         else:
