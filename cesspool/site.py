@@ -410,8 +410,8 @@ def page(path, title, body, *, nav="", desc="", og=None, tip=None):
     navh = "".join(f'<a href="{u}"{" class=\"on\"" if k == nav else ""}>{t}</a>' for k, u, t in nav_items)
     full_title = f"{title} · cesspool.lol" if title else "cesspool.lol · Bitcoin water quality, block by block"
     foot_tip = f'Tip {tip["h"]}, {tm(tip["t"])}. ' if tip else ""
-    # Summary pages reload themselves when a new block lands; block, transaction and about pages do not.
-    live = tip and not path.startswith("/block/") and path not in ("/tx/", "/about/", "/404")
+    # Summary pages reload themselves when a new block lands; block, transaction, about and privacy pages do not.
+    live = tip and not path.startswith("/block/") and path not in ("/tx/", "/about/", "/privacy/", "/404")
     body_attr = f' data-tip="{tip["h"]}"' if live else ""
     return f'''<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
@@ -428,7 +428,7 @@ def page(path, title, body, *, nav="", desc="", og=None, tip=None):
 <main class="wrap">{body}</main>
 <footer><div class="wrap"><div>Verdicts from the policy code in Plumb {PLUMB_VERSION}, run on every transaction.<br>
 {foot_tip}Pool names follow <a href="https://reorg.watch">reorg.watch</a>.</div>
-<div>We never display what spam carries.<br><a href="/about/">How this works</a></div>
+<div>We never display what spam carries.<br><a href="/about/">How this works</a> · <a href="/privacy/">Privacy</a></div>
 <a class="discord" href="https://discord.gg/QxhQMdxrJ7"><img src="/static/beh-discord.png?v={ASSET_V}" width="28" height="28" alt=""><span>Bitcoin Education Hub on Discord: discuss Bitcoin openly, without being banned for your ideas.</span></a></div></footer>
 <script src="/static/site.js?v={ASSET_V}" defer></script></body></html>
 '''
@@ -1323,6 +1323,43 @@ The foul and raw-sewage blocks are also an <a href="/feed.xml">Atom feed</a>.</p
     return page("/about/", "About", body, nav="about", desc="How cesspool.lol grades blocks.", tip=tip)
 
 
+def privacy_page(tip):
+    body = '''<div class="hero prose"><div class="kicker">Privacy</div><h1>What we keep</h1>
+<p class="lede">What this site records when you visit, and how long it keeps it.</p></div>
+<div class="prose">
+<h2>The server log</h2>
+<p>Every request that reaches our server goes into its access log with:</p>
+<ul><li>your IP address</li>
+<li>the date and time</li>
+<li>the address you asked for, including any block height or transaction id in it</li>
+<li>the page that linked you here, if your browser sends it</li>
+<li>your browser's user agent string</li></ul>
+<p>A request that fails can also go into the error log, with your IP address, the address you asked for and the page that linked you there.</p>
+<p>The access log is deleted after at most 15 days. The error log is cleared out the same way, but only on days that had errors, so its entries can stay longer. We open the logs only to look into problems with the site. We run no analytics on them, and we do not share or sell them.</p>
+<h2>Looking up a transaction</h2>
+<p>A lookup puts the transaction id in the log next to your IP address. If you would rather not leave that link, look up your own transactions on your own node.</p>
+<h2>Cloudflare</h2>
+<p>Requests to cesspool.lol go through Cloudflare first. Cloudflare:</p>
+<ul><li>sees your IP address and what you asked for</li>
+<li>adds its Web Analytics and bot-detection scripts to every page, but this site's security policy stops both from running in your browser</li>
+<li>asks your browser to report requests that fail</li>
+<li>can set its own cookies, for example when it checks whether a visitor is a bot</li>
+<li>shows us some of what it records in its dashboard, which can include IP addresses</li></ul>
+<p><a href="https://www.cloudflare.com/privacypolicy/">Cloudflare's privacy policy</a> covers what it keeps.</p>
+<h2>Everything else</h2>
+<ul><li>This site sets no cookies, and its own code runs no analytics. It has no accounts or ads.</li>
+<li>Every script, font and image comes from cesspool.lol. Nothing loads from other sites.</li>
+<li>Some pages check for a new block once a minute while they are on screen, and again when you come back to the tab. Each check is logged like any other request.</li>
+<li>What you paste into <a href="/check/">Check Node</a> never leaves your browser.</li>
+<li>Your browser keeps two notes for this site: the tab you last picked, and the last block a page reloaded for. Neither is sent to us.</li>
+<li>Links to other sites leave this one, and those sites have their own policies. Your browser tells them only that you came from cesspool.lol, not which page.</li></ul>
+<h2>Questions</h2>
+<p>Open an issue on <a href="https://github.com/jasonsopko/cesspool/issues">the site's GitHub repository</a>, where its source and its nginx configuration also live. If the logging changes, this page changes with it.</p>
+<p class="small muted">Updated 8 October 2026.</p>
+</div>'''
+    return page("/privacy/", "Privacy", body, desc="What cesspool.lol records when you visit, and how long it keeps it.", tip=tip)
+
+
 def blocks_page(idx, tip):
     hs = sorted(idx, reverse=True)[:288]
     rows = "".join(f'<tr><td><a href="/block/{h}/">{h}</a></td><td>{tm(idx[h]["t"])}</td><td>{pool_link(who(idx[h]))}</td>'
@@ -1532,6 +1569,7 @@ def build(out, heights=None, all_blocks=False, og=True):
     write(out, "guide/index.html", guide_page(idx, tip))
     write(out, "plumb/index.html", plumb_page(idx, tip))
     write(out, "about/index.html", about_page(tip))
+    write(out, "privacy/index.html", privacy_page(tip))
     write(out, "tx/index.html", tx_page(tip))
     write_gz(f"{out}/d/catalog.json.gz", tx_catalog())
     # Payout addresses on file for each name in the index, so a transaction page can tell a block
