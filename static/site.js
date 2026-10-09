@@ -25,7 +25,7 @@
       var v = jin.value.trim(), msg = "";
       if (/^\d+$/.test(v)) {
         if (parseInt(v, 10) >= 961640) { location.href = "/block/" + parseInt(v, 10) + "/"; return; }
-        msg = "cesspool covers blocks from 961640 on.";
+        msg = "cesspool covers BLAKE2b blocks, from 961640 on.";
       } else if (/^[0-9a-fA-F]{64}$/.test(v)) { location.href = "/tx/?" + v.toLowerCase(); return; }
       else msg = "Enter a block height or a 64-character transaction id.";
       jin.setCustomValidity(msg);
@@ -170,7 +170,7 @@
   function notFound(out, q) {
     out.textContent = "";
     out.appendChild(el("p", {}, "No transaction ", el("code", { text: q }), " in any block since the fork. ",
-      "cesspool covers blocks from 961640 on. A transaction still waiting in the mempool, one from before the fork, or one in a block from the last few minutes is not here."));
+      "cesspool covers every BLAKE2b block, from 961640 on. A transaction still waiting in the mempool, one in a SHA-256 block from before the fork, or one in a block from the last few minutes is not here."));
   }
 
   function shape(tx) {

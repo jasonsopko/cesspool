@@ -434,7 +434,7 @@ def page(path, title, body, *, nav="", desc="", og=None, tip=None):
 '''
 
 
-ASSET_V = "17"
+ASSET_V = "18"
 
 
 def write(out, rel, text):
@@ -746,11 +746,11 @@ RULES = {
 def tx_page(tip):
     body = f'''<div id="txapp" data-plumb="{esc(PLUMB_NAME)}">
 <div class="hero"><div class="kicker">Transaction</div><h1>Look up a transaction</h1>
-<p class="lede">Paste a transaction id from any block since the fork. The page shows what the transaction does, what it carries, and what Knots and {esc(PLUMB_NAME)} would do with it.</p></div>
+<p class="lede">Paste a transaction id from any BLAKE2b block, height {FORK} on. The page shows what the transaction does, what it carries, and what Knots and {esc(PLUMB_NAME)} would do with it.</p></div>
 <form class="txform"><input class="mono" spellcheck="false" autocomplete="off" placeholder="Transaction id (64 hex characters)" aria-label="Transaction id"><button class="btn">Look up</button></form>
 <div class="txout" aria-live="polite"></div>
 <noscript><p class="muted">This page needs JavaScript to load the transaction.</p></noscript></div>'''
-    return page("/tx/", "Transaction", body, desc="What a transaction since the fork does, what it carries, and what each node policy does with it.", tip=tip)
+    return page("/tx/", "Transaction", body, desc="What a transaction in a BLAKE2b block does, what it carries, and what each node policy does with it.", tip=tip)
 
 
 def write_gz(path, obj):
@@ -1398,7 +1398,8 @@ def index_page(idx, tip):
              else ("Not one byte of data." if tb["grade"] == "pristine" else f'No sewage. {n(tb["gn"])} small note{"s" if tb["gn"] != 1 else ""}.'))
     body = f'''<div class="herogrid"><div class="hero"><div class="kicker">Bitcoin water quality, block by block</div>
 <h1><span>Clean blocks carry payments.</span> <span>The rest is sewage.</span></h1>
-<p class="lede">Every block since the fork, every transaction, tested with the policy code a Plumb node runs. See what got mined, who mined it, and which filter would have kept it out.</p></div>
+<p class="lede">Every block since the fork, every transaction, tested with the policy code a Plumb node runs. See what got mined, who mined it, and which filter would have kept it out.</p>
+<p class="lede"><a href="/tx/">Look up any transaction</a> in a BLAKE2b block, height {FORK} on.</p></div>
 <a class="sample" href="/block/{tb["h"]}/"><div class="kicker">Latest sample</div><div class="bigcube">{cube(tb)}</div>
 <div class="sh">Block {tb["h"]}</div><div class="muted small">{esc(short_who(tb))} · {tm(tb["t"])}</div>
 <div style="margin:12px 0 6px">{stamp(tb["grade"])}</div><div class="small muted">{tline}</div></a></div>
