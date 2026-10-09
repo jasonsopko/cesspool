@@ -48,6 +48,9 @@ server {
     # transaction page fetches its data from /d/ on this origin.
     add_header Content-Security-Policy "default-src 'none'; script-src 'self'; connect-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'" always;
 
+    # /tx/<txid> is the transaction page; site.js reads the txid from the path.
+    rewrite "^/tx/[0-9a-fA-F]{64}/?$" /tx/index.html last;
+
     location /static/ {
         add_header Cache-Control "public, max-age=86400" always;
         add_header Strict-Transport-Security "max-age=31536000; includeSubDomains" always;

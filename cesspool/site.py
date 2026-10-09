@@ -434,7 +434,7 @@ def page(path, title, body, *, nav="", desc="", og=None, tip=None):
 '''
 
 
-ASSET_V = "18"
+ASSET_V = "19"
 
 
 def write(out, rel, text):
@@ -630,7 +630,7 @@ def dissection(s, paid_to, rate_ctx):
         note = f'<div class="note"><b>{PLUMB_NAME} relays this.</b> {prose(i.get("note", ""))} {filter_line(t)}</div>'
     return f'''<section class="{cls}" id="tx-{s["txid"][:16]}">
 <div class="hd">{tier_stamp}<h3>{esc(i["name"])}</h3><span class="muted small">{esc(s["labels"][0]) if s["labels"] else ""}</span></div>
-<div class="txid"><a href="/tx/?{s["txid"]}">{s["txid"]}</a></div>
+<div class="txid"><a href="/tx/{s["txid"]}">{s["txid"]}</a></div>
 <p>{prose(i["what"])} <span class="muted">{prose(i["how"])}</span></p>
 {f'<p class="small">{others}</p>' if others else ""}
 <div class="anat"><div><h4>Inputs ({n(len(s["ins"]))})</h4><div class="io">{io_html(s["ins"], "in", missed=s["missed"])}</div></div>
@@ -650,7 +650,7 @@ def gray_table(gray):
     rows = []
     for s in gray[:400]:
         t = s["types"][0] if s["types"] else "unknown"
-        rows.append(f'<tr id="tx-{s["txid"][:16]}"><td>{esc(info(t)["name"])}</td><td class="mono small"><a href="/tx/?{s["txid"]}">{s["txid"][:16]}…</a></td>'
+        rows.append(f'<tr id="tx-{s["txid"][:16]}"><td>{esc(info(t)["name"])}</td><td class="mono small"><a href="/tx/{s["txid"]}">{s["txid"][:16]}…</a></td>'
                     f'<td class="r num">{n(s["data"])}</td><td class="r num">{n(s["vsize"])}</td><td class="r num">{n(s["fee"])}</td></tr>')
     more = f'<p class="small muted">{n(len(gray) - 400)} more not listed.</p>' if len(gray) > 400 else ""
     return f'''<details class="more"><summary>{n(len(gray))} gray-water transactions: small notes inside the default allowance</summary>

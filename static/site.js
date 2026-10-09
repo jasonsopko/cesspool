@@ -26,7 +26,7 @@
       if (/^\d+$/.test(v)) {
         if (parseInt(v, 10) >= 961640) { location.href = "/block/" + parseInt(v, 10) + "/"; return; }
         msg = "cesspool covers BLAKE2b blocks, from 961640 on.";
-      } else if (/^[0-9a-fA-F]{64}$/.test(v)) { location.href = "/tx/?" + v.toLowerCase(); return; }
+      } else if (/^[0-9a-fA-F]{64}$/.test(v)) { location.href = "/tx/" + v.toLowerCase(); return; }
       else msg = "Enter a block height or a 64-character transaction id.";
       jin.setCustomValidity(msg);
       jin.reportValidity();
@@ -82,7 +82,7 @@
     });
   });
 
-  // Transaction page: /tx/?<txid> or /tx/?<height>:<index>. Everything is built with
+  // Transaction page: /tx/<txid>, /tx/?<txid> or /tx/?<height>:<index>. Everything is built with
   // createElement, text nodes and attributes; no transaction data is ever parsed as HTML.
   var txapp = document.getElementById("txapp");
   if (txapp) txPage(txapp);
@@ -123,11 +123,12 @@
     form.addEventListener("submit", function (e) {
       e.preventDefault();
       var v = input.value.trim().toLowerCase();
-      if (/^[0-9a-f]{64}$/.test(v)) location.search = "?" + v;
+      if (/^[0-9a-f]{64}$/.test(v)) location.href = "/tx/" + v;
       else { out.textContent = ""; out.appendChild(el("p", { cls: "muted", text: "A transaction id is 64 hexadecimal characters." })); }
     });
-    var q = "";
-    try { q = decodeURIComponent((location.search || "").slice(1).split("&")[0]).trim().toLowerCase(); } catch (e) { q = "?"; }
+    var q = "", pm = /^\/tx\/([0-9a-fA-F]{64})\/?$/.exec(location.pathname);
+    if (pm) q = pm[1].toLowerCase();
+    else try { q = decodeURIComponent((location.search || "").slice(1).split("&")[0]).trim().toLowerCase(); } catch (e) { q = "?"; }
     var m = /^(\d+):(\d+)$/.exec(q);
     if (!m && !/^[0-9a-f]{64}$/.test(q)) {
       if (q) out.appendChild(el("p", { cls: "muted", text: "A transaction id is 64 hexadecimal characters." }));
@@ -158,7 +159,8 @@
             : "Block " + where.h + " does not hold this transaction. Either the txid is mistyped after its first 16 characters, or a reorg replaced the block it was in." }));
           return;
         }
-        if (where.idx !== undefined) { input.value = tx.id; history.replaceState(null, "", "/tx/?" + tx.id); }
+        if (where.idx !== undefined) input.value = tx.id;
+        if (location.pathname + location.search !== "/tx/" + tx.id) history.replaceState(null, "", "/tx/" + tx.id);
         document.title = "Transaction " + tx.id.slice(0, 16) + "… · cesspool.lol";
         var hero = app.querySelector(".hero");
         if (hero) { hero.querySelector("h1").textContent = "Transaction"; var lede = hero.querySelector(".lede"); if (lede) lede.remove(); }
@@ -369,7 +371,7 @@
       else where = el("span", { cls: "x", text: "no address" });
       if (kind === "in" && full && r.p) {
         var pv = r.p.split(":");
-        where = el("span", {}, where, el("br"), el("span", { cls: "x" }, "from ", el("a", { href: "/tx/?" + pv[0], cls: "mono", text: pv[0].slice(0, 12) + "…:" + pv[1] })));
+        where = el("span", {}, where, el("br"), el("span", { cls: "x" }, "from ", el("a", { href: "/tx/" + pv[0], cls: "mono", text: pv[0].slice(0, 12) + "…:" + pv[1] })));
       }
       var cells = [el("td", { cls: "x", text: g.n > 1 ? "×" + num(g.n) : "#" + g.idx }), el("td", { cls: "r num", text: num(r.a) + " sat" }),
         el("td", { text: short(r.t) }), el("td", {}, where)];
@@ -441,7 +443,7 @@
     var hd = el("div", { cls: "hd" }, ...st, el("h3", { text: title }));
     sec.appendChild(hd);
     var copy = el("button", { cls: "copy", type: "button", text: "Copy link" });
-    copy.addEventListener("click", function () { if (navigator.clipboard) navigator.clipboard.writeText(location.origin + "/tx/?" + tx.id).then(function () { copy.textContent = "Copied"; setTimeout(function () { copy.textContent = "Copy link"; }, 1400); }, function () {}); });
+    copy.addEventListener("click", function () { if (navigator.clipboard) navigator.clipboard.writeText(location.origin + "/tx/" + tx.id).then(function () { copy.textContent = "Copied"; setTimeout(function () { copy.textContent = "Copy link"; }, 1400); }, function () {}); });
     sec.appendChild(el("div", { cls: "txid", text: tx.id }));
     var t = new Date(b.t * 1000).toISOString().replace("T", " ").slice(0, 16) + " UTC";
     var meta = el("div", { cls: "meta small" }, el("span", {}, "Block ", el("a", { href: "/block/" + b.h + "/", text: String(b.h) })), el("span", { text: t }),
