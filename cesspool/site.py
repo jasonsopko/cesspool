@@ -1,7 +1,7 @@
 """Render cesspool.lol as static files from the block records."""
 import collections, datetime, functools, gzip, html, json, math, os, shutil, subprocess, tempfile, textwrap, time
 
-from . import classify, miner
+from . import classify, found, miner
 from .types import TYPES, info, KNOTS, PLUMB, NONE, ALLOWED
 
 HOME = os.environ.get("CESSPOOL_HOME", os.path.expanduser("~/.cesspool"))
@@ -97,16 +97,14 @@ def grade(sn, gn, share):
     return "raw"
 
 
+LETTER_STEPS = [(0.0005, "A"), (0.0025, "B"), (0.01, "C"), (0.04, "D")]  # share of block weight below which
+
+
 def letter(share, blocks_with):
     """Pool grade over a window: share of block weight that is sewage."""
-    if share < 0.0005:
-        return "A"
-    if share < 0.0025:
-        return "B"
-    if share < 0.01:
-        return "C"
-    if share < 0.04:
-        return "D"
+    for below, L in LETTER_STEPS:
+        if share < below:
+            return L
     return "F"
 
 
@@ -405,13 +403,13 @@ def plumb_cta(headline="Run Plumb and this stays out of your blocks.", body=None
 
 def page(path, title, body, *, nav="", desc="", og=None, tip=None):
     og = og or "/og/site.png"
-    nav_items = [("blocks", "/blocks/", "Blocks"), ("shame", "/shame/", "Hall of Shame"), ("past", "/past-defaults/", "Past the Defaults"),
+    nav_items = [("blocks", "/blocks/", "Blocks"), ("found", "/found/", "Your Blocks"), ("shame", "/shame/", "Hall of Shame"), ("past", "/past-defaults/", "Past the Defaults"),
                  ("check", "/check/", "Check Node"), ("guide", "/guide/", "Field Guide"), ("plumb", "/plumb/", "Plumb"), ("about", "/about/", "About")]
     navh = "".join(f'<a href="{u}"{" class=\"on\"" if k == nav else ""}>{t}</a>' for k, u, t in nav_items)
     full_title = f"{title} · cesspool.lol" if title else "cesspool.lol · Bitcoin water quality, block by block"
     foot_tip = f'Tip {tip["h"]}, {tm(tip["t"])}. ' if tip else ""
-    # Summary pages reload themselves when a new block lands; block, transaction, about and privacy pages do not.
-    live = tip and not path.startswith("/block/") and path not in ("/tx/", "/about/", "/privacy/", "/404")
+    # Summary pages reload themselves when a new block lands; block, transaction, Your Blocks, about and privacy pages do not.
+    live = tip and not path.startswith("/block/") and path not in ("/tx/", "/found/", "/about/", "/privacy/", "/404")
     body_attr = f' data-tip="{tip["h"]}"' if live else ""
     return f'''<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
@@ -424,7 +422,7 @@ def page(path, title, body, *, nav="", desc="", og=None, tip=None):
 </head><body{body_attr}>
 <header class="top"><div class="wrap"><a class="brand" href="/">{LOGO}<span>cesspool<span class="tld">.lol</span></span></a>
 <nav class="main">{navh}</nav><span class="spacer"></span>
-<form class="jump" role="search"><input placeholder="Height or txid" aria-label="Go to a block height or a transaction id"></form></div></header>
+<form class="jump" role="search"><input placeholder="Height, txid, address, name" aria-label="Go to a block height or a transaction id, or find the blocks of a payout address, pool or coinbase tag"></form></div></header>
 <main class="wrap">{body}</main>
 <footer><div class="wrap"><div>Verdicts from the policy code in Plumb {PLUMB_VERSION}, run on every transaction.<br>
 {foot_tip}Pool names follow <a href="https://reorg.watch">reorg.watch</a>.</div>
@@ -434,7 +432,7 @@ def page(path, title, body, *, nav="", desc="", og=None, tip=None):
 '''
 
 
-ASSET_V = "20"
+ASSET_V = "21"
 
 
 def write(out, rel, text):
@@ -1377,6 +1375,21 @@ def plumb_page(idx, tip):
     return page("/plumb/", "Plumb", body, nav="plumb", desc="Plumb: Bitcoin Knots with every reviewed spam filter on by default.", og="/og/site.png", tip=tip)
 
 
+def found_page(tip):
+    body = f'''<div id="foundapp" data-fork="{FORK}">
+<div class="hero"><div class="kicker">Your blocks</div><h1>Find the blocks you mined</h1>
+<p class="lede">Type a payout address, a pool name or the text in your coinbase. The page lists every block since the fork that matches, graded, and grades the lot the way the Hall of Shame grades a pool.</p></div>
+<form class="txform foundform"><input spellcheck="false" autocomplete="off" placeholder="Payout address, pool name or coinbase tag" aria-label="Payout address, pool name or coinbase tag"><button class="btn">Find</button></form>
+<div class="foundout" aria-live="polite"></div>
+<div class="prose foundhelp"><h2>What finds what</h2>
+<ul><li><b>Pool operators:</b> the pool's name as this site shows it, from Kilombino's pools list. The result holds every block mined through the pool, including the ones that DATUM miners' own gateways built.</li>
+<li><b>DATUM miners:</b> the second coinbase tag, which you set as <code>coinbase_tag_secondary</code> in your gateway's config. Anyone can write any tag, and the default, <code>DATUM User</code>, is shared by everyone who left it.</li>
+<li><b>Solo miners, and miners paid in the coinbase:</b> your payout address. A pool that pays whoever found the block puts your address in that block. A pool that pays every miner a share in the coinbase puts it in blocks you did not find, and the result says so. A pool that holds rewards and pays later never puts it in a coinbase: look that pool up by name.</li></ul>
+<p class="small muted">What you type stays after the # in this page's address, which your browser never sends to the server. A height or a transaction id opens that page instead, and the server logs it like any page. <a href="/privacy/">What the server logs</a>.</p></div>
+<noscript><p class="muted">This page needs JavaScript to search.</p></noscript></div>'''
+    return page("/found/", "Your blocks", body, nav="found", desc="Find the blocks you mined, by payout address, pool name or coinbase tag, and see how they grade.", tip=tip)
+
+
 def about_page(tip):
     body = f'''<div class="hero prose"><div class="kicker">About</div><h1>How the water gets tested</h1>
 <p class="lede">Every block since the BLAKE2b fork at height {FORK}, every transaction in it, run through the Knots and Plumb policy checks.</p></div>
@@ -1396,7 +1409,7 @@ def about_page(tip):
 <h2>What we never show</h2>
 <p>The payload. No images, no text, no file names. A spam transaction gets its type, its size and where the bytes sit. Displaying the contents is the service the spammer paid for.</p>
 <h2>Who mined it</h2>
-<p>Pools are named from the coinbase tag and payout addresses against Kilombino's pools-v2 list, with the same rules as <a href="https://reorg.watch">reorg.watch</a>. {esc(DATUM_NOTE)}</p>
+<p>Pools are named from the coinbase tag and payout addresses against Kilombino's pools-v2 list, with the same rules as <a href="https://reorg.watch">reorg.watch</a>. {esc(DATUM_NOTE)} Miners and pools can find their own blocks by payout address, pool name or coinbase tag on <a href="/found/">Your Blocks</a>.</p>
 <h2>Data</h2><p>One Plumb node's REST interface, checked every minute. Blocks replaced in a reorg are reprocessed.
 The foul and raw-sewage blocks are also an <a href="/feed.xml">Atom feed</a>.</p>
 </div>'''
@@ -1416,8 +1429,9 @@ def privacy_page(tip):
 <li>your browser's user agent string</li></ul>
 <p>A request that fails can also go into the error log, with your IP address, the address you asked for and the page that linked you there.</p>
 <p>The access log is deleted after at most 15 days. The error log is cleared out the same way, but only on days that had errors, so its entries can stay longer. We open the logs only to look into problems with the site. We run no analytics on them, and we do not share or sell them.</p>
-<h2>Looking up a transaction</h2>
-<p>A lookup puts the transaction id in the log next to your IP address. If you would rather not leave that link, look up your own transactions on your own node.</p>
+<h2>Looking up a transaction or your blocks</h2>
+<p>A transaction lookup puts the transaction id in the log next to your IP address. If you would rather not leave that link, look up your own transactions on your own node.</p>
+<p>On <a href="/found/">Your Blocks</a>, what you type stays after the # in the page's address, which your browser never sends, unless it is a block height or a transaction id, which opens that page like any other. A pool name or coinbase tag lookup downloads the whole name index, so the log shows only that you opened the page. An address lookup downloads the name index as well, then one of 256 address files, picked by a hash of the address, so the log holds that file's name next to your IP address, not the address. Either way the page then fetches one summary file for each thousand-block range the result falls in, and the log shows those too.</p>
 <h2>Cloudflare</h2>
 <p>Requests to cesspool.lol go through Cloudflare first. Cloudflare:</p>
 <ul><li>sees your IP address and what you asked for</li>
@@ -1435,7 +1449,7 @@ def privacy_page(tip):
 <li>Links to other sites leave this one, and those sites have their own policies. Your browser tells them only that you came from cesspool.lol, not which page.</li></ul>
 <h2>Questions</h2>
 <p>Open an issue on <a href="https://github.com/jasonsopko/cesspool/issues">the site's GitHub repository</a>, where its source and its nginx configuration also live. If the logging changes, this page changes with it.</p>
-<p class="small muted">Updated 8 October 2026.</p>
+<p class="small muted">Updated 11 October 2026.</p>
 </div>'''
     return page("/privacy/", "Privacy", body, desc="What cesspool.lol records when you visit, and how long it keeps it.", tip=tip)
 
@@ -1446,7 +1460,7 @@ def blocks_page(idx, tip):
                    f'<td>{stamp(idx[h]["grade"], True)}</td><td class="r num">{pct(idx[h]["share"]) if idx[h]["sn"] else ""}</td>'
                    f'<td class="r num">{n(idx[h]["sn"]) if idx[h]["sn"] else ""}</td><td class="r num">{n(idx[h]["gn"])}</td><td class="r num">{n(idx[h]["ntx"])}</td></tr>' for h in hs)
     body = f'''<div class="hero"><div class="kicker">Blocks</div><h1>The last two days of samples</h1>
-<p class="lede">Every block has a page. Use the box at the top to jump to any height since {FORK}.</p></div>
+<p class="lede">Every block has a page. Use the box at the top to jump to any height since {FORK}, or <a href="/found/">find the blocks you mined</a> by payout address, pool name or coinbase tag.</p></div>
 <div class="strip">{"".join(cube_link(idx[h]) for h in hs[:16])}</div>
 <div class="tw"><table><tr><th>Block</th><th>Time</th><th>Pool</th><th>Grade</th><th class="r">Sewage</th><th class="r">Sewage txs</th><th class="r">Gray</th><th class="r">Txs</th></tr>{rows}</table></div>'''
     return page("/blocks/", "Blocks", body, nav="blocks", desc="Every Bitcoin block graded for spam.", tip=tip)
@@ -1479,7 +1493,7 @@ def index_page(idx, tip):
     body = f'''<div class="herogrid"><div class="hero"><div class="kicker">Bitcoin water quality, block by block</div>
 <h1><span>Clean blocks carry payments.</span> <span>The rest is sewage.</span></h1>
 <p class="lede">Every block since the fork, every transaction, tested with the policy code a Plumb node runs. See what got mined, who mined it, and which filter would have kept it out.</p>
-<p class="lede"><a href="/tx/">Look up any transaction</a> in a BLAKE2b block, height {FORK} on.</p></div>
+<p class="lede"><a href="/tx/">Look up any transaction</a> in a BLAKE2b block, height {FORK} on, or <a href="/found/">find the blocks you mined</a>.</p></div>
 <a class="sample" href="/block/{tb["h"]}/"><div class="kicker">Latest sample</div><div class="bigcube">{cube(tb)}</div>
 <div class="sh">Block {tb["h"]}</div><div class="muted small">{esc(short_who(tb))} · {tm(tb["t"])}</div>
 <div style="margin:12px 0 6px">{stamp(tb["grade"])}</div><div class="small muted">{tline}</div></a></div>
@@ -1624,6 +1638,10 @@ def build(out, heights=None, all_blocks=False, og=True):
                     write_gz(f"{out}/d/b/{h}.json.gz", json.load(f))
     else:
         publish_txd(out, sorted(publish))
+    # The Your Blocks indexes and page go up before the block pages and header boxes that lead to them.
+    found.publish(out, idx, pool_addresses(), {k: label for k, label, _ in GRADES},
+                  [[below, L, LETTER_TEXT[L]] for below, L in LETTER_STEPS] + [[None, "F", LETTER_TEXT["F"]]])
+    write(out, "found/index.html", found_page(tip))
     # neighbors' prev/next links
     pos = {h: i for i, h in enumerate(hs)}
     for h in list(todo):

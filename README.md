@@ -19,6 +19,9 @@ kept it out.
   not count yet (fake multisig keys), so a miss shows as a miss.
 - `cesspool/miner.py` names the pool with reorg-watch's own rules.
 - `cesspool/site.py` renders static pages and share images.
+- `cesspool/found.py` writes the indexes behind Your Blocks (`/found/`): pool
+  names, coinbase tags and payout addresses to block heights, as static JSON
+  under `/d/` that `site.js` searches in the browser.
 - `tools/update.py` runs from cron each minute: fetches new blocks over REST,
   reprocesses anything a reorg replaced, renders what changed.
 
@@ -27,7 +30,8 @@ The payload is never decoded or displayed.
 ## State
 
 `~/.cesspool/`: `raw/` gzipped REST blocks (about 340 kB each), `blocks/`
-one record per block, `index.json` summaries, `bin/test_bitcoin-plumb`.
+one record per block, `index.json` summaries, `found.json` each block's
+coinbase tag and paying outputs, `bin/test_bitcoin-plumb`.
 
 Rebuild everything after a classifier change:
 

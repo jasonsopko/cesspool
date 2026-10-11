@@ -19,6 +19,11 @@ def _load():
     return _rw, _pools
 
 
+def rw():
+    """The reorg-watch module, for the rules both sites share."""
+    return _load()[0]
+
+
 def identify(coinbase_tx):
     """(pool label, coinbase tag) for a REST coinbase transaction."""
     rw, pools = _load()

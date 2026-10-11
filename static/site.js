@@ -15,7 +15,7 @@
     if (el.hasAttribute("data-ago")) el.textContent = ago(t);
   });
 
-  // Height jump. Anything that is not a height since the fork or a transaction id says so instead of doing nothing.
+  // Header box: a height opens the block, a txid the transaction, anything else goes to Your Blocks.
   var jump = document.querySelector(".jump");
   if (jump) {
     var jin = jump.querySelector("input");
@@ -27,7 +27,8 @@
         if (parseInt(v, 10) >= 961640) { location.href = "/block/" + parseInt(v, 10) + "/"; return; }
         msg = "cesspool covers BLAKE2b blocks, from 961640 on.";
       } else if (/^[0-9a-fA-F]{64}$/.test(v)) { location.href = "/tx/" + v.toLowerCase(); return; }
-      else msg = "Enter a block height or a 64-character transaction id.";
+      else if (v) { location.href = "/found/#" + encodeURIComponent(v); return; }
+      else msg = "Enter a block height, a transaction id, a payout address, a pool name or a coinbase tag.";
       jin.setCustomValidity(msg);
       jin.reportValidity();
     });
@@ -73,6 +74,16 @@
     document.addEventListener("visibilitychange", checkTip);
   }
 
+  // Header nav: a fade at the right edge while there is more of it to scroll to.
+  var mainNav = document.querySelector("nav.main");
+  if (mainNav) {
+    var navCue = function () { mainNav.classList.toggle("more", mainNav.scrollWidth - mainNav.clientWidth - mainNav.scrollLeft > 2); };
+    if (document.fonts && document.fonts.ready) document.fonts.ready.then(navCue); else navCue();
+    mainNav.addEventListener("scroll", navCue);
+    window.addEventListener("resize", navCue);
+    window.addEventListener("load", navCue);  // the web font changes the widths, so not before it loads
+  }
+
   // Copy buttons
   document.querySelectorAll("button.copy[data-copy]").forEach(function (b) {
     b.addEventListener("click", function () {
@@ -86,6 +97,8 @@
   // createElement, text nodes and attributes; no transaction data is ever parsed as HTML.
   var txapp = document.getElementById("txapp");
   if (txapp) txPage(txapp);
+  var foundapp = document.getElementById("foundapp");
+  if (foundapp) foundPage(foundapp);
 
   function el(tag, attrs) {
     var e = document.createElement(tag);
@@ -173,6 +186,254 @@
     out.textContent = "";
     out.appendChild(el("p", {}, "No transaction ", el("code", { text: q }), " in any block since the fork. ",
       "cesspool covers every BLAKE2b block, from 961640 on. A transaction still waiting in the mempool, one in a SHA-256 block from before the fork, or one in a block from the last few minutes is not here."));
+  }
+
+  // Your Blocks: /found/#<payout address, pool name or coinbase text>. The query lives in the fragment,
+  // which the browser never sends. A text lookup downloads the whole name index; an address lookup one
+  // of 256 shards picked by a hash of the address. Everything is built with createElement and text nodes.
+  function foundPage(app) {
+    var out = app.querySelector(".foundout"), form = app.querySelector(".foundform"), input = form.querySelector("input");
+    var FORK = +app.getAttribute("data-fork"), PAGE = 100;
+    var namesP = null, chunks = {};
+    // A failed or missing file is an error, not an empty result; the failure is not kept, so the next try refetches.
+    function names() {
+      return namesP || (namesP = getJSON("/d/found.json").then(function (d) {
+        if (!d) throw new Error("no index");
+        d.byName = {};
+        d.pools.forEach(function (p) { d.byName[p[0]] = p; });
+        return d;
+      }).catch(function (e) { namesP = null; throw e; }));
+    }
+    function chunk(k) {
+      return chunks[k] || (chunks[k] = getJSON("/d/s/" + k + ".json").then(function (c) {
+        if (!c) throw new Error("no chunk");
+        return c;
+      }).catch(function (e) { delete chunks[k]; throw e; }));
+    }
+    // A pool the chunk names but the cached name index does not know yet: link it the way site.py slugs it.
+    function poolOf(d, name) { return d.byName[name] || [name, name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "") || "unknown", "", []]; }
+    function summaries(hs) {
+      var ks = {};
+      hs.forEach(function (h) { ks[Math.floor(h / 1000)] = 1; });
+      return Promise.all(Object.keys(ks).map(chunk)).then(function (cs) {
+        var m = {};
+        cs.forEach(function (c) { Object.keys(c).forEach(function (h) { m[h] = c[h]; }); });
+        return m;
+      });
+    }
+    function undelta(d) { var acc = 0; return d.map(function (x) { acc += x; return acc; }); }
+    // The same function as found.shard: the low byte of the 32-bit FNV-1a hash, as two hex characters.
+    function shard(s) {
+      var h = 0x811c9dc5;
+      for (var i = 0; i < s.length; i++) h = Math.imul(h ^ s.charCodeAt(i), 0x01000193);
+      return ((h & 255) + 256).toString(16).slice(1);
+    }
+    function desc(a, b) { return b - a; }
+    function current() { try { return decodeURIComponent(location.hash.slice(1)).trim(); } catch (e) { return ""; } }
+    function say(text) { out.textContent = ""; out.appendChild(el("p", { cls: "muted", text: text })); }
+    function go(v) {
+      if (!v) return;
+      if (/^\d+$/.test(v)) {
+        if (+v >= FORK) location.href = "/block/" + (+v) + "/";
+        else say("cesspool covers BLAKE2b blocks, from " + FORK + " on.");
+        return;
+      }
+      if (/^[0-9a-fA-F]{64}$/.test(v)) { location.href = "/tx/" + v.toLowerCase(); return; }
+      if (current() === v) run(v); else location.hash = "#" + encodeURIComponent(v);
+    }
+    form.addEventListener("submit", function (e) { e.preventDefault(); go(input.value.trim()); });
+    window.addEventListener("hashchange", function () { run(current()); });
+    run(current());
+
+    function run(q) {
+      input.value = q;
+      if (!q) { out.textContent = ""; document.title = "Your blocks · cesspool.lol"; return; }
+      if (/^\d+$/.test(q) || /^[0-9a-fA-F]{64}$/.test(q)) { go(q); return; }
+      out.textContent = "Looking…";
+      document.title = q + " · Your blocks · cesspool.lol";
+      var p = isAddress(q) ? byAddress(/^bc1/i.test(q) ? q.toLowerCase() : q) : byText(q);
+      p.catch(function () { say("Could not load the index. Try again in a minute."); });
+    }
+    function isAddress(s) { return /^bc1[02-9ac-hj-np-z]{6,87}$/i.test(s) || /^[13][1-9A-HJ-NP-Za-km-z]{25,34}$/.test(s); }
+
+    function byText(q) {
+      return names().then(function (d) {
+        var ql = q.toLowerCase(), pools = [], texts = [], partPools = [], partTexts = [];
+        d.pools.forEach(function (p) {
+          var nl = p[0].toLowerCase(), e = { kind: "pool", name: p[0], pool: p, hs: undelta(p[3]) };
+          if (nl === ql) pools.push(e); else if (nl.indexOf(ql) >= 0) partPools.push(e);
+        });
+        function text(kind, t) {
+          var nl = t[0].toLowerCase(), e = { kind: kind, name: t[0], hs: undelta(t[1]) };
+          // A whole tag, or one run of it: the gateway's second tag is the run after the pool's.
+          if (nl === ql || nl.split("/").indexOf(ql) >= 0) texts.push(e); else if (nl.indexOf(ql) >= 0) partTexts.push(e);
+        }
+        d.tags.forEach(function (t) { text("tag", t); });
+        d.dtags.forEach(function (t) { text("dtag", t); });
+        // A pool's name wins: nearly every pool writes its own name in its coinbases too.
+        if (pools.length) return show(pools[0], d);
+        if (texts.length) return show(merged(q, texts), d);
+        var part = partPools.concat(partTexts);
+        if (part.length === 1) return show(part[0], d);
+        if (!part.length) {
+          say("Nothing is named " + q + ". Pool names are the ones the site shows, from Kilombino's pools list; coinbase text is matched on what the miner or pool wrote in the coinbase; an address has to be complete.");
+          return null;
+        }
+        return choices(q, part, d);
+      });
+    }
+    // Every tag and gateway tag that carries the text, as one result: a miner's tag turns up under
+    // more than one pool's tag.
+    function merged(q, texts) {
+      var seen = {}, hs = [];
+      texts.forEach(function (e) { e.hs.forEach(function (h) { if (!seen[h]) { seen[h] = 1; hs.push(h); } }); });
+      return { kind: "text", name: q, hs: hs, parts: texts };
+    }
+    function choices(q, hits, d) {
+      out.textContent = "";
+      out.appendChild(el("p", { text: plural(hits.length, "name") + " contain " + q + ". Pick one:" }));
+      var ul = el("ul", { cls: "choices" });
+      hits.slice(0, 60).forEach(function (e) {
+        var last = Math.max.apply(null, e.hs);
+        ul.appendChild(el("li", {}, el("span", { cls: "muted small", text: KIND[e.kind] + " " }),
+          el("a", { href: "#" + encodeURIComponent(e.name), text: e.name }),
+          el("span", { cls: "muted", text: ": " + plural(e.hs.length, "block") + ", last " + last })));
+      });
+      out.appendChild(ul);
+      if (hits.length > 60) out.appendChild(el("p", { cls: "muted small", text: "The first 60 of " + num(hits.length) + ". Type more of the name." }));
+    }
+    var KIND = { pool: "Pool", tag: "Coinbase text", dtag: "Gateway tag", text: "Coinbase text" };
+
+    function byAddress(a) {
+      return Promise.all([names(), getJSON("/d/a/" + shard(a) + ".json")]).then(function (r) {
+        var d = r[0], rows = r[1] && r[1][a];
+        if (!r[1]) throw new Error("no shard");
+        if (!rows) {
+          say("No coinbase since the fork pays " + a + ". A pool that holds rewards and pays later never puts your address in a coinbase: look the pool up by name instead. If you run a DATUM gateway, your second coinbase tag finds your blocks.");
+          return null;
+        }
+        var paid = {};
+        rows.forEach(function (x) { paid[x[0]] = x[1]; });
+        return show({ kind: "addr", name: a, hs: rows.map(function (x) { return x[0]; }), paid: paid }, d);
+      });
+    }
+
+    function show(e, d) {
+      var hs = e.hs.slice().sort(desc);
+      return summaries(hs).then(function (m) { render(e, hs.filter(function (h) { return m[h]; }), m, d); });
+    }
+
+    function pctOf(x) {
+      if (!x) return "0%";
+      if (x < 0.001) return "<0.1%";
+      var s = (x * 100).toFixed(1) + "%";
+      return x < 1 && s.indexOf("100") === 0 ? "99.9%" : s;
+    }
+    function btc(sats) { return (sats / 1e8).toFixed(8).replace(/(\.\d\d\d\d\d*?)0+$/, "$1"); }
+    function when(t) { return new Date(t * 1000).toISOString().replace("T", " ").slice(0, 16) + " UTC"; }
+    function letterOf(share, letters) {
+      for (var i = 0; i < letters.length; i++) if (letters[i][0] === null || share < letters[i][0]) return letters[i];
+      return letters[letters.length - 1];
+    }
+    function poolLink(p, via) {
+      var f = document.createDocumentFragment();
+      f.appendChild(el("a", { href: "/pool/" + p[1] + "/", text: p[0] }));
+      if (via) f.appendChild(el("span", { cls: "muted small", text: " · DATUM miner" }));
+      return f;
+    }
+    // What a block paying this address means, by how its pool pays: reorg.watch's reading of the
+    // pool's last 20 coinbases, plus the count of the pool's blocks this address is in.
+    function paidNote(g) {
+      var p = g.pool, name = p[0], cls = p[2], all = p[3].length;
+      if (name.indexOf("Unknown (") === 0) return "No pool is known for these blocks; the site names them by one of their payout addresses.";
+      if (!all) return "";  // a name the cached index does not know yet
+      var of = " This address is in " + num(g.n) + " of the " + plural(all, "block") + " under that name since the fork.";
+      if (cls === "coinbase") return name + " pays its miners in the coinbase, so these blocks paid this address a share, whoever found them." + of;
+      if (cls === "finder") return "Each of these blocks pays whoever found it." + of;
+      if (cls === "own") return "Solo blocks, paid to the miner's own address." + of;
+      if (cls === "none") return of.slice(1);
+      return "A typical " + name + " block pays one or two addresses." + of;
+    }
+
+    function render(e, hs, m, d) {
+      out.textContent = "";
+      if (!hs.length) { say("The summaries for the blocks of " + e.name + " are not published yet. Try again in a minute."); return; }
+      var w = 0, sw = 0, dirty = 0, pristine = 0, sats = 0, byPool = {}, order = [];
+      hs.forEach(function (h) {
+        var s = m[h], p = poolOf(d, s[5]);
+        w += s[3]; sw += s[4]; if (s[2]) dirty++; if (s[1] === "pristine") pristine++;
+        var g = byPool[p[0]];
+        if (!g) { g = byPool[p[0]] = { pool: p, n: 0, via: 0, sats: 0 }; order.push(g); }
+        g.n++; if (s[6]) g.via++;
+        if (e.paid) { g.sats += e.paid[h] || 0; sats += e.paid[h] || 0; }
+      });
+      order.sort(function (a, b) { return b.n - a.n; });
+      var share = w ? sw / w : 0, L = letterOf(share, d.letters), last = hs[0];
+      var head = el("div", { cls: "found" });
+      var title = { pool: "Mined through ", text: "Coinbase text ", addr: "Paid to " }[e.kind];
+      head.appendChild(el("h2", { cls: e.kind === "addr" ? "addr" : "" }, title, el(e.kind === "pool" ? "span" : "code", { text: e.name })));
+      var lede = el("p", { cls: "muted" });
+      if (e.kind === "pool") {
+        lede.appendChild(document.createTextNode(plural(hs.length, "block") + " since the fork, the last " + last + ", " + when(m[last][0]) + ". "));
+        var via = order.length ? order[0].via : 0;
+        if (via) lede.appendChild(document.createTextNode(num(via) + " of them " + (via === 1 ? "was built by a DATUM miner's own gateway" : "were built by DATUM miners' own gateways") + " with the pool upstream, so the Hall of Shame counts " + (via === 1 ? "it" : "them") + " under DATUM miners via " + e.name + ". "));
+        lede.appendChild(el("a", { href: "/pool/" + e.pool[1] + "/", text: "Inspection report for " + e.name }));
+      } else if (e.kind === "text") {
+        lede.appendChild(document.createTextNode(plural(hs.length, "block") + " since the fork carry it in the coinbase, the last " + last + ", " + when(m[last][0]) + ". Anyone can write any text in a coinbase, so a tag is a claim, not proof."));
+      } else {
+        lede.appendChild(document.createTextNode(plural(hs.length, "block") + " since the fork pay this address in the coinbase, " + btc(sats) + " BTC in all, the last " + last + ", " + when(m[last][0]) + "."));
+      }
+      head.appendChild(lede);
+      var tiles = el("div", { cls: "tiles" });
+      tiles.appendChild(el("div", { cls: "tile" }, el("div", { cls: "v" }, el("span", { cls: "letter sm gr-" + L[1], text: L[1] })), el("div", { cls: "l", text: L[2] }), el("div", { cls: "s", text: "graded like a pool, over these blocks" })));
+      tiles.appendChild(el("div", { cls: "tile" }, el("div", { cls: "v" + (sw ? " g-raw" : ""), text: pctOf(share) }), el("div", { cls: "l", text: "of their block space is sewage" })));
+      tiles.appendChild(el("div", { cls: "tile" }, el("div", { cls: "v", text: num(hs.length) }), el("div", { cls: "l", text: "blocks since the fork" }), el("div", { cls: "s", text: num(dirty) + " with sewage, " + num(pristine) + " pristine" })));
+      if (e.kind === "addr") tiles.appendChild(el("div", { cls: "tile" }, el("div", { cls: "v", text: btc(sats) }), el("div", { cls: "l", text: "BTC paid to it in coinbases" })));
+      head.appendChild(tiles);
+      if (e.kind !== "pool") {
+        var pt = el("table"), tr = el("tr", {}, el("th", { text: "Pool" }), el("th", { cls: "r", text: "Blocks" }));
+        if (e.kind === "addr") { tr.appendChild(el("th", { cls: "r", text: "BTC" })); tr.appendChild(el("th", { text: "What a block here means" })); }
+        pt.appendChild(tr);
+        order.forEach(function (g) {
+          var row = el("tr", {}, el("td", {}, poolLink(g.pool, g.via === g.n)), el("td", { cls: "r num", text: num(g.n) }));
+          if (e.kind === "addr") { row.appendChild(el("td", { cls: "r num", text: btc(g.sats) })); row.appendChild(el("td", { cls: "small", text: paidNote(g) })); }
+          pt.appendChild(row);
+        });
+        head.appendChild(el("h3", { text: e.kind === "addr" ? "By pool" : "Mined through" }));
+        head.appendChild(el("div", { cls: "tw" }, pt));
+      }
+      var copy = el("button", { cls: "copy", text: "Copy share link" });
+      copy.addEventListener("click", function () {
+        if (!navigator.clipboard) return;
+        navigator.clipboard.writeText(location.href).then(function () { copy.textContent = "Copied"; setTimeout(function () { copy.textContent = "Copy share link"; }, 1400); }, function () {});
+      });
+      head.appendChild(el("p", { cls: "small" }, copy));
+      out.appendChild(head);
+      // The blocks, newest first, PAGE at a time.
+      var t = el("table"), th = el("tr", {}, el("th", { text: "Block" }), el("th", { text: "Time" }), el("th", { text: "Pool" }), el("th", { text: "Grade" }),
+        el("th", { cls: "r", text: "Sewage" }), el("th", { cls: "r", text: "Sewage txs" }));
+      if (e.paid) th.appendChild(el("th", { cls: "r", text: "Paid BTC" }));
+      t.appendChild(th);
+      var shown = 0, more = el("button", { cls: "btn ghost", text: "" });
+      function page() {
+        hs.slice(shown, shown + PAGE).forEach(function (h) {
+          var s = m[h], p = poolOf(d, s[5]), sh = s[3] ? s[4] / s[3] : 0;
+          var row = el("tr", {}, el("td", {}, el("a", { href: "/block/" + h + "/", text: String(h) })), el("td", { text: when(s[0]) }), el("td", {}, poolLink(p, s[6])),
+            el("td", {}, el("span", { cls: "stamp sm g-" + s[1], text: d.grades[s[1]] || s[1] })),
+            el("td", { cls: "r num", text: s[2] ? pctOf(sh) : "" }), el("td", { cls: "r num", text: s[2] ? num(s[2]) : "" }));
+          if (e.paid) row.appendChild(el("td", { cls: "r num", text: btc(e.paid[h] || 0) }));
+          t.appendChild(row);
+        });
+        shown = Math.min(hs.length, shown + PAGE);
+        more.textContent = "Show " + num(Math.min(PAGE, hs.length - shown)) + " more";
+        more.hidden = shown >= hs.length;
+      }
+      more.addEventListener("click", page);
+      page();
+      out.appendChild(el("h3", { text: "Blocks" }));
+      out.appendChild(el("div", { cls: "tw" }, t));
+      out.appendChild(el("p", { style: "margin-top:12px" }, more));
+    }
   }
 
   function shape(tx) {

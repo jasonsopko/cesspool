@@ -75,9 +75,10 @@ nav.main { display: flex; gap: 18px; overflow-x: auto; scrollbar-width: none; }
 nav.main a { color: var(--muted); font-size: .93rem; white-space: nowrap; padding: 4px 0; }
 nav.main a.on, nav.main a:hover { color: var(--text); text-decoration: none; }
 nav.main a.on { box-shadow: inset 0 -2px 0 var(--water); }
+nav.main.more { -webkit-mask-image: linear-gradient(to right, #000 calc(100% - 36px), transparent); mask-image: linear-gradient(to right, #000 calc(100% - 36px), transparent); }
 .top .spacer { flex: 1; }
 .jump { display: flex; }
-.jump input { width: 120px; background: var(--panel); color: var(--text); border: 1px solid var(--line); padding: 5px 8px; font: inherit; font-size: .85rem; border-radius: 4px; }
+.jump input { width: 192px; background: var(--panel); color: var(--text); border: 1px solid var(--line); padding: 5px 8px; font: inherit; font-size: .85rem; border-radius: 4px; }
 @media (max-width: 760px) { .jump { display: none; } .top .wrap { gap: 14px; } .brand .tld { display: none; } }
 
 /* hero */
@@ -291,3 +292,12 @@ ul.switches { margin: 8px 0 14px 18px; max-width: 75ch; }
 ul.switches li { margin: 3px 0; }
 ul.switches .flag { color: var(--miss); }
 @media (max-width: 1100px) { nav.main { gap: 12px; } nav.main a { font-size: .86rem; } .top .wrap { gap: 16px; } }
+
+/* Your Blocks */
+.found h2 { margin-top: 18px; }
+.found h2.addr code { word-break: break-all; }
+.found h3 { margin-top: 22px; }
+.found .tile .v .letter { vertical-align: middle; }
+.choices { list-style: none; padding: 0; margin: 0 0 1em; }
+.choices li { margin-bottom: .4em; }
+.foundhelp { margin-top: 30px; }
