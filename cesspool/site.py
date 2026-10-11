@@ -1,5 +1,5 @@
 """Render cesspool.lol as static files from the block records."""
-import collections, datetime, functools, gzip, html, json, math, os, shutil, subprocess, tempfile, time
+import collections, datetime, functools, gzip, html, json, math, os, shutil, subprocess, tempfile, textwrap, time
 
 from . import classify, miner
 from .types import TYPES, info, KNOTS, PLUMB, NONE, ALLOWED
@@ -921,11 +921,16 @@ def shame_page(idx, tip):
     return page("/shame/", "Hall of Shame", body, nav="shame", desc="Pools ranked by how much of their block space went to spam.", og="/og/shame.png", tip=tip)
 
 
-# The filter options at their Knots 29.4.2 and Plumb defaults, written out. Tested on regtest: both
-# binaries start with them, stock Knots warns once for each Plumb line and ignores it.
-SETTINGS_KNOTS = ("corepolicy=0", "rejecttokens=1", "rejectparasites=1", "datacarrier=1", "datacarriersize=83",
-                  "datacarrierfullcount=1", "datacarriercost=1", "acceptnonstddatacarrier=0", "permitbaredatacarrier=0",
-                  "permitbarepubkey=0", "permitbaremultisig=0", "maxscriptsize=1650", "acceptnonstdtxn=0")
+# The recommended filter settings for Knots 29.4.2, written out, and Plumb's five on top. Every value is
+# the default except the two in CONF_STRICTER. They cover the filters on Knots' Spam filtering tab
+# (src/qt/optionsdialog.cpp) other than its fee, dust, rate-limit, package-size, unknown-witness and
+# bare-anchor settings, plus datacarrier, datacarrierfullcount and corepolicy. Tested on
+# regtest: each binary starts with its file and logs every line.
+SETTINGS_KNOTS = ("corepolicy=0", "acceptnonstdtxn=0", "rejecttokens=1", "rejectparasites=1", "subdustfeepenalty=1",
+                  "datacarrier=1", "datacarriersize=42", "datacarrierfullcount=1", "datacarriercost=2",
+                  "acceptnonstddatacarrier=0", "permitbaredatacarrier=0", "permitbarepubkey=0", "permitbaremultisig=0",
+                  "permitephemeral=anchor,-send,-dust", "maxscriptsize=1650", "maxtxlegacysigops=2500",
+                  "bytespersigop=20", "bytespersigopstrict=20")
 SETTINGS_PLUMB = ("rejectfakeoutputs=1", "rejectdeadbranches=1", "rejectbareenvelopes=1", "rejectfakemultisig=1",
                   "rejecttokenmessages=1")
 
@@ -951,15 +956,89 @@ LOWER_LIMITS = f"{PLUMB_REPO}/blob/29.x-plumb/plumb/FILTERS.md#lower-data-limits
 SETTINGS_LINK = '<a href="/check/">Settings that keep them out</a>'
 
 
-def settings_section():
-    conf = "\n".join(("# Knots and Plumb",) + SETTINGS_KNOTS + ("# Plumb only; Knots ignores them",) + SETTINGS_PLUMB)
-    return f'''<h3 id="settings" style="margin-top:22px">The bitcoin.conf lines</h3>
-<p class="small" style="max-width:75ch">Knots and Plumb have every one of these filters on by default. The usual ways one gets turned off are <code>corepolicy=1</code>, a filter set to 0, <code>acceptnonstdtxn=1</code>, or a setting changed in the Knots GUI. To put the defaults back, set these in <code>bitcoin.conf</code>. Change any line already there for the same option rather than adding a second one: the first line in the file wins, and a line under <code>[main]</code> wins over lines outside it. They are the default values, so on a node nobody changed they change nothing. Keep any stricter value you set on purpose, such as <code>datacarrier=0</code> or a lower <code>datacarriersize</code>.</p>
+# The numbers the recommended files quote, counted over the per-transaction records in TXD for
+# blocks 961640 to 976619 by tools/conf_facts.py. A profile refuses a transaction when it gives a
+# reason, and at datacarriersize=42 also when its fix.<profile>.dcs is 42 or more; "extra" is what
+# 42 adds that is not sewage, the same transactions for both. Fixed, so the files read the same
+# every block.
+CONF_FACTS = {"lo": 961640, "hi": 976619, "txs": 3569710, "sewage": 28543, "knots_sewage": 25356,
+              "knots42_sewage": 26237, "plumb_sewage": 28542, "plumb42_sewage": 28542, "extra": 80988}
+CONF_NAMES = {"knots": "Bitcoin Knots 29.4.2", "plumb": PLUMB_NAME}
+
+
+def conf_comment(*paras):
+    """Paragraphs as bitcoin.conf comment lines, 72 columns, a bare # between paragraphs."""
+    out = []
+    for para in paras:
+        out += (["#"] if out else []) + textwrap.wrap(para, 70, break_on_hyphens=False, break_long_words=False)
+    return [line if line == "#" else "# " + line for line in out]
+
+
+def conf_stricter(prog):
+    """The comment above each value that differs from the default, by option."""
+    f = CONF_FACTS
+    if prog == "knots":
+        refused = (f"Knots refuses {n(f['knots_sewage'])} of them at 83 and {n(f['knots42_sewage'])} at 42. "
+                   f"Plumb refuses {n(f['plumb_sewage'])} at either value.")
+    else:
+        refused = f"Plumb refuses {n(f['plumb_sewage'])} of them at 83 and at 42."
+    return {
+        "datacarriersize": conf_comment(
+            f"The default is 83. From block {f['lo']}, the first BLAKE2b block, to {f['hi']} "
+            f"({n(f['txs'])} transactions, not counting coinbases), cesspool.lol lists {n(f['sewage'])} as sewage. "
+            f"With the other options at their defaults, {refused} 42 also refuses {n(f['extra'])} transactions "
+            "that are not on that list, each carrying one OP_RETURN: a text or binary note, a swap memo or a "
+            "Stacks commitment."),
+        "datacarriercost": conf_comment(
+            "The default is 1. At 2, each byte of data counts as 2 vbytes instead of 1 when the node sizes a "
+            "transaction for relay and for the blocks it builds, so data pays twice the fee per byte."),
+    }
+
+
+def recommended_conf(prog):
+    """The recommended bitcoin.conf for "knots" or "plumb", served at /check/<prog>.conf."""
+    name = "Knots" if prog == "knots" else "Plumb"
+    intro = (f"{name}'s spam filter settings, written out so that a corepolicy=1 set elsewhere can no longer "
+             "reset them. Two are stricter than the defaults, datacarriersize and datacarriercost; the comment "
+             "above each says what it does. ")
+    if prog == "knots":
+        intro = intro.replace("Knots's", "Knots'") + ("Knots' Spam filtering tab also has fee, dust, rate-limit, "
+                                                       "package-size, unknown-witness and bare-anchor "
+                                                       "settings; this file leaves those alone. A corepolicy=1 set elsewhere still changes settings "
+                                                       "this file does not set, such as the minimum relay fee.")
+        files = ("settings.json and bitcoin_rw.conf in the data directory, where the Knots GUI saves its "
+                 "settings, win over this file, as does the command line.")
+    else:
+        intro += ("The last five are Plumb's own; the rest match the Knots file. Fee, dust, rate-limit, "
+                  "package-size, unknown-witness and bare-anchor settings are left alone. A corepolicy=1 set elsewhere "
+                  "still changes settings this file does not set, such as the minimum relay fee.")
+        files = "settings.json and bitcoin_rw.conf in the data directory win over this file, as does the command line."
+    lines = [f"# Recommended bitcoin.conf for {CONF_NAMES[prog]}", f"# {SITE}/check/", "#"] + conf_comment(
+        intro,
+        "If your bitcoin.conf already sets one of these options, or turns one off with a no line such as "
+        "nodatacarrier=1, change or remove that line rather than adding a second one: with two lines, which "
+        f"one wins depends on their order and form. A line under [main] wins over lines outside it. {files} "
+        "Restart the node after editing.") + [""]
+    stricter = conf_stricter(prog)
+    for opt in SETTINGS_KNOTS + (SETTINGS_PLUMB if prog == "plumb" else ()):
+        lines += stricter.get(opt.split("=")[0], []) + [opt]
+    return "\n".join(lines) + "\n"
+
+
+def conf_pane(prog, on):
+    conf = recommended_conf(prog)
+    return f'''<div class="tabpane{" on" if on else ""}" id="conf-{prog}" data-group="conf">
 <pre class="conf">{esc(conf)}</pre>
-<p><button class="copy" data-copy="{esc(conf)}">Copy these lines</button></p>
+<p><a class="btn" href="/check/{prog}.conf" download="bitcoin.conf">Download the {esc(CONF_NAMES[prog].split(" 29")[0])} file</a> <button class="copy" data-copy="{esc(conf)}">Copy it</button></p></div>'''
+
+
+def settings_section():
+    return f'''<h3 id="settings" style="margin-top:22px">Recommended bitcoin.conf</h3>
+<p class="small" style="max-width:75ch">The usual ways a filter gets turned off are <code>corepolicy=1</code>, a filter switched off, <code>acceptnonstdtxn=1</code>, or a setting changed in the Knots GUI. These files write their filter settings out, so a <code>corepolicy=1</code> set elsewhere can no longer reset them (it still changes settings they do not set, such as the minimum relay fee), and set two values stricter than the defaults: <code>datacarriersize=42</code> and <code>datacarriercost=2</code>. The comment above each says what it does. If your <code>bitcoin.conf</code> already sets one of these options, or turns one off with a no line such as <code>nodatacarrier=1</code>, change or remove that line rather than adding a second one. Keep any stricter value you set on purpose, such as <code>datacarrier=0</code>. Knots does not know Plumb&#39;s five options, so use the file for the program you run.</p>
+<div class="tabs" data-group="conf"><button data-pane="conf-plumb" class=on>Plumb</button><button data-pane="conf-knots">Knots</button></div>{conf_pane("plumb", True)}{conf_pane("knots", False)}
 <p class="small" style="max-width:75ch">The Knots GUI saves these settings to <code>settings.json</code> and <code>bitcoin_rw.conf</code> in the data directory, and both win over <code>bitcoin.conf</code>, as does anything on the command line or in a service file. Remove the matching entries there. After a restart, this shows each value and where it came from:</p>
 <pre class="conf">{esc(SETTINGS_CHECK)}</pre>
-<p class="small" style="max-width:75ch">When <code>bitcoin.conf</code> sets an option more than once, a line under <code>[main]</code> is the one in use, even though it is listed last; otherwise the first line is. <code>~/.bitcoin</code> is the default data directory on Linux; use yours if it differs. A Plumb node also logs one <code>Plumb filter</code> line per filter. For a node stricter than the defaults, Plumb&#39;s filter guide measures what <a href="{LOWER_LIMITS}">lower data limits</a> would also refuse.</p>'''
+<p class="small" style="max-width:75ch">When <code>bitcoin.conf</code> sets an option more than once, a line under <code>[main]</code> is the one in use, even though it is listed last. Otherwise the first plain line is, except that a no line such as <code>nodatacarrier=1</code> cancels the lines above it. <code>~/.bitcoin</code> is the default data directory on Linux; use yours if it differs. A Plumb node also logs one <code>Plumb filter</code> line per filter. Plumb&#39;s filter guide measures what <a href="{LOWER_LIMITS}">lower data limits</a> refuse.</p>'''
 
 
 # What /check/ reads from a node's startup lines. Defaults and the -corepolicy values are Knots 29.4.2's
@@ -996,23 +1075,24 @@ CHECK_SPEC = {
 }
 
 
-# Each platform's own names for the filter switches, with the recommended setting, which is Knots 29.4.2's
-# default. Umbrel: Retropex/umbrel-bitcoin libs/settings/settings.meta.ts (Settings, Policy tab).
+# Each platform's own names for the filter switches, with the recommended setting: the value in the
+# recommended bitcoin.conf, which is Knots 29.4.2's default except the data size and cost. Umbrel: Retropex/umbrel-bitcoin libs/settings/settings.meta.ts (Settings, Policy tab).
 # StartOS 0.3: Retropex/knots-startos scripts/services/getConfig.ts (Config, Mempool). StartOS 0.4:
 # startos/fileModels/bitcoin.conf.ts and actions/config/mempool.ts (Actions, Mempool Settings), where an
 # unset switch writes nothing and leaves Knots' default.
 PLATFORM_SWITCHES = {
     "umbrel": [("Reject tokens transactions", "on", "the app has started it off; on Knots 29.4 it does not refuse Counterparty"), ("Reject parasitic transactions", "on", ""),
-               ("Relay Transactions Containing Arbitrary Data", "on", ""), ("Max Allowed Size of Arbitrary Data in Transactions", "83", ""),
-               ("Datacarrier cost", "1", ""), ("Accept non standard datacarrier", "off", ""), ("Permit Bare Datacarrier", "off", ""),
+               ("Relay Transactions Containing Arbitrary Data", "on", ""), ("Max Allowed Size of Arbitrary Data in Transactions", "42", "the app starts it at 83"),
+               ("Datacarrier cost", "2", "the app starts it at 1"), ("Accept non standard datacarrier", "off", ""), ("Permit Bare Datacarrier", "off", ""),
                ("Permit Bare Pubkey", "off", ""), ("Relay Bare Multisig Transactions", "off", ""), ("Max script size", "1650", "")],
     "startos03": [("Reject Tokens", "on", "the package starts it off; on Knots 29.4 it does not refuse Counterparty"), ("Reject Parasites", "on", ""), ("Datacarrier", "on", ""),
-                  ("Datacarrier Size", "83", ""), ("Datacarrier cost", "1", ""), ("Accept non standard datacarrier", "off", ""),
+                  ("Datacarrier Size", "42", "the package starts it at 83"), ("Datacarrier cost", "2", "the package starts it at 1"),
+                  ("Accept non standard datacarrier", "off", ""),
                   ("Permit bare datacarrier", "off", ""), ("Permit Bare Pubkey", "off", ""), ("Permit Bare Multisig", "off", ""),
                   ("Max Script Size", "1650", "")],
     "startos04": [("Reject Tokens", "unset or on", ""),
                   ("Reject Parasites", "unset or on", ""), ("Relay OP_RETURN Transactions", "unset or on", ""),
-                  ("Max OP_RETURN Size", "unset or 83", ""), ("Datacarrier Cost", "1", ""),
+                  ("Max OP_RETURN Size", "42", "unset, Knots' default of 83 applies"), ("Datacarrier Cost", "2", "the package starts it at 1"),
                   ("Accept Non-Standard Datacarrier", "unset or off", ""), ("Permit Bare Datacarrier", "unset or off", ""),
                   ("Permit Bare Pubkey", "unset or off", ""), ("Permit Bare Multisig", "unset or off", ""), ("Max Script Size", "unset or 1650", "")],
 }
@@ -1029,7 +1109,7 @@ def check_page(tip):
     body = f'''<div class="hero"><div class="kicker">Check your node</div><h1>Is your node filtering?</h1>
 <p class="lede">Knots and Plumb refuse spam at their default settings. A setting changed anywhere, or one a node package ships with, can turn a filter off without saying so. Here is how to check.</p></div>
 <h2>Recommended settings</h2>
-<p style="max-width:75ch">The recommended setting for every filter is Knots&#39; own default. Here it is on each platform, under the names each one uses. Where a platform starts a switch somewhere else, it says so. A stricter value you chose on purpose, such as a lower data size, is fine to keep.</p>
+<p style="max-width:75ch">The recommended settings are the ones in the <a href="#settings">bitcoin.conf files below</a>, with the data size at 42 bytes and the data cost at 2, both stricter than Knots&#39; defaults of 83 and 1. Here they are on each platform, under the names each one uses. Where a platform starts a switch somewhere else, it says so. A stricter value you chose on purpose, such as turning OP_RETURN data off altogether, is fine to keep.</p>
 <h3>Umbrel</h3>
 <p style="max-width:75ch">The Bitcoin Knots app in the Umbrel App Store is at version 1.2.13, which runs Knots 29.4. That Knots has no Counterparty check and no BLAKE2b proof of work, and its <b>Reject tokens transactions</b> switch starts off. The app update with Knots 29.4.2, version 1.2.18, has been waiting on the App Store since 21 September (<a href="https://github.com/getumbrel/umbrel-apps/pull/6108">umbrel-apps#6108</a>).</p>
 <p style="max-width:75ch">Builds of the app that run Knots 29.4.1 or later, such as the BLAKE2b Knots app in the PaulsCode community store, have also started that switch off, although that Knots turns it on. They write <code>rejecttokens=0</code> for the node, so a default node there relays and mines Runes and Counterparty transactions.</p>
@@ -1042,7 +1122,7 @@ def check_page(tip):
 <p style="max-width:75ch">Under Actions, Mempool Settings. A switch left unset writes nothing, so Knots&#39; own default applies, whatever the footnote under it says. Plumb&#39;s StartOS package uses the same screen; its five extra filters are on and have no switches there.</p>
 {switch_list("startos04")}
 <h3>Knots or Plumb, anywhere else</h3>
-<p style="max-width:75ch">Set them in <code>bitcoin.conf</code>: <a href="#settings">the lines are below</a>.</p>
+<p style="max-width:75ch">Set them in <code>bitcoin.conf</code>: <a href="#settings">the recommended files are below</a>.</p>
 <h2>Any node: read its startup lines</h2>
 <p style="max-width:75ch">Each time it starts, the node writes its version and every setting it was given, with where each one came from, to <code>debug.log</code>. Run this where the node runs, paste the result, and the checker below says which filters are on and what turned any of them off.</p>
 <pre class="conf">{esc(SETTINGS_CHECK)}</pre>
@@ -1567,6 +1647,8 @@ def build(out, heights=None, all_blocks=False, og=True):
     write(out, "shame/index.html", shame_page(idx, tip))
     write(out, "past-defaults/index.html", past_page(idx, tip))
     write(out, "check/index.html", check_page(tip))
+    for prog in ("plumb", "knots"):
+        write(out, f"check/{prog}.conf", recommended_conf(prog))
     write(out, "guide/index.html", guide_page(idx, tip))
     write(out, "plumb/index.html", plumb_page(idx, tip))
     write(out, "about/index.html", about_page(tip))
