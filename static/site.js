@@ -506,7 +506,9 @@
     if ("mss" in fix) {
       var g = document.createDocumentFragment();
       g.appendChild(el("code", { text: "maxscriptsize=" + fix.mss }));
-      g.appendChild(text(" or lower (default " + num(lim.mss) + ")"));
+      g.appendChild(text(" or lower (default " + num(lim.mss) + "; it also refuses every ordinary multisig spend bigger than that, "));
+      g.appendChild(el("a", { href: "/check/#fake-multisig", text: "see why" }));
+      g.appendChild(text(")"));
       parts.push(g);
     }
     if ("bpss" in fix) {

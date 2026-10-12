@@ -531,7 +531,8 @@ def refuse_with(k, name, s, counted):
         setting = "<code>datacarrier=0</code>" if fix["dcs"] == 0 else f'<code>datacarriersize={fix["dcs"]}</code> or lower'
         parts.append(f"{setting} (counts {n(counted)} B; default {DATACARRIER_SIZE})")
     if "mss" in fix:
-        parts.append(f'<code>maxscriptsize={fix["mss"]}</code> or lower (default {n(MAXSCRIPTSIZE_DEFAULT)})')
+        parts.append(f'<code>maxscriptsize={fix["mss"]}</code> or lower (default {n(MAXSCRIPTSIZE_DEFAULT)}; it also refuses '
+                     f'every ordinary multisig spend bigger than that, <a href="/check/#fake-multisig">see why</a>)')
     if "bpss" in fix:
         higher = " or higher" if fix["bpss"] < MAX_USEFUL_SIGOP_STRICT else ""
         parts.append(f'<code>bytespersigopstrict={fix["bpss"]}</code>{higher} (default {BYTESPERSIGOPSTRICT_DEFAULT}; '
