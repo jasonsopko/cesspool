@@ -13,6 +13,8 @@
 #include <chainparams.h>
 #include <coins.h>
 #include <common/args.h>
+#include <consensus/tx_verify.h>
+#include <consensus/validation.h>
 #include <core_io.h>
 #include <init.h>
 #include <kernel/mempool_options.h>
@@ -33,6 +35,9 @@
 #include <fstream>
 #include <map>
 #include <sstream>
+
+// Defined in validation.cpp, which declares it in no header.
+int64_t GetAccurateTransactionSigOpCost(const CTransaction& tx, const CCoinsViewCache& inputs, int flags);
 
 namespace {
 
@@ -111,18 +116,39 @@ void Collect(F check, std::vector<std::string>& reasons)
     }
 }
 
-// The datacarrier part of MemPoolAccept::PreChecks, same conditions.
-void DatacarrierReasons(const CTransaction& tx, const CCoinsViewCache& view, const kernel::MemPoolOptions& o, std::vector<std::string>& reasons, std::pair<size_t, size_t>& dcb_out)
+// Outputs whose hash or key is data, as MemPoolAccept::PreChecks finds them for the datacarrier
+// checks and the extra weight.
+std::vector<size_t> DataOutputs(const CTransaction& tx, const kernel::MemPoolOptions& o)
 {
     std::vector<size_t> data_outputs(tx.vout.size(), 0);
     if (o.reject_fake_outputs && (o.datacarrier_fullcount || !o.accept_non_std_datacarrier || ::g_weight_per_data_byte > WITNESS_SCALE_FACTOR)) {
         data_outputs = DataOutputBytes(tx);
     }
-    const auto dcb = DatacarrierBytes(tx, view, data_outputs);
+    return data_outputs;
+}
+
+// The datacarrier part of MemPoolAccept::PreChecks, same conditions.
+void DatacarrierReasons(const CTransaction& tx, const CCoinsViewCache& view, const kernel::MemPoolOptions& o, std::vector<std::string>& reasons, std::pair<size_t, size_t>& dcb_out)
+{
+    const auto dcb = DatacarrierBytes(tx, view, DataOutputs(tx, o));
     dcb_out = dcb;
     if (o.datacarrier_fullcount || !o.accept_non_std_datacarrier) {
         if (dcb.second > 0 && !o.accept_non_std_datacarrier) reasons.emplace_back("txn-datacarrier-nonstandard");
         if (o.datacarrier_fullcount && dcb.first + dcb.second > o.max_datacarrier_bytes.value_or(0)) reasons.emplace_back("txn-datacarrier-exceeded");
+    }
+}
+
+// The sigops part of MemPoolAccept::PreChecks, same conditions. The size is the mempool entry's:
+// the weight plus the extra weight -datacarriercost puts on data, raised for sigops at
+// -bytespersigop. -bytespersigopstrict refuses a transaction with fewer than that many weight
+// units for each sigop, counting a multisig's keys and leaving out its outputs.
+void SigopReasons(const CTransaction& tx, const CCoinsViewCache& view, const kernel::MemPoolOptions& o, std::vector<std::string>& reasons)
+{
+    const int64_t sigops{GetTransactionSigOpCost(tx, view, STANDARD_SCRIPT_VERIFY_FLAGS)};
+    const int32_t extra_weight{CalculateExtraTxWeight(tx, view, ::g_weight_per_data_byte, DataOutputs(tx, o))};
+    const int64_t vsize{GetVirtualTransactionSize(GetTransactionWeight(tx) + extra_weight, sigops, ::nBytesPerSigOp)};
+    if (sigops > MAX_STANDARD_TX_SIGOPS_COST || (::nBytesPerSigOpStrict && GetAccurateTransactionSigOpCost(tx, view, STANDARD_SCRIPT_VERIFY_FLAGS) > vsize * WITNESS_SCALE_FACTOR / ::nBytesPerSigOpStrict)) {
+        reasons.emplace_back("bad-txns-too-many-sigops");
     }
 }
 
@@ -137,6 +163,7 @@ std::vector<std::string> Reasons(const Profile& p, const CTransaction& tx, const
     if (tx.HasWitness()) {
         Collect([&](std::string& r, const ignore_rejects_type& ig) { return IsWitnessStandard(tx, view, "bad-witness-", r, ig); }, reasons);
     }
+    SigopReasons(tx, view, p.opts, reasons);
     if (p.name == "core") std::erase(reasons, std::string{"multi-op-return"});
     return reasons;
 }
