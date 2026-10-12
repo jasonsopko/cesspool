@@ -957,7 +957,7 @@ PLUMB_FILTERS = load_filters()
 FILTER_SOURCE = ({x["option"]: (x["source"], x["url"]) for x in PLUMB_FILTERS}
                  or {i["option"]: i["prs"][0] for i in TYPES.values() if i.get("filter") == PLUMB and i.get("prs")})
 PLUMB_OPTIONS = set(FILTER_SOURCE) | {"-" + x.split("=")[0] for x in SETTINGS_PLUMB}
-SETTINGS_GREP = 'grep -E "Bitcoin (Knots|Core) version|Using data directory|Plumb filter|arg: (\\[[a-z0-9]+\\] )?(corepolicy|reject|datacarrier|acceptnonstd|permitbare|maxscriptsize)"'
+SETTINGS_GREP = 'grep -E "Bitcoin (Knots|Core) version|Using data directory|Plumb filter|arg: (\\[[a-z0-9]+\\] )?(corepolicy|reject|datacarrier|acceptnonstd|permitbare|maxscriptsize|bytespersigopstrict)"'
 SETTINGS_CHECK = SETTINGS_GREP + " ~/.bitcoin/debug.log"
 UMBREL_LOG = "~/umbrel/app-data/bitcoin-knots/data/bitcoin/debug.log"
 LOWER_LIMITS = f"{PLUMB_REPO}/blob/29.x-plumb/plumb/FILTERS.md#lower-data-limits"
@@ -1100,6 +1100,7 @@ CHECK_SPEC = {
         {"name": "permitbarepubkey", "label": "bare public-key outputs", "kind": "bool", "def": False, "core": True, "good": False, "std": True},
         {"name": "permitbaremultisig", "label": "bare multisig outputs", "kind": "bool", "def": False, "core": True, "good": False, "std": True},
         {"name": "maxscriptsize", "label": "largest script and witness, in bytes", "kind": "num", "def": 1650, "core": 4294967295, "max": 1650, "over": "looser", "std": True},
+        {"name": "bytespersigopstrict", "label": "least weight for each signature check; 51 refuses most fake multisig", "kind": "num", "def": 20, "core": 0, "min": 20, "under": "looser"},
     ],
     "plumb": [
         {"name": "rejectfakeoutputs", "label": "fake output hashes and keys"},
