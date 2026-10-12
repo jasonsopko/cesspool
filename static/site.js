@@ -509,6 +509,12 @@
       g.appendChild(text(" or lower (default " + num(lim.mss) + ")"));
       parts.push(g);
     }
+    if ("bpss" in fix) {
+      var b = document.createDocumentFragment();
+      b.appendChild(el("code", { text: "bytespersigopstrict=" + fix.bpss }));
+      b.appendChild(text((fix.bpss < lim.bpss_max ? " or higher" : "") + " (default " + lim.bpss + "; it can refuse some wide multisig too)"));
+      parts.push(b);
+    }
     if ("dust" in fix) {
       // The dust line depends on the output type, so name the output the engine saw fall under it
       var h = document.createDocumentFragment(), o = (fix.dusti !== undefined && tx.o && tx.o[fix.dusti]) || null;
@@ -533,7 +539,8 @@
     var own = k === "knots" && plumbAll.length ? plumbOwn(cat, tx, plumbRs) : [];
     box.appendChild(text("No ")); box.appendChild(el("code", { text: "datacarriersize" }));
     box.appendChild(text(", no ")); box.appendChild(el("code", { text: "maxscriptsize" }));
-    box.appendChild(text(" of " + lim.mss_floor + " or more and no ")); box.appendChild(el("code", { text: "dustrelayfee" }));
+    box.appendChild(text(" of " + lim.mss_floor + " or more, no ")); box.appendChild(el("code", { text: "bytespersigopstrict" }));
+    box.appendChild(text(" up to " + lim.bpss_max + " and no ")); box.appendChild(el("code", { text: "dustrelayfee" }));
     box.appendChild(text(" up to " + conf(lim.dust_max) + " refuses it."));
     if (own.length) {
       box.appendChild(text(" " + cat.plumb + "'s "));

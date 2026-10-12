@@ -171,6 +171,9 @@ std::vector<std::string> Reasons(const Profile& p, const CTransaction& tx, const
 // Below this, a -maxscriptsize refuses ordinary spends too (a 3-of-5 P2WSH witness is about
 // 400 bytes), so a value under it is not offered as a way to refuse one transaction.
 constexpr unsigned int MIN_USEFUL_SCRIPT_LIMIT{520};
+// Above this, -bytespersigopstrict starts refusing segwit 2-of-15 spends (a 2-of-15 P2WSH input has
+// about 55.2 weight units a sigop; more keys or fewer signatures fall lower). Not offered above it.
+constexpr unsigned int MAX_USEFUL_SIGOP_STRICT{55};
 // -dustrelayfee is searched up to this, in sat/kvB (the default is 3000).
 constexpr int MAX_DUST_RATE{100'000};
 
@@ -178,6 +181,7 @@ constexpr int MAX_DUST_RATE{100'000};
 // rerunning the same checks with that one setting changed:
 //   dcs   the largest -datacarriersize that refuses it (0: -datacarrier=0 does the same)
 //   mss   the largest -maxscriptsize that refuses it, when that is MIN_USEFUL_SCRIPT_LIMIT or more
+//   bpss  the smallest -bytespersigopstrict that refuses it, up to MAX_USEFUL_SIGOP_STRICT
 //   dust  the smallest -dustrelayfee, in sat/kvB, that refuses it, up to MAX_DUST_RATE, and
 //   dusti the first output that rate makes dust and the rate below does not, so the page can name it
 // A key is left out when no value of that setting in its range refuses the transaction.
@@ -202,6 +206,16 @@ UniValue Fix(const Profile& p, const CTransaction& tx, const CCoinsViewCache& vi
             if (refuses("-maxscriptsize", util::ToString(mid))) lo = mid; else hi = mid - 1;
         }
         fix.pushKV("mss", uint64_t(lo));
+    }
+    // Monotone the other way: a higher -bytespersigopstrict asks more weight of each sigop.
+    // Find the smallest refusing value in the useful range.
+    if (p.bytes_per_sigop_strict < MAX_USEFUL_SIGOP_STRICT && refuses("-bytespersigopstrict", util::ToString(MAX_USEFUL_SIGOP_STRICT))) {
+        unsigned int lo{p.bytes_per_sigop_strict + 1}, hi{MAX_USEFUL_SIGOP_STRICT};
+        while (lo < hi) {
+            const unsigned int mid{lo + (hi - lo) / 2};
+            if (refuses("-bytespersigopstrict", util::ToString(mid))) hi = mid; else lo = mid + 1;
+        }
+        fix.pushKV("bpss", uint64_t(lo));
     }
     // Monotone the other way: a higher dust rate refuses more. Find the smallest refusing rate.
     const auto rate = [](int sat_per_kvb) { return strprintf("0.%08d", sat_per_kvb); };

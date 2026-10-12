@@ -20,6 +20,8 @@ DATACARRIER_SIZE = 83  # the Knots and Plumb default -datacarriersize
 MAXSCRIPTSIZE_DEFAULT = 1650  # the Knots and Plumb default -maxscriptsize
 DUSTRELAYFEE_DEFAULT = 3000  # the default -dustrelayfee, in sat/kvB
 MIN_USEFUL_SCRIPT_LIMIT = 520  # plumb-check offers no -maxscriptsize below this
+BYTESPERSIGOPSTRICT_DEFAULT = 20  # the Knots and Plumb default -bytespersigopstrict
+MAX_USEFUL_SIGOP_STRICT = 55  # plumb-check offers no -bytespersigopstrict above this
 MAX_DUST_RATE = 100000  # plumb-check searches -dustrelayfee up to this, in sat/kvB
 FORK = 961640
 
@@ -520,7 +522,7 @@ def refuse_with(k, name, s, counted):
     """For a transaction `name` relays: the settings whose value would refuse it. plumb-check found each
     value by rerunning the policy checks with that one setting changed ("fix"); nothing here is reasoned
     from the transaction. A setting no value of refuses it is left out; -maxscriptsize is offered only
-    at MIN_USEFUL_SCRIPT_LIMIT or more."""
+    at MIN_USEFUL_SCRIPT_LIMIT or more, -bytespersigopstrict only up to MAX_USEFUL_SIGOP_STRICT."""
     fix = (s.get("fix") or {}).get(k)
     if fix is None:
         return ""
@@ -530,6 +532,10 @@ def refuse_with(k, name, s, counted):
         parts.append(f"{setting} (counts {n(counted)} B; default {DATACARRIER_SIZE})")
     if "mss" in fix:
         parts.append(f'<code>maxscriptsize={fix["mss"]}</code> or lower (default {n(MAXSCRIPTSIZE_DEFAULT)})')
+    if "bpss" in fix:
+        higher = " or higher" if fix["bpss"] < MAX_USEFUL_SIGOP_STRICT else ""
+        parts.append(f'<code>bytespersigopstrict={fix["bpss"]}</code>{higher} (default {BYTESPERSIGOPSTRICT_DEFAULT}; '
+                     f'it can refuse some wide multisig too)')
     if "dust" in fix:
         # The dust line depends on the output type, so name the output the engine saw fall under it
         outs = s.get("outs") or []
@@ -547,7 +553,8 @@ def refuse_with(k, name, s, counted):
     # Name Plumb's filter only when Plumb refuses the transaction; fc alone measures bytes
     own = plumb_own(s, [r for r in s["v"]["plumb"] if classify.DATA_REASONS.match(r)]) if k == "knots" and s["v"]["plumb"] else []
     does = f" {esc(PLUMB_NAME)}&#39;s {', '.join(f'<code>{esc(o)}</code>' for o in own)} {'do' if len(own) > 1 else 'does'}." if own else ""
-    return (f'<div class="by">No <code>datacarriersize</code>, no <code>maxscriptsize</code> of {MIN_USEFUL_SCRIPT_LIMIT} or more and no '
+    return (f'<div class="by">No <code>datacarriersize</code>, no <code>maxscriptsize</code> of {MIN_USEFUL_SCRIPT_LIMIT} or more, no '
+            f'<code>bytespersigopstrict</code> up to {MAX_USEFUL_SIGOP_STRICT} and no '
             f'<code>dustrelayfee</code> up to {feerate_conf(MAX_DUST_RATE)} refuses it.{does}</div>')
 
 
@@ -847,7 +854,8 @@ def tx_catalog():
     return {"plumb": PLUMB_NAME, "verdicts": VERDICT_NAMES, "rules": RULES, "sources": FILTER_SOURCE,
             "plumb_options": sorted(PLUMB_OPTIONS), "dcsize": DATACARRIER_SIZE, "types": types,
             "limits": {"dcsize": DATACARRIER_SIZE, "mss": MAXSCRIPTSIZE_DEFAULT, "dust": DUSTRELAYFEE_DEFAULT,
-                       "mss_floor": MIN_USEFUL_SCRIPT_LIMIT, "dust_max": MAX_DUST_RATE},
+                       "mss_floor": MIN_USEFUL_SCRIPT_LIMIT, "dust_max": MAX_DUST_RATE,
+                       "bpss": BYTESPERSIGOPSTRICT_DEFAULT, "bpss_max": MAX_USEFUL_SIGOP_STRICT},
             "filters": {"knots": KNOTS, "plumb": PLUMB, "none": NONE, "allowed": ALLOWED}}
 
 
@@ -1398,7 +1406,7 @@ def about_page(tip):
 <h2>Verdicts come from the shipped code</h2>
 <p>Each transaction, with the coins it spends, goes through the policy checks of Plumb {PLUMB_VERSION}: <code>IsStandardTx</code>, <code>AreInputsStandard</code>, the data-carrier count, <code>IsWitnessStandard</code> and the sigop limits, once with each software's default policy: stock Knots 29.4.2 (Plumb's filters off) and Plumb. Bitcoin Core is not compared: it has no BLAKE2b proof of work, so no Core node follows this chain. Nothing here reimplements a filter, so this page and a Plumb node cannot disagree about a transaction.</p>
 <p>Each refusal on a block or transaction page names the rule it comes from and the option behind it. Plumb's count is also taken with each of its four data-counting filters turned off alone, so the bytes a filter is responsible for come from the code too (the fifth, <code>-rejecttokenmessages</code>, names itself in its reason), and a refusal that rests on Knots' own rules says so.</p>
-<p>Where Knots or Plumb relays a transaction shown here, the engine also tries three settings one at a time and keeps the value that would refuse it: the largest <code>datacarriersize</code>; the largest <code>maxscriptsize</code> of {MIN_USEFUL_SCRIPT_LIMIT} or more, the size of the largest push a script may hold, since a limit below that starts refusing ordinary multisig witnesses (a 3-of-5 P2WSH witness is about 395 bytes); and the smallest <code>dustrelayfee</code> up to {feerate_conf(MAX_DUST_RATE)} (100 sat/vB, where a P2TR output under 11,000 sat is already dust; higher rates were not tried). Each value comes from rerunning the same checks with only that setting changed. A setting that refuses the transaction at no value in its range is left out, and a verdict that offers none names the three that were tried.</p>
+<p>Where Knots or Plumb relays a transaction shown here, the engine also tries four settings one at a time and keeps the value that would refuse it: the largest <code>datacarriersize</code>; the largest <code>maxscriptsize</code> of {MIN_USEFUL_SCRIPT_LIMIT} or more, the size of the largest push a script may hold, since a limit below that starts refusing ordinary multisig witnesses (a 3-of-5 P2WSH witness is about 395 bytes); the smallest <code>bytespersigopstrict</code> up to {MAX_USEFUL_SIGOP_STRICT}, since above that it starts refusing segwit 2-of-15 spends (a 2-of-15 P2WSH input has about 55 weight units for each of its 15 signature checks; multisig with many keys and few signatures can be refused lower); and the smallest <code>dustrelayfee</code> up to {feerate_conf(MAX_DUST_RATE)} (100 sat/vB, where a P2TR output under 11,000 sat is already dust; higher rates were not tried). Each value comes from rerunning the same checks with only that setting changed. A setting that refuses the transaction at no value in its range is left out, and a verdict that offers none names the four that were tried.</p>
 <p>Not modeled: fee floors, mempool limits, replacement rules and address reuse. Those depend on the mempool at the time, not on what the transaction carries.</p>
 <h2>Grades</h2>
 <ul><li>{stamp("pristine", True)} every transaction is a payment. Not one byte of data.</li>
