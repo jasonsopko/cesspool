@@ -372,7 +372,7 @@ def exemption(tx, verdict, data_reasons):
     nothing Plumb counts; a PowPeg Flyover input holds a 32-byte commitment in front of the pinned
     federation script, which only its own keys can spend; an output
     that pays the script of a coin the transaction spends cannot hold chosen bytes, since matching
-    that script takes about 2**160 tries.
+    that script takes at least 2**128 tries (a taproot key's discrete log).
     """
     if not data_reasons:
         return None

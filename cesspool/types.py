@@ -199,7 +199,7 @@ TYPES = {
     "self-pay": {
         "name": "Payment back to the spender",
         "what": "Pays the address that one of its own inputs spends from with a signature. The one case since the fork pays a vanity address whose hash starts with six zero bytes.",
-        "how": "Plumb's `-rejectfakeoutputs` reads the run of zeros as data, and Knots relays it. An output that pays the script of a coin the transaction spends adds no chosen bytes: the spend proved the key or hash in it is real, and fitting chosen data into one would take about 2^160 tries. cesspool does not count it as sewage. The fix is on Plumb's `filter/rejectfakeoutputs` branch, not in a release yet.",
+        "how": "Plumb's `-rejectfakeoutputs` reads the run of zeros as data, and Knots relays it. An output that pays the script of a coin the transaction spends adds no chosen bytes: the spend proved the key or hash in it is real, and fitting chosen data into one would take at least 2^128 tries. cesspool does not count it as sewage. The fix is on Plumb's `filter/rejectfakeoutputs` branch, not in a release yet.",
         "filter": NOT_SPAM, "option": "-rejectfakeoutputs",
     },
     "liquid-emergency": {
