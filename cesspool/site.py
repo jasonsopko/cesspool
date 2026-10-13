@@ -1011,6 +1011,12 @@ SIGOP_FACTS = {"value": 51, "fake": 700, "fake_plumb": 699, "fake_value": 675, "
                "other": 0, "nearest": 56, "knots42_relays": 2305,
                "mss": 590, "mss_sewage": 316, "mss_other": 552, "mss_babylon": 386, "mss_liquid": 44, "mss_rsk": 22,
                "largest": 1609}
+# What the recommended settings refuse that cesspool.lol does not count as sewage, same blocks, counted on
+# the block records by primary type: gray at the default 83 and refused at 42, from fix.plumb.dcs (babylon,
+# coredao, stacks, bip47); refused at the defaults but not spam (sweeps, flyover, selfpay); and the one
+# Liquid-layout emergency spend rejectfakemultisig refuses.
+LEGIT_FACTS = {"babylon": 1158, "coredao": 83, "stacks": 1458, "bip47": 11,
+               "sweeps": 279, "flyover": 5, "selfpay": 1, "liquid": 1}
 CONF_NAMES = {"knots": "Bitcoin Knots 29.4.2", "plumb": PLUMB_NAME}
 
 
@@ -1024,7 +1030,7 @@ def conf_comment(*paras):
 
 def conf_stricter(prog):
     """The comment above each value that differs from the default, and above maxscriptsize, by option."""
-    f, g = CONF_FACTS, SIGOP_FACTS
+    f, g, k = CONF_FACTS, SIGOP_FACTS, LEGIT_FACTS
     fake_who = ("Knots relays all of them at the defaults" if prog == "knots"
                 else f"rejectfakemultisig refuses {n(g['fake_plumb'])} of them already")
     if prog == "knots":
@@ -1032,13 +1038,38 @@ def conf_stricter(prog):
                    f"Plumb refuses {n(f['plumb_sewage'])} at either value.")
     else:
         refused = f"Plumb refuses {n(f['plumb_sewage'])} of them at 83 and at 42."
-    return {
+    plumb_only = {} if prog == "knots" else {
+        "rejectfakeoutputs": conf_comment(
+            f"In the same blocks {PLUMB_NAME} also refuses {n(k['selfpay'])} payment back to the vanity address "
+            "it spends from, reading the zeros in its hash as data. The fix is on Plumb's "
+            "filter/rejectfakeoutputs branch, not in a release yet. cesspool.lol does not count it as sewage."),
+        "rejectfakemultisig": conf_comment(
+            f"In the same blocks it also refuses {n(k['liquid'])} Liquid-layout emergency spend, very likely "
+            "Liquid's own recovery. The layout cannot prove that the unsigned keys are real, so cesspool.lol still "
+            "counts it as sewage."),
+    }
+    return plumb_only | {
         "datacarriersize": conf_comment(
             f"The default is 83. From block {f['lo']} to {f['hi']} "
             f"({n(f['txs'])} transactions, not counting coinbases), cesspool.lol lists {n(f['sewage'])} as sewage. "
             f"With the other options at their defaults, {refused} 42 also refuses {n(f['extra'])} transactions "
-            "that are not on that list, each carrying one OP_RETURN: a text or binary note, a swap memo or a "
-            "Stacks commitment."),
+            "that are not on that list, each carrying one OP_RETURN: a text or binary note, a swap memo, or the "
+            f"tag that Babylon ({n(k['babylon'])}), Core DAO ({n(k['coredao'])}), Stacks ({n(k['stacks'])}) or "
+            f"BIP47 ({n(k['bip47'])}) adds. 42 keeps 32-byte commitments such as OpenTimestamps."),
+        "acceptnonstddatacarrier": conf_comment(
+            "The default. It refuses data outside OP_RETURN, which includes a push that a script drops unused. "
+            f"In the same blocks it also refuses {n(k['flyover'])} Rootstock PowPeg spends of Flyover deposits, "
+            "whose scripts start with a 32-byte value dropped that way. cesspool.lol does not count those as "
+            f"sewage: {SITE}/about/#bar."),
+        "subdustfeepenalty": conf_comment(
+            "The default. With it, and with mempooltruc at its default, a fee-free version 3 transaction with a "
+            "zero-value pay-to-anchor output is refused even beside a child that pays its fee: the package "
+            "Lightning's zero-fee commitment channels use. It relays only with subdustfeepenalty=0 and "
+            f"mempooltruc=enforce together. None was mined from block {f['lo']} to {f['hi']}."),
+        "permitbaredatacarrier": conf_comment(
+            "The default. It refuses a transaction whose only output is an OP_RETURN. In the same blocks it "
+            f"also refuses {n(k['sweeps'])} sweeps of Lightning anchors and other dust into fees, whose OP_RETURN "
+            "holds 4 bytes or less of padding. cesspool.lol does not count those as sewage."),
         "datacarriercost": conf_comment(
             "The default is 1. At 2, each byte of data counts as 2 vbytes instead of 1 when the node sizes a "
             "transaction for relay and for the blocks it builds, so data pays twice the fee per byte."),
@@ -1065,7 +1096,8 @@ def recommended_conf(prog):
     name = "Knots" if prog == "knots" else "Plumb"
     intro = (f"{name}'s spam filter settings, written out so that a corepolicy=1 set elsewhere can no longer "
              "reset them. Three are stricter than the defaults, datacarriersize, datacarriercost and "
-             "bytespersigopstrict; the comment above each says what it does. ")
+             "bytespersigopstrict; the comment above each says what it does. The comments above some of the "
+             "defaults say what they refuse that is not spam. ")
     if prog == "knots":
         intro = intro.replace("Knots's", "Knots'") + ("Knots' Spam filtering tab also has fee, dust, rate-limit, "
                                                        "package-size, unknown-witness and bare-anchor "
