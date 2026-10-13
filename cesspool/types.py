@@ -260,5 +260,32 @@ TYPES = {
 }
 
 
+# Protocols recognized by their exact scripts or tags (classify.known), for the transaction page.
+# The grade never depends on these; a transaction that also carries data is graded on the data.
+KNOWN = {
+    "ln-commitment": ("Lightning force close", "Publishes a channel's latest commitment: it spends the 2-of-2 funding output, with the channel's obscured commitment number in its lock time and sequence."),
+    "ln-penalty": ("Lightning penalty", "Takes a cheating peer's delayed output by the revocation key, after the peer published an old commitment."),
+    "ln-htlc": ("Lightning HTLC claim or timeout", "Spends an HTLC output of a force close, with the payment preimage or after the timeout."),
+    "ln-to-local": ("Lightning delayed sweep", "Spends the delayed output of a force close after its CSV delay."),
+    "ln-anchor": ("Lightning anchor fee bump", "Spends a channel's 330-sat anchor with the owner's signature, to raise the fee of a force close."),
+    "ln-to-remote": ("Lightning channel sweep", "Spends the other side's output of a force close after its one-block delay."),
+    "two-of-two": ("2-of-2 multisig spend", "Spends the script Lightning uses for channel funding: a cooperative close, a splice, or any other 2-of-2 contract. The script alone does not say which."),
+    "ln-anchor-sweep": ("Lightning anchor sweep", "Spends anchors nobody claimed into fees, removing them from the UTXO set."),
+    "p2a-sweep": ("Pay-to-anchor sweep", "Spends keyless anchor outputs into fees."),
+    "dust-sweep": ("Dust sweep", "Spends small outputs into fees."),
+    "powpeg": ("Rootstock PowPeg spend", "The Rootstock federation moving pegged bitcoin, signed by 5 of its 9 keys."),
+    "powpeg-flyover": ("Rootstock PowPeg, Flyover deposit", "The Rootstock federation moving bitcoin out of a Flyover deposit."),
+    "liquid": ("Liquid federation spend", "Spends the Liquid federation script, signed by 11 of its 15 keys."),
+    "liquid-emergency": ("Liquid-layout emergency spend", "Spends the Liquid federation script by its timelocked 2-of-3 emergency branch."),
+    "babylon-covenant": ("Babylon unbonding or slashing", "Spends a Babylon staking output by a path that needs the staker and the covenant committee."),
+    "babylon": ("Babylon staking", "A payment with Babylon's staking tag beside it."),
+    "coredao": ("Core DAO staking", "A payment with Core DAO's staking tag beside it."),
+    "stacks": ("Stacks block commit", "A Stacks miner's commitment, paying bitcoin to stackers or burning it."),
+    "bip47": ("BIP47 notification", "Sets up a reusable payment code for one recipient."),
+    "commitment": ("32-byte commitment", "One hash in OP_RETURN, the form timestamping and proof-of-reserves take."),
+    "swap-memo": ("Swap memo", "An instruction for a cross-chain swap router."),
+}
+
+
 def info(t):
     return TYPES.get(t, {"name": t, "what": "", "how": "", "filter": NONE})

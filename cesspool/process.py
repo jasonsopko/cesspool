@@ -70,18 +70,21 @@ def process_block(b, rows):
     cb = txs[0]
     reward = sum(sats(o["value"]) for o in cb["vout"])
     total_fee, total_w = 0, 0
-    tmap, spam, txd = [], [], []
+    tmap, spam, txd, kp = [], [], [], {}
     for t in txs[1:]:
         fee = sats(t.get("fee", 0))
         total_fee += fee
         total_w += t["weight"]
         row = rows.get(t["txid"])
+        k = classify.known(t)
+        if k:
+            kp[k] = kp.get(k, 0) + 1
         if row is None or "error" in row:
             tmap.append([t["vsize"], fee, 0, -1])
-            txd.append(txdetail.tx_record(t, row, None))
+            txd.append(txdetail.tx_record(t, row, None, k))
             continue
         c = classify.classify(t, row)
-        txd.append(txdetail.tx_record(t, row, c))
+        txd.append(txdetail.tx_record(t, row, c, k))
         tier = TIERS[c["tier"]]
         if tier:
             d = tx_detail(t, {"data_in": row.get("data_in", []), "data_out": row.get("data_out", [])}, c.get("fm_in"))
@@ -90,7 +93,7 @@ def process_block(b, rows):
                          "fee": fee, "v": {k: c["reasons"][k]["reasons"] for k in ("core", "knots", "plumb")},
                          "dc": {k: [c["reasons"][k]["data"], c["reasons"][k]["data_nonstd"]] for k in ("core", "knots", "plumb")},
                          "fc": row.get("fc", {}), "fix": row.get("fix", {}),
-                         **d})
+                         **({"kp": k} if k else {}), **d})
             tmap.append([t["vsize"], fee, tier, len(spam) - 1])
         else:
             tmap.append([t["vsize"], fee, 0, -1])
@@ -108,7 +111,7 @@ def process_block(b, rows):
                    "data": sum(s["data"] for s in sewage), "missed": sum(1 for s in sewage if s["missed"])},
         "gray": {"n": len(gray), "w": sum(s["w"] for s in gray), "fee": sum(s["fee"] for s in gray),
                  "data": sum(s["data"] for s in gray)},
-        "map": tmap, "spam": spam,
+        "map": tmap, "spam": spam, "kp": kp,
     }
 
 

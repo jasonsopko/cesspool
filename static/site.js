@@ -698,8 +698,8 @@
         what.push(line);
       }
       if (tx.m && info.note) what.push(el("div", { cls: "note" }, el("b", { text: plumb + " relays this. " }), prose(info.note)));
-    } else if (tier === "gray" && info && (info.filter === cat.filters.notspam)) {
-      // a refusal that passes the bar: say what it is rather than "small note"
+    } else if (tier === "gray" && info && (info.filter === cat.filters.notspam || types[0] === "commitment")) {
+      // a refusal that passes the bar, or a protocol the guide names: say what it is rather than "small note"
       title = info.name; st = [stamp("Gray water", "var(--gray)")];
       if (info.filter === cat.filters.notspam) st.push(stamp("Not spam", "var(--ok)"));
       if (tx.lb && tx.lb[0] && tx.lb[0] !== info.name) what.push(el("p", {}, el("b", { text: tx.lb[0] + ". " })));
@@ -709,13 +709,18 @@
       what.push(el("p", { text: tx.dt ? "Carries a little data inside the default 83-byte allowance, the room Knots leaves for notes such as swap memos. cesspool does not count it as sewage."
         : "Carries an OP_RETURN with no data in it. cesspool does not count it as sewage." }));
     } else {
-      var sh = shape(tx); title = sh[0]; st = [stamp("Normal", "var(--ok)")];
-      what.push(el("p", { text: sh[1] }));
+      var sh = shape(tx), kn = tx.kp && cat.known && cat.known[tx.kp];
+      title = kn ? kn.name : sh[0]; st = [stamp("Normal", "var(--ok)")];
+      what.push(el("p", { text: kn ? kn.what : sh[1] }));
       var anyRefusal = tx.x && ["knots", "plumb"].some(function (k) { return tx.x[k].length; });
       what.push(el("p", {}, el("b", { text: "Not spam. " }), anyRefusal
         ? "No input or output carries data that the policy code counts. One of the policies below refuses it for a reason that is not a data rule."
         : "No input or output carries data that Knots or " + plumb + " counts, and both relay it."));
     }
+    // A transaction that matches a protocol and carries something else is graded on the something else.
+    if (!tx.cb && tier !== "clean" && tx.kp && cat.known && cat.known[tx.kp] && tx.kp !== types[0])
+      what.push(el("p", { cls: "small muted" }, el("b", { text: "Also matches: " + cat.known[tx.kp].name + ". " }),
+        cat.known[tx.kp].what + " The grade is for what else it carries. ", el("a", { href: "/about/#known", text: "How protocols are recognized" }), "."));
     var hd = el("div", { cls: "hd" }, ...st, el("h3", { text: title }));
     sec.appendChild(hd);
     var copy = el("button", { cls: "copy", type: "button", text: "Copy link" });

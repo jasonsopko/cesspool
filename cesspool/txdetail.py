@@ -65,8 +65,9 @@ def spend(vin, ptype):
     return ptype or "unknown"
 
 
-def tx_record(t, row, c):
-    """The page's view of one transaction. `row` is the plumb-check row, `c` classify's findings."""
+def tx_record(t, row, c, known=None):
+    """The page's view of one transaction. `row` is the plumb-check row, `c` classify's findings,
+    `known` the protocol classify.known recognized."""
     data_in = (row or {}).get("data_in", [])
     data_out = (row or {}).get("data_out", [])
     # Fake multisig inputs show every unused key as payload, not only the ones past Plumb's allowance.
@@ -131,6 +132,8 @@ def tx_record(t, row, c):
         # Settings whose value would refuse it, per software that relays it (plumb-check "fix").
         if row.get("fix"):
             rec["fx"] = row["fix"]
+    if known:
+        rec["kp"] = known
     if row is None or "error" in row:
         rec["e"] = 1
     return rec

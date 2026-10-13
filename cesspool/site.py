@@ -2,7 +2,7 @@
 import collections, datetime, functools, gzip, html, json, math, os, shutil, subprocess, tempfile, textwrap, time
 
 from . import classify, found, miner
-from .types import TYPES, info, KNOTS, PLUMB, NONE, ALLOWED, NOT_SPAM
+from .types import TYPES, info, KNOTS, PLUMB, NONE, ALLOWED, NOT_SPAM, KNOWN
 
 HOME = os.environ.get("CESSPOOL_HOME", os.path.expanduser("~/.cesspool"))
 BLOCKS = f"{HOME}/blocks"
@@ -147,7 +147,17 @@ def summarize(rec):
         "ps": plumb_stops, "psw": plumb_stops_w, "ksw": knots_stops_w,
         "share": share, "grade": grade(rec["sewage"]["n"], rec["gray"]["n"], share),
         "ty": ty, "top": top, "bld": rec.get("bld", ""), "dtag": rec.get("dtag", ""), "via": rec.get("via", False),
+        "kp": rec.get("kp", {}), "kpf": kp_flagged(rec),
     }
+
+
+def kp_flagged(rec):
+    """{protocol: [gray n, sewage n]} for the block's listed transactions that classify.known recognized."""
+    out = {}
+    for s in rec["spam"]:
+        if s.get("kp"):
+            out.setdefault(s["kp"], [0, 0])[s["tier"] == "sewage"] += 1
+    return out
 
 
 def load_index():
@@ -306,6 +316,19 @@ DATUM_NOTE = ("A block whose template came from a DATUM gateway with the pool up
               "apart from the pool's own blocks, because the gateway's node chose what went in, normally the miner's own. "
               "A block whose name is not a pool's, such as a miner known by payout address or tag, keeps that name. "
               "A pool that serves a stratum port through its own gateway looks the same from the chain.")
+
+
+def known_stats(idx):
+    """{protocol: {"n", "gray", "sewage"}} summed over every block, from classify.known."""
+    st = {}
+    for b in idx.values():
+        for k, c in b.get("kp", {}).items():
+            st.setdefault(k, {"n": 0, "gray": 0, "sewage": 0})["n"] += c
+        for k, (g, sw) in b.get("kpf", {}).items():
+            e = st.setdefault(k, {"n": 0, "gray": 0, "sewage": 0})
+            e["gray"] += g
+            e["sewage"] += sw
+    return st
 
 
 def type_stats(idx):
@@ -862,7 +885,8 @@ def tx_catalog():
             "limits": {"dcsize": DATACARRIER_SIZE, "mss": MAXSCRIPTSIZE_DEFAULT, "dust": DUSTRELAYFEE_DEFAULT,
                        "mss_floor": MIN_USEFUL_SCRIPT_LIMIT, "dust_max": MAX_DUST_RATE,
                        "bpss": BYTESPERSIGOPSTRICT_DEFAULT, "bpss_max": MAX_USEFUL_SIGOP_STRICT},
-            "filters": {"knots": KNOTS, "plumb": PLUMB, "none": NONE, "allowed": ALLOWED, "notspam": NOT_SPAM}}
+            "filters": {"knots": KNOTS, "plumb": PLUMB, "none": NONE, "allowed": ALLOWED, "notspam": NOT_SPAM},
+            "known": {k: {"name": a, "what": b} for k, (a, b) in KNOWN.items()}}
 
 
 # ---------------------------------------------------------------- other pages
@@ -1459,9 +1483,37 @@ def found_page(tip):
     return page("/found/", "Your blocks", body, nav="found", desc="Find the blocks you mined, by payout address, pool name or coinbase tag, and see how they grade.", tip=tip)
 
 
+# How about_page says each protocol in KNOWN is matched; the code is classify.known.
+KNOWN_RULES = [
+    ("ln-commitment", "spends the funding script <code>OP_2 &lt;key&gt; &lt;key&gt; OP_2 OP_CHECKMULTISIG</code> as its only input, lock time starting 0x20, sequence starting 0x80 (BOLT 3)"),
+    ("ln-htlc", "the BOLT 3 HTLC script, starting <code>OP_DUP OP_HASH160 &lt;20 bytes&gt; OP_EQUAL OP_IF OP_CHECKSIG</code>"),
+    ("ln-penalty", "the BOLT 3 to_local script spent by its revocation branch"),
+    ("ln-to-local", "the BOLT 3 to_local script <code>OP_IF &lt;key&gt; OP_ELSE &lt;delay&gt; OP_CSV OP_DROP &lt;key&gt; OP_ENDIF OP_CHECKSIG</code>"),
+    ("ln-to-remote", "<code>&lt;key&gt; OP_CHECKSIGVERIFY 1 OP_CSV</code> (BOLT 3, anchor channels)"),
+    ("ln-anchor", "the BOLT 3 anchor script <code>&lt;key&gt; OP_CHECKSIG OP_IFDUP OP_NOTIF 16 OP_CSV OP_ENDIF</code>, signed"),
+    ("ln-anchor-sweep", "the anchor script with an empty signature, and nothing but an OP_RETURN of 4 bytes or less"),
+    ("two-of-two", "the funding script spent any other way"),
+    ("p2a-sweep", "spends <code>OP_1 &lt;4e73&gt;</code> outputs, and nothing but an OP_RETURN of 4 bytes or less"),
+    ("dust-sweep", "any other spend with nothing but an OP_RETURN of 4 bytes or less"),
+    ("powpeg", "the one 457-byte script every PowPeg spend since the fork reveals: <code>OP_NOTIF</code> 5-of-9 <code>OP_ELSE</code> timelock 3-of-4 <code>OP_ENDIF</code> with its 13 keys"),
+    ("powpeg-flyover", "the same, behind <code>&lt;32 bytes&gt; OP_DROP</code>"),
+    ("liquid", "<code>&lt;m&gt; keys &lt;n&gt; OP_CHECKMULTISIG OP_IFDUP OP_NOTIF &lt;t&gt; OP_CSV OP_VERIFY &lt;m&gt; keys &lt;n&gt; OP_CHECKMULTISIG OP_ENDIF</code>, first branch signed"),
+    ("liquid-emergency", "the same, first branch left empty"),
+    ("babylon-covenant", "a tapscript <code>&lt;key&gt; OP_CHECKSIGVERIFY</code>, then 4 or more <code>OP_CHECKSIGADD</code>, ending <code>OP_NUMEQUAL</code>"),
+    ("babylon", "an OP_RETURN starting <code>bbn1</code>"),
+    ("coredao", "an OP_RETURN starting <code>SAT+</code>"),
+    ("stacks", "an OP_RETURN starting <code>X2</code> and a Stacks operation byte"),
+    ("bip47", "an 80-byte OP_RETURN: version byte, sign byte 02 or 03, 13 zero bytes at the end"),
+    ("commitment", "a single 32-byte OP_RETURN that is not text"),
+    ("swap-memo", "an OP_RETURN starting with a THORChain-style memo prefix such as <code>=:</code> or <code>SWAP:</code>"),
+]
+
+
 def about_page(idx, tip):
-    st = type_stats(idx)
+    st, ks = type_stats(idx), known_stats(idx)
     tn = lambda *ts: sum(st.get(t, {}).get("n", 0) for t in ts)
+    krows = "".join(f'<tr><td class="wrapc">{esc(KNOWN[k][0])}<div class="small muted">{rule}</div></td><td class="r num">{n(ks.get(k, {}).get("n", 0))}</td>'
+                    f'<td class="r num">{n(ks.get(k, {}).get("gray", 0))}</td><td class="r num">{n(ks.get(k, {}).get("sewage", 0))}</td></tr>' for k, rule in KNOWN_RULES)
     body = f'''<div class="hero prose"><div class="kicker">About</div><h1>How the water gets tested</h1>
 <p class="lede">Every block since the fork at height {FORK}, every transaction in it, run through the Knots and Plumb policy checks.</p></div>
 <div class="prose">
@@ -1488,6 +1540,10 @@ def about_page(idx, tip):
 <li><a href="/guide/#self-pay">Payments back to the spender</a> ({n(tn("self-pay"))}): an output that Plumb reads as data, paying the address one of the transaction's inputs spends from.</li></ul>
 <p>Each one is kept narrow. A sweep's OP_RETURN holds at most {classify.SWEEP_PAD} bytes, and a sweep whose inputs carry anything Plumb or cesspool counts stays sewage. A Flyover spend is recognized by the exact script every PowPeg spend since the fork reveals, so only the keys in that script can spend a match: 5 of its 9, or 3 of its 4 emergency keys after a long timelock. An output that pays the script of a coin the transaction spends adds no chosen bytes: the spend proved the key or hash in it is real, and fitting chosen data into one would take about 2<sup>160</sup> tries.</p>
 <p>One kind stays sewage on purpose. A <a href="/guide/#liquid-emergency">Liquid-layout emergency spend</a> ({n(tn("liquid-emergency"))}) is very likely Liquid's own recovery, but every Liquid deposit tweaks the federation keys, so the layout cannot prove that the keys Plumb counts are real, and anyone could copy it.</p>
+<h2 id="known">How protocols are recognized</h2>
+<p>By exact scripts and tags, never by a guess about the content. A transaction that matches one of these and also carries other data, a runestone beside a Lightning close say, is graded on the data, and its page says which protocol matched. The PowPeg is pinned to its federation's exact script; the others are matched by template or tag, so a match says what the script is, not who holds the coins.</p>
+<div class="tw"><table><tr><th>Protocol, matched by</th><th class="r">Since the fork</th><th class="r">Gray</th><th class="r">Sewage</th></tr>{krows}</table></div>
+<p class="small muted">Gray and Sewage count the matches the site lists under that grade. A match listed as sewage carried something the bar does not pass, such as a runestone beside it, or wrote bytes and paid nobody; the Liquid-layout emergency spend above is the one exception.</p>
 <h2>What we never show</h2>
 <p>The payload. No images, no text, no file names. A spam transaction gets its type, its size and where the bytes sit. Displaying the contents is the service the spammer paid for.</p>
 <h2>Who mined it</h2>

@@ -38,6 +38,13 @@ POWPEG_SCRIPTS = {"2f03c5cf40f834d0662838848744295f4999fdb828cd606b1704d4d12d8f0
 # 4-byte fillers sweepers use, such as "burn".
 SWEEP_PAD = 4
 
+# The other Lightning scripts from BOLT 3: the funding 2-of-2, to_remote with anchors, to_local, and
+# the start shared by offered and received HTLCs.
+LN_FUNDING = re.compile(rf"^5221{H}{{66}}21{H}{{66}}52ae$")
+LN_TO_REMOTE = re.compile(rf"^21{H}{{66}}ad51b2$")
+LN_TO_LOCAL = re.compile(rf"^6321{H}{{66}}67{H}{{2,8}}b27521{H}{{66}}68ac$")
+LN_HTLC = re.compile(rf"^76a914{H}{{40}}8763ac6721{H}{{66}}7c82012087")
+
 
 def ops(hexstr):
     """(opcode, data or None) pairs; stops quietly on a truncated push."""
@@ -303,6 +310,56 @@ def sweep_kind(tx):
         else:
             kinds.add("dust-sweep")
     return kinds.pop() if len(kinds) == 1 else "dust-sweep"
+
+
+def babylon_covenant(script_hex):
+    """A tapscript leaf with the staker's key, then a covenant committee threshold: Babylon's unbonding and slashing paths."""
+    o = ops(script_hex)
+    return len(o) > 2 and o[1][0] == 0xAD and o[-1][0] == 0x9C and sum(1 for op, _ in o if op == 0xBA) >= 4
+
+
+def known(tx):
+    """The protocol a transaction belongs to when its scripts match one exactly, else None. Labels only:
+    the verdicts never depend on it. Ids are KNOWN entries in types.py."""
+    s = sweep_kind(tx)
+    if s:
+        return s
+    found = []
+    for v in tx["vin"]:
+        k, s = revealed(v)
+        if not s:
+            continue
+        w = v.get("txinwitness") or []
+        if k == "p2wsh":
+            if LN_FUNDING.match(s):
+                commit = len(tx["vin"]) == 1 and tx["locktime"] >> 24 == 0x20 and v.get("sequence", 0) >> 24 == 0x80
+                found.append("ln-commitment" if commit else "two-of-two")
+            elif LN_TO_LOCAL.match(s):
+                found.append("ln-penalty" if len(w) >= 2 and w[-2] == "01" else "ln-to-local")
+            elif LN_HTLC.match(s):
+                found.append("ln-htlc")
+            elif LN_ANCHOR.match(s):
+                found.append("ln-anchor")
+            elif LN_TO_REMOTE.match(s):
+                found.append("ln-to-remote")
+        if k in ("p2wsh", "p2sh", "p2sh-p2wsh"):
+            p = powpeg(s)
+            if p:
+                found.append("powpeg-flyover" if p == "flyover" else "powpeg")
+            elif liquid_layout(ops(s)):
+                found.append("liquid-emergency" if len(w) > 3 and not w[-2] else "liquid")
+        if k == "tapscript" and babylon_covenant(s):
+            found.append("babylon-covenant")
+    for t in ("ln-penalty", "ln-commitment", "ln-htlc", "powpeg-flyover", "powpeg", "liquid-emergency", "liquid",
+              "babylon-covenant", "ln-to-local", "ln-anchor", "ln-to-remote", "two-of-two"):
+        if t in found:
+            return t
+    for o in tx["vout"]:
+        if o["scriptPubKey"].get("type") == "nulldata":
+            t = nulldata(tx, o["scriptPubKey"]["hex"])[0]
+            if t in ("babylon", "coredao", "stacks", "bip47", "commitment", "swap-memo"):
+                return t
+    return None
 
 
 DATACARRIER_REASONS = {"txn-datacarrier-nonstandard", "txn-datacarrier-exceeded"}
