@@ -698,6 +698,12 @@
         what.push(line);
       }
       if (tx.m && info.note) what.push(el("div", { cls: "note" }, el("b", { text: plumb + " relays this. " }), prose(info.note)));
+    } else if (tier === "gray" && info && (info.filter === cat.filters.notspam)) {
+      // a refusal that passes the bar: say what it is rather than "small note"
+      title = info.name; st = [stamp("Gray water", "var(--gray)")];
+      if (info.filter === cat.filters.notspam) st.push(stamp("Not spam", "var(--ok)"));
+      if (tx.lb && tx.lb[0] && tx.lb[0] !== info.name) what.push(el("p", {}, el("b", { text: tx.lb[0] + ". " })));
+      what.push(el("p", {}, prose(info.what), " ", el("span", { cls: "muted" }, prose(info.how))));
     } else if (tier === "gray") {
       title = (tx.lb && tx.lb[0]) || "Small note"; st = [stamp("Gray water", "var(--gray)")];
       what.push(el("p", { text: tx.dt ? "Carries a little data inside the default 83-byte allowance, the room Knots leaves for notes such as swap memos. cesspool does not count it as sewage."
@@ -728,14 +734,19 @@
     if (!tx.cb) sec.appendChild(verdicts(tx, cat, plumb, tier !== "sewage"));
     if (!tx.cb && !tx.e && tx.x && ["knots", "plumb"].some(function (k) { return tx.x[k] && tx.x[k].length; })) {
       var policy = "Refusing is policy, not a consensus rule: a node that refuses it does not relay it or put it in a block it builds, but it still accepts a block that has it.";
-      var pol = tx.x.knots && tx.x.knots.length
+      var notSpam = info && info.filter === cat.filters.notspam, kr = tx.x.knots && tx.x.knots.length, pr = tx.x.plumb && tx.x.plumb.length;
+      var who = kr && pr ? "Knots and " + plumb + " refuse it at their" : (kr ? "Knots" : plumb) + " refuses it at its";
+      var pol = notSpam
+        ? el("p", { cls: "small muted" }, who + " default settings, but every byte counted is padding, a commitment or a payment, so cesspool does not count it against the block. ",
+            el("a", { href: "/about/#bar", text: "The bar" }), ". " + policy)
+        : tx.x.knots && tx.x.knots.length
         ? el("p", { cls: "small muted" }, el("b", { text: "Past the defaults. " }), "Knots and Plumb refuse it at their default settings; a node at those defaults takes it only when its operator overrides the refusal. ",
             el("a", { href: "/past-defaults/", text: "Every block like this" }), ". ",
             el("a", { href: "/check/", text: "Settings that keep it out" }), ". " + policy)
         : el("p", { cls: "small muted", text: policy });
       pol.style.marginTop = "10px"; sec.appendChild(pol);
       // As on the block page: say when only the coinbase text ties the block to the name it carries.
-      if (tx.x.knots && tx.x.knots.length && b.pool && b.pool.indexOf("Unknown (") !== 0 && b.cb && b.cb.o) {
+      if (!notSpam && tx.x.knots && tx.x.knots.length && b.pool && b.pool.indexOf("Unknown (") !== 0 && b.cb && b.cb.o) {
         var pays = b.cb.o.filter(function (o) { return o.ad && o.a > 0; }).map(function (o) { return o.ad; });
         fetch("/d/pools.json?m=" + Math.floor(Date.now() / 600000))
           .then(function (r) { return r.ok ? r.json() : null; })
@@ -747,7 +758,7 @@
           })
           .catch(function () {});
       }
-      if (tx.x.knots && tx.x.knots.length && (b.ws && b.ws !== b.ps))
+      if (!notSpam && tx.x.knots && tx.x.knots.length && (b.ws && b.ws !== b.ps))
         pol.appendChild(document.createTextNode(" A DATUM gateway with " + b.pool + " upstream built this block's template, so the node behind that gateway chose this transaction, normally the miner's own, not " + b.pool + "."));
     }
     var anat = el("div", { cls: "anat" });

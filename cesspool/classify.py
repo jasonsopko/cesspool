@@ -6,7 +6,7 @@ This module only names the protocol and finds the shapes Plumb does not count
 yet, so a miss is shown as a miss. It never decodes or keeps the payload
 itself beyond the few bytes needed to recognize a protocol.
 """
-import re
+import hashlib, re
 
 OP_0, OP_PUSHDATA1, OP_PUSHDATA2, OP_PUSHDATA4 = 0x00, 0x4C, 0x4D, 0x4E
 OP_1, OP_16, OP_IF, OP_RETURN, OP_13 = 0x51, 0x60, 0x63, 0x6A, 0x5D
@@ -20,6 +20,23 @@ SECP_P = 2**256 - 2**32 - 977
 DATA_REASONS = re.compile(r"^(txn-datacarrier-|tokens-|parasite-|bare-datacarrier|multi-op-return|bare-multisig|bad-txns-input-.*datacarrier|bad-witness-.*datacarrier)")
 
 SWAP_MEMO = re.compile(rb"^(=\||=|s|swap|SWAP|\+|a|add|ADD|-|wd|WITHDRAW|withdraw|OUT|REFUND|LOAN\+|LOAN-|\$\+|\$-|n|trade\+|TRADE\+|~|BOND|UNBOND|LEAVE)[:|]")
+
+# The Lightning anchor script from BOLT 3, as hex, and the keyless pay-to-anchor output script.
+H = "[0-9a-f]"
+LN_ANCHOR = re.compile(rf"^21{H}{{66}}ac736460b268$")
+P2A = "51024e73"
+
+# The one script every Rootstock PowPeg spend since the fork reveals, after the 32-byte Flyover prefix when
+# there is one: OP_NOTIF 5-of-9 OP_ELSE <timelock> OP_CSV OP_DROP 3-of-4 OP_ENDIF, 457 bytes, by sha256.
+# 39 inputs spend it, all signed by 5 of the 9 keys, 6 of them behind a Flyover prefix. Pinning the whole
+# script, not only its keys, means only the keys in it can spend a match. A new federation needs
+# its script added here after its first plain spends.
+POWPEG_SCRIPTS = {"2f03c5cf40f834d0662838848744295f4999fdb828cd606b1704d4d12d8f032d"}
+
+# The most padding a sweep may carry: a one-input transaction whose only output is an empty OP_RETURN
+# is 61 non-witness bytes, and a 3-byte push brings it to the 65 that relay requires; 4 allows the
+# 4-byte fillers sweepers use, such as "burn".
+SWEEP_PAD = 4
 
 
 def ops(hexstr):
@@ -240,6 +257,98 @@ def fake_multisig(tx):
     return sum(1 for b in per_input if b), sum(per_input), per_input
 
 
+def revealed(vin):
+    """(kind, script hex) like witness_script, but a P2SH-wrapped P2WSH input gives its witness script."""
+    w = vin.get("txinwitness") or []
+    if vin.get("prevout", {}).get("scriptPubKey", {}).get("type") == "scripthash" and len(w) >= 2:
+        return "p2sh-p2wsh", w[-1]
+    return witness_script(vin)
+
+
+def liquid_layout(o):
+    """<m> keys <n> CHECKMULTISIG IFDUP NOTIF <t> CSV VERIFY <m2> keys <n2> CHECKMULTISIG ENDIF, the Liquid federation script."""
+    i = next((k for k, (op, _) in enumerate(o) if op == OP_CHECKMULTISIG), None)
+    return (i is not None and i + 5 < len(o) and OP_1 <= o[0][0] <= OP_16 and o[i + 1][0] == 0x73 and o[i + 2][0] == 0x64
+            and o[i + 4][0] == 0xB2 and o[i + 5][0] == 0x69 and o[-2][0] == OP_CHECKMULTISIG and o[-1][0] == 0x68)
+
+
+def powpeg(script_hex):
+    """'flyover' or 'plain' for the Rootstock PowPeg script itself, behind a Flyover prefix or not, else None."""
+    raw = bytes.fromhex(script_hex)
+    flyover = len(raw) > 34 and raw[0] == 0x20 and raw[33] == OP_DROP
+    if hashlib.sha256(raw[34:] if flyover else raw).hexdigest() not in POWPEG_SCRIPTS:
+        return None
+    return "flyover" if flyover else "plain"
+
+
+def nulldata_payload(tx):
+    return b"".join(d or b"" for o in tx["vout"] if o["scriptPubKey"].get("type") == "nulldata"
+                    for _, d in ops(o["scriptPubKey"]["hex"])[1:])
+
+
+def sweep_kind(tx):
+    """For a transaction whose only outputs are OP_RETURNs carrying SWEEP_PAD bytes or less: what it sweeps."""
+    if not tx["vout"] or any(o["scriptPubKey"].get("type") != "nulldata" for o in tx["vout"]):
+        return None
+    if len(nulldata_payload(tx)) > SWEEP_PAD:
+        return None
+    kinds = set()
+    for v in tx["vin"]:
+        k, s = revealed(v)
+        w = v.get("txinwitness") or []
+        if k == "p2wsh" and LN_ANCHOR.match(s or "") and w and not w[0]:
+            kinds.add("ln-anchor-sweep")
+        elif v.get("prevout", {}).get("scriptPubKey", {}).get("hex") == P2A:
+            kinds.add("p2a-sweep")
+        else:
+            kinds.add("dust-sweep")
+    return kinds.pop() if len(kinds) == 1 else "dust-sweep"
+
+
+DATACARRIER_REASONS = {"txn-datacarrier-nonstandard", "txn-datacarrier-exceeded"}
+
+
+def exemption(tx, verdict, data_reasons):
+    """(type, label, payload) when everything Plumb refused the transaction for is not payload, else None.
+
+    Three cases, each kept narrow: a sweep's OP_RETURN holds at most SWEEP_PAD bytes and its inputs
+    nothing Plumb counts; a PowPeg Flyover input holds a 32-byte commitment in front of the pinned
+    federation script, which only its own keys can spend; an output
+    that pays the script of a coin the transaction spends cannot hold chosen bytes, since matching
+    that script takes about 2**160 tries.
+    """
+    if not data_reasons:
+        return None
+    reasons = set(data_reasons)
+    if reasons == {"bare-datacarrier"}:
+        # bytes Plumb counted in the inputs, under its limit, are payload whatever the outputs are
+        kind = None if any(verdict.get("data_in", [])) else sweep_kind(tx)
+        if kind:
+            return kind, info_label(kind, tx), len(nulldata_payload(tx))
+        return None
+    if not reasons <= DATACARRIER_REASONS:
+        return None
+    data_in, data_out = verdict.get("data_in", []), verdict.get("data_out", [])
+    counted_in = [i for i, n in enumerate(data_in) if n]
+    counted_out = [i for i, n in enumerate(data_out) if n]
+    if counted_in and not counted_out:
+        if all(data_in[i] <= 34 and powpeg(revealed(tx["vin"][i])[1] or "") == "flyover" for i in counted_in):
+            n = len(counted_in)
+            return "powpeg-flyover", f"Rootstock PowPeg spend of {n} Flyover deposit{'s' if n != 1 else ''}", 32 * n
+    if counted_out and not counted_in:
+        spent = {v.get("prevout", {}).get("scriptPubKey", {}).get("hex") for v in tx["vin"]}
+        if all(tx["vout"][i]["scriptPubKey"].get("type") != "nulldata" and tx["vout"][i]["scriptPubKey"]["hex"] in spent
+               for i in counted_out):
+            return "self-pay", "Payment back to the address it spends from", 0
+    return None
+
+
+def info_label(kind, tx):
+    n = len(tx["vin"])
+    what = {"ln-anchor-sweep": "Lightning anchor", "p2a-sweep": "pay-to-anchor output", "dust-sweep": "dust output"}[kind]
+    return f"Sweep of {n} {what}{'s' if n != 1 else ''} into fees"
+
+
 def classify(tx, verdict):
     """Findings for one REST transaction and its plumb-check row.
 
@@ -293,7 +402,23 @@ def classify(tx, verdict):
         types.insert(0, types.pop(k))
         labels.insert(0, labels.pop(k))
 
-    if data_reasons or missed:
+    # Fake multisig keys Plumb tolerates are cesspool's own finding; no exemption may clear them.
+    ex = None if missed or fm_inputs else exemption(tx, verdict, data_reasons)
+    if ex:
+        # Everything Plumb refused it for is padding, a commitment or a payment: name the protocol, not the bytes.
+        types, labels, data_bytes = [ex[0]], [ex[1]], ex[2]
+    elif "witness-data" in types and any(n and liquid_layout(ops(revealed(tx["vin"][i])[1] or ""))
+                                         for i, n in enumerate(verdict.get("data_in", []))):
+        # Plumb counts the federation keys the emergency branch leaves unsigned. The layout cannot prove
+        # those keys are real (every peg-in tweaks them), so it stays sewage, under its own name.
+        k = types.index("witness-data")
+        types[k], labels[k] = "liquid-emergency", "Liquid-layout emergency spend"
+        types.insert(0, types.pop(k))
+        labels.insert(0, labels.pop(k))
+
+    if ex:
+        tier = "gray"
+    elif data_reasons or missed:
         tier = "sewage"
     elif data_bytes or types:
         tier = "gray"

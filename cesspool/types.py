@@ -9,6 +9,7 @@ KNOTS = "Knots default"
 PLUMB = "Plumb"
 NONE = "No filter yet"
 ALLOWED = "Allowed"
+NOT_SPAM = "Not spam"
 
 TYPES = {
     "fake-multisig": {
@@ -170,6 +171,43 @@ TYPES = {
         "what": "A cross-chain swap instruction for a bridge or DEX router, in OP_RETURN.",
         "how": "Fits the default 83-byte OP_RETURN allowance. The recommended `datacarriersize=42` refuses the longer ones.",
         "filter": ALLOWED,
+    },
+    "ln-anchor-sweep": {
+        "name": "Lightning anchor sweep",
+        "what": "Spends Lightning anchors nobody claimed and pays every sat to the miner. A force close of an anchor channel leaves two 330-sat anchor outputs, and 16 blocks later anyone can spend one without a signature.",
+        "how": "The only output is an OP_RETURN, because a transaction needs an output and OP_RETURN is the one that takes no value. It carries nothing, or 3 bytes in a sweep of one anchor: a one-input transaction with an empty OP_RETURN is 61 non-witness bytes, and relay refuses anything under 65. Knots refuses a transaction whose only output is an OP_RETURN, and Plumb inherits that. cesspool does not count it as sewage: the bytes are padding, and the sweep takes coins out of the UTXO set.",
+        "filter": NOT_SPAM, "option": "-permitbaredatacarrier",
+    },
+    "p2a-sweep": {
+        "name": "Pay-to-anchor sweep",
+        "what": "Spends pay-to-anchor (P2A) outputs, the keyless anchors used for fee bumping, and pays them to the miner.",
+        "how": "The only output is an OP_RETURN. A sweep of one P2A output pads it with 4 bytes of filler, such as the text \"burn\", to reach the 65-byte minimum. Knots refuses a transaction whose only output is an OP_RETURN, and Plumb inherits that. cesspool does not count it as sewage: the bytes are padding.",
+        "filter": NOT_SPAM, "option": "-permitbaredatacarrier",
+    },
+    "dust-sweep": {
+        "name": "Dust sweep",
+        "what": "Spends small outputs into fees, with nothing but an OP_RETURN of 4 bytes or less.",
+        "how": "A one-input sweep needs 3 bytes of padding to reach the 65-byte minimum, and sweepers often use a 4-byte filler, so the rule allows 4. Knots refuses a transaction whose only output is an OP_RETURN, and Plumb inherits that. cesspool does not count it as sewage. One that writes more than 4 bytes stays sewage: a transaction that only writes bytes is what that Knots rule is for.",
+        "filter": NOT_SPAM, "option": "-permitbaredatacarrier",
+    },
+    "powpeg-flyover": {
+        "name": "Rootstock PowPeg, Flyover deposit",
+        "what": "The Rootstock federation moving bitcoin out of a Flyover deposit. A Flyover deposit script is the PowPeg script with a 32-byte value in front that the script drops unused, which makes each deposit address different.",
+        "how": "Knots counts a push followed by OP_DROP as data outside OP_RETURN and refuses it, and Plumb inherits that. cesspool does not count it as sewage: the 32 bytes are a commitment, smaller than the OP_RETURN notes it leaves gray, and only the keys in the PowPeg script can spend the coins. It is recognized by the exact script every PowPeg spend since the fork reveals, 13 keys and all, each spend signed by 5 of the 9; any other script stays sewage. The script is not checked against an address Rootstock publishes.",
+        "filter": NOT_SPAM, "option": "-acceptnonstddatacarrier",
+    },
+    "self-pay": {
+        "name": "Payment back to the spender",
+        "what": "Pays the address that one of its own inputs spends from with a signature. The one case since the fork pays a vanity address whose hash starts with six zero bytes.",
+        "how": "Plumb's `-rejectfakeoutputs` reads the run of zeros as data, and Knots relays it. An output that pays the script of a coin the transaction spends adds no chosen bytes: the spend proved the key or hash in it is real, and fitting chosen data into one would take about 2^160 tries. cesspool does not count it as sewage. The fix is on Plumb's `filter/rejectfakeoutputs` branch, not in a release yet.",
+        "filter": NOT_SPAM, "option": "-rejectfakeoutputs",
+    },
+    "liquid-emergency": {
+        "name": "Liquid-layout emergency spend",
+        "what": "Spends the Liquid federation script by its emergency branch: the 11-of-15 check fails on purpose, and a 2-of-3 signs after 4,032 blocks.",
+        "how": "Plumb's `-rejectfakemultisig` counts the federation keys the branch leaves unsigned. This is very likely Liquid's own recovery and not spam, but cesspool still counts it: every Liquid deposit tweaks the keys, so the layout cannot prove they are real, and a layout anyone can copy cannot be exempt.",
+        "filter": PLUMB, "option": "-rejectfakemultisig",
+        "prs": [("knots#422", "https://github.com/bitcoinknots/bitcoin/pull/422")],
     },
     "babylon": {
         "name": "Babylon staking tag",

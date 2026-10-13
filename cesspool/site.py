@@ -2,7 +2,7 @@
 import collections, datetime, functools, gzip, html, json, math, os, shutil, subprocess, tempfile, textwrap, time
 
 from . import classify, found, miner
-from .types import TYPES, info, KNOTS, PLUMB, NONE, ALLOWED
+from .types import TYPES, info, KNOTS, PLUMB, NONE, ALLOWED, NOT_SPAM
 
 HOME = os.environ.get("CESSPOOL_HOME", os.path.expanduser("~/.cesspool"))
 BLOCKS = f"{HOME}/blocks"
@@ -230,12 +230,13 @@ def totals(blocks):
 
 
 def past(b):
-    """How many of the block's transactions Knots refuses at its defaults. Plumb refuses every one of them too."""
-    return sum(e[3] for e in b["ty"].values())
+    """How many of the block's transactions Knots refuses at its defaults. Plumb refuses every one of them too.
+    Kinds that pass the bar on /about/#bar (sweeps, PowPeg Flyover spends) are refused too but not counted."""
+    return sum(e[3] for t, e in b["ty"].items() if info(t)["filter"] != NOT_SPAM)
 
 
 def past_kinds(b):
-    return ", ".join(esc(info(t)["name"]) for t, e in sorted(b["ty"].items(), key=lambda x: -x[1][3]) if e[3])
+    return ", ".join(esc(info(t)["name"]) for t, e in sorted(b["ty"].items(), key=lambda x: -x[1][3]) if e[3] and info(t)["filter"] != NOT_SPAM)
 
 
 @functools.lru_cache(maxsize=None)
@@ -610,6 +611,8 @@ def filter_line(t):
         prs = " ".join(f'<a href="{u}">{esc(l)}</a>' for l, u in i.get("prs", []))
         who = "Plumb ships" if i["filter"] == PLUMB else "Knots ships"
         return f'{who} <code>{esc(i["option"])}</code>{" (" + prs + ")" if prs else ""}.'
+    if i["filter"] == NOT_SPAM:
+        return f'Refused under <code>{esc(i["option"])}</code>, but <a href="/about/#bar">not spam</a>, so not counted as sewage.'
     if i["filter"] == KNOTS:
         return "Knots counts it as data by default."
     if i["filter"] == NONE and i.get("prs"):
@@ -656,10 +659,12 @@ def gray_table(gray):
     rows = []
     for s in gray[:400]:
         t = s["types"][0] if s["types"] else "unknown"
-        rows.append(f'<tr id="tx-{s["txid"][:16]}"><td>{esc(info(t)["name"])}</td><td class="mono small"><a href="/tx/{s["txid"]}">{s["txid"][:16]}…</a></td>'
+        rows.append(f'<tr id="tx-{s["txid"][:16]}"><td><a href="/guide/#{t}">{esc(info(t)["name"])}</a></td><td class="mono small"><a href="/tx/{s["txid"]}">{s["txid"][:16]}…</a></td>'
                     f'<td class="r num">{n(s["data"])}</td><td class="r num">{n(s["vsize"])}</td><td class="r num">{n(s["fee"])}</td></tr>')
     more = f'<p class="small muted">{n(len(gray) - 400)} more not listed.</p>' if len(gray) > 400 else ""
-    return f'''<details class="more"><summary>{n(len(gray))} gray-water transactions: small notes inside the default allowance</summary>
+    ns = sum(1 for s in gray if s["types"] and info(s["types"][0])["filter"] == NOT_SPAM)
+    what = "small notes inside the default allowance" + (", and refused transactions that are not spam" if ns else "")
+    return f'''<details class="more"><summary>{n(len(gray))} gray-water transactions: {what}</summary>
 <div class="tw"><table><tr><th>Kind</th><th>Transaction</th><th class="r">Data bytes</th><th class="r">vB</th><th class="r">Fee sat</th></tr>{"".join(rows)}</table></div>{more}</details>'''
 
 
@@ -857,7 +862,7 @@ def tx_catalog():
             "limits": {"dcsize": DATACARRIER_SIZE, "mss": MAXSCRIPTSIZE_DEFAULT, "dust": DUSTRELAYFEE_DEFAULT,
                        "mss_floor": MIN_USEFUL_SCRIPT_LIMIT, "dust_max": MAX_DUST_RATE,
                        "bpss": BYTESPERSIGOPSTRICT_DEFAULT, "bpss_max": MAX_USEFUL_SIGOP_STRICT},
-            "filters": {"knots": KNOTS, "plumb": PLUMB, "none": NONE, "allowed": ALLOWED}}
+            "filters": {"knots": KNOTS, "plumb": PLUMB, "none": NONE, "allowed": ALLOWED, "notspam": NOT_SPAM}}
 
 
 # ---------------------------------------------------------------- other pages
@@ -969,8 +974,8 @@ SETTINGS_LINK = '<a href="/check/">Settings that keep them out</a>'
 # reason, and at datacarriersize=42 also when its fix.<profile>.dcs is 42 or more; "extra" is what
 # 42 adds that is not sewage, the same transactions for both. Fixed, so the files read the same
 # every block.
-CONF_FACTS = {"lo": 961640, "hi": 976619, "txs": 3569710, "sewage": 28543, "knots_sewage": 25356,
-              "knots42_sewage": 26237, "plumb_sewage": 28542, "plumb42_sewage": 28542, "extra": 80988}
+CONF_FACTS = {"lo": 961640, "hi": 976619, "txs": 3569710, "sewage": 28258, "knots_sewage": 25072,
+              "knots42_sewage": 25953, "plumb_sewage": 28257, "plumb42_sewage": 28257, "extra": 80988}
 # The -bytespersigopstrict and -maxscriptsize numbers, same blocks, from tools/sigop_facts.py 961640 976619,
 # which counts every transaction, not only the ones the site shows. fake: sewage listed as fake multisig, all
 # relayed by Knots at the defaults and at datacarriersize=42; fake_plumb of them Plumb refuses; fake_value
@@ -979,7 +984,7 @@ CONF_FACTS = {"lo": 961640, "hi": 976619, "txs": 3569710, "sewage": 28543, "knot
 # maxscriptsize=590 refuses that Knots relays, the rest by the script they match; largest: the biggest
 # script or witness among the transactions not listed as sewage.
 SIGOP_FACTS = {"value": 51, "fake": 700, "fake_plumb": 699, "fake_value": 675, "fake_upto55": 21, "fake_over": 4,
-               "other": 0, "nearest": 56, "knots42_relays": 2306,
+               "other": 0, "nearest": 56, "knots42_relays": 2305,
                "mss": 590, "mss_sewage": 316, "mss_other": 552, "mss_babylon": 386, "mss_liquid": 44, "mss_rsk": 22,
                "largest": 1609}
 CONF_NAMES = {"knots": "Bitcoin Knots 29.4.2", "plumb": PLUMB_NAME}
@@ -1219,6 +1224,7 @@ def past_page(idx, tip):
                     f'<td>{named_cell(b)}</td><td class="r num">{n(past(b))}</td><td>{past_kinds(b)}</td></tr>' for b in reversed(pb))
     body = f'''<div class="hero"><div class="kicker">Past the defaults</div><h1>Blocks built past the default filters</h1>
 <p class="lede">Knots refuses every transaction counted here at its default settings, and Plumb refuses them too. A node at those defaults does not accept them from peers or put them in a block unless its operator overrides the refusal. Each block below holds at least one: it was built on a node without those rules, on one with them turned off or overridden, or by pool software that added transactions the node's mempool did not hold. Refusing is policy, not a consensus rule, so these blocks are valid.</p>
+<p class="small muted" style="margin-top:8px">Not counted: dust sweeps and Rootstock PowPeg spends. Knots refuses those at its defaults too, but they <a href="/about/#bar">are not spam</a>: the bytes it counts are padding or a 32-byte commitment.</p>
 <p class="small muted" style="margin-top:8px">Pool names come from each block's coinbase text and payout addresses, by the same rules as <a href="https://reorg.watch">reorg.watch</a>. "Named by" says whether the block pays an address on file for the name it carries. Where it does not, only its coinbase text, which anyone can write, ties it to that name.</p></div>
 <div class="tiles"><div class="tile"><div class="v">{n(len(pb))} <span class="muted" style="font-size:1rem">/ {n(len(blocks))}</span></div><div class="l">blocks past the defaults</div><div class="s">since the fork</div></div>
 <div class="tile"><div class="v">{n(txs)}</div><div class="l">transactions the defaults refuse, mined</div></div>
@@ -1384,12 +1390,14 @@ def status_chip(t):
         return f'<span class="chip k">Knots default</span>'
     if f == NONE:
         return f'<span class="chip n">No filter yet</span>'
+    if f == NOT_SPAM:
+        return f'<span class="chip ok">Not spam</span>'
     return f'<span class="chip a">Allowed</span>'
 
 
 def guide_page(idx, tip):
     st = type_stats(idx)
-    order = {NONE: 0, PLUMB: 1, KNOTS: 2, ALLOWED: 3}
+    order = {NONE: 0, PLUMB: 1, KNOTS: 2, ALLOWED: 3, NOT_SPAM: 4}
     keys = sorted(st, key=lambda t: (order.get(info(t)["filter"], 4), -st[t]["sewage"], -st[t]["n"]))
     secs = []
     for t in keys:
@@ -1408,7 +1416,8 @@ def guide_page(idx, tip):
     body = f'''<div class="hero"><div class="kicker">Field guide</div><h1>Every shape we have caught</h1>
 <p class="lede">Each kind of spam on the chain since the fork: what it is, how it hides the bytes, and which filter stops it. The refusal rates come from running each policy's code on every instance, so where the label and the measurement disagree, the measurement wins.</p>
 <p class="small"><span class="chip n">No filter yet</span> spam no shipped release refuses &nbsp; <span class="chip p">Plumb</span> refused by a Plumb filter &nbsp;
-<span class="chip k">Knots default</span> refused by stock Knots too &nbsp; <span class="chip a">Allowed</span> gray water inside the default allowance</p></div>
+<span class="chip k">Knots default</span> refused by stock Knots too &nbsp; <span class="chip a">Allowed</span> gray water inside the default allowance &nbsp;
+<span class="chip ok">Not spam</span> refused by a filter, but every byte it counts is padding, a commitment or a payment</p></div>
 {"".join(secs)}
 <div class="panel"><h3>Found a new shape?</h3><p class="muted" style="margin:0">Plumb takes filter PRs directly. The bar: its own option, tests, numbers from the chain, and a false-positive check against real payments. <a href="{PLUMB_REPO}/blob/29.x-plumb/.github/CONTRIBUTING.md">How to submit a filter</a>.</p></div>'''
     return page("/guide/", "Field Guide", body, nav="guide", desc="Every kind of Bitcoin spam since the fork, and which filter stops it.", og="/og/site.png", tip=tip)
@@ -1450,7 +1459,9 @@ def found_page(tip):
     return page("/found/", "Your blocks", body, nav="found", desc="Find the blocks you mined, by payout address, pool name or coinbase tag, and see how they grade.", tip=tip)
 
 
-def about_page(tip):
+def about_page(idx, tip):
+    st = type_stats(idx)
+    tn = lambda *ts: sum(st.get(t, {}).get("n", 0) for t in ts)
     body = f'''<div class="hero prose"><div class="kicker">About</div><h1>How the water gets tested</h1>
 <p class="lede">Every block since the fork at height {FORK}, every transaction in it, run through the Knots and Plumb policy checks.</p></div>
 <div class="prose">
@@ -1465,7 +1476,18 @@ def about_page(tip):
 <li>{stamp("tainted", True)} sewage under 1% of the block's weight.</li>
 <li>{stamp("foul", True)} sewage from 1% to 10%.</li>
 <li>{stamp("raw", True)} sewage over 10%.</li></ul>
-<p>Sewage is any transaction a Plumb node refuses because it carries data, plus known spam shapes that get past Plumb's filters. Those are marked in red as Plumb misses, so the gaps are on the page.</p>
+<p>Sewage is any transaction a Plumb node refuses because it carries data, plus known spam shapes that get past Plumb's filters. Those are marked in red as Plumb misses, so the gaps are on the page. The refusals that pass the bar below are not sewage.</p>
+<h2 id="bar">Not everything refused is spam</h2>
+<p>A filter counts bytes. It cannot say why they are there, so cesspool holds every refusal to one bar. A byte passes when it is one of two things:</p>
+<ul><li><b>Script the spend needs.</b> Keys, signatures, hashes and timelocks that the locking script checks when the coins move, including the keys of a multisig branch the spend did not sign with, because the script still evaluates them.</li>
+<li><b>Padding the relay rules force.</b> A transaction under 65 non-witness bytes is refused, so a sweep of one input has to carry a few bytes somewhere.</li></ul>
+<p>Anything else is data. Small data inside the default allowance, in a transaction that moves coins, stays gray water: it is not counted against anyone, but it does not pass either. Data written for an indexer, a token ledger or another chain fails, however much bitcoin moves beside it. Bytes a script pushes and then drops without using fail too, whatever their size. The bar says what passes; it does not promise that every byte failing it is caught. For one, neither Knots nor Plumb counts witness items a script drops unread, so a transaction carrying them grades clean.</p>
+<p>Three kinds of transaction that Knots or Plumb refuses pass the bar. cesspool lists them as gray water under their own names, and their pages still show every refusal:</p>
+<ul><li><a href="/guide/#ln-anchor-sweep">Sweeps</a> ({n(tn("ln-anchor-sweep", "p2a-sweep", "dust-sweep"))} since the fork): Lightning anchors, pay-to-anchor outputs and other dust spent into fees, with nothing but an OP_RETURN of {classify.SWEEP_PAD} bytes or less. Knots refuses a transaction whose only output is an OP_RETURN.</li>
+<li><a href="/guide/#powpeg-flyover">Rootstock PowPeg Flyover spends</a> ({n(tn("powpeg-flyover"))}): the federation moving a deposit whose script starts with a 32-byte value that it drops unused. Knots counts that push as data.</li>
+<li><a href="/guide/#self-pay">Payments back to the spender</a> ({n(tn("self-pay"))}): an output that Plumb reads as data, paying the address one of the transaction's inputs spends from.</li></ul>
+<p>Each one is kept narrow. A sweep's OP_RETURN holds at most {classify.SWEEP_PAD} bytes, and a sweep whose inputs carry anything Plumb or cesspool counts stays sewage. A Flyover spend is recognized by the exact script every PowPeg spend since the fork reveals, so only the keys in that script can spend a match: 5 of its 9, or 3 of its 4 emergency keys after a long timelock. An output that pays the script of a coin the transaction spends adds no chosen bytes: the spend proved the key or hash in it is real, and fitting chosen data into one would take about 2<sup>160</sup> tries.</p>
+<p>One kind stays sewage on purpose. A <a href="/guide/#liquid-emergency">Liquid-layout emergency spend</a> ({n(tn("liquid-emergency"))}) is very likely Liquid's own recovery, but every Liquid deposit tweaks the federation keys, so the layout cannot prove that the keys Plumb counts are real, and anyone could copy it.</p>
 <h2>What we never show</h2>
 <p>The payload. No images, no text, no file names. A spam transaction gets its type, its size and where the bytes sit. Displaying the contents is the service the spammer paid for.</p>
 <h2>Who mined it</h2>
@@ -1729,7 +1751,7 @@ def build(out, heights=None, all_blocks=False, og=True):
         write(out, f"check/{prog}.conf", recommended_conf(prog))
     write(out, "guide/index.html", guide_page(idx, tip))
     write(out, "plumb/index.html", plumb_page(idx, tip))
-    write(out, "about/index.html", about_page(tip))
+    write(out, "about/index.html", about_page(idx, tip))
     write(out, "privacy/index.html", privacy_page(tip))
     write(out, "tx/index.html", tx_page(tip))
     write_gz(f"{out}/d/catalog.json.gz", tx_catalog())

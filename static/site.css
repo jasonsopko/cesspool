@@ -235,6 +235,7 @@ table.meas td { padding: 7px 9px; font-size: .84rem; }
 @media (prefers-color-scheme: light) { :root:not([data-theme="dark"]) .chip.p { color: var(--plumb); } }
 .chip.n { color: var(--miss); border-color: var(--miss); }
 .chip.a { color: var(--gray); }
+.chip.ok { color: var(--ok); border-color: color-mix(in srgb, var(--ok) 50%, var(--line)); }
 
 .spark { display: block; width: 100%; height: 70px; }
 
