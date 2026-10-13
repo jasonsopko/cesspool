@@ -698,12 +698,14 @@
         what.push(line);
       }
       if (tx.m && info.note) what.push(el("div", { cls: "note" }, el("b", { text: plumb + " relays this. " }), prose(info.note)));
-    } else if (tier === "gray" && info && (info.filter === cat.filters.notspam || types[0] === "commitment")) {
+      if (info.case) what.push(el("p", { cls: "small" }, el("b", { text: "The case for it. " }), prose(info.case), " ", el("a", { href: "/about/#bar", text: "The bar" }), "."));
+    } else if (tier === "gray" && info && (info.filter === cat.filters.notspam || info.case || types[0] === "commitment")) {
       // a refusal that passes the bar, or a protocol the guide names: say what it is rather than "small note"
       title = info.name; st = [stamp("Gray water", "var(--gray)")];
       if (info.filter === cat.filters.notspam) st.push(stamp("Not spam", "var(--ok)"));
       if (tx.lb && tx.lb[0] && tx.lb[0] !== info.name) what.push(el("p", {}, el("b", { text: tx.lb[0] + ". " })));
       what.push(el("p", {}, prose(info.what), " ", el("span", { cls: "muted" }, prose(info.how))));
+      if (info.case) what.push(el("p", { cls: "small" }, el("b", { text: "The case for it. " }), prose(info.case), " ", el("a", { href: "/about/#bar", text: "The bar" }), "."));
     } else if (tier === "gray") {
       title = (tx.lb && tx.lb[0]) || "Small note"; st = [stamp("Gray water", "var(--gray)")];
       what.push(el("p", { text: tx.dt ? "Carries a little data inside the default 83-byte allowance, the room Knots leaves for notes such as swap memos. cesspool does not count it as sewage."

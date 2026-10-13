@@ -878,7 +878,7 @@ def drop_from_tx_index(out, heights):
 
 def tx_catalog():
     """What the transaction page needs to name and explain a finding."""
-    types = {t: {k: i[k] for k in ("name", "what", "how", "filter", "option", "note", "staged") if k in i} | {"prs": i.get("prs", [])}
+    types = {t: {k: i[k] for k in ("name", "what", "how", "filter", "option", "note", "staged", "case") if k in i} | {"prs": i.get("prs", [])}
              for t, i in TYPES.items()}
     return {"plumb": PLUMB_NAME, "verdicts": VERDICT_NAMES, "rules": RULES, "sources": FILTER_SOURCE,
             "plumb_options": sorted(PLUMB_OPTIONS), "dcsize": DATACARRIER_SIZE, "types": types,
@@ -1432,16 +1432,18 @@ def guide_page(idx, tip):
             measured.append(f'<tr><td>{name}</td><td class="r num">{n(s[k])} / {n(s["n"])}</td><td class="r num">{pct(s[k] / s["n"] if s["n"] else 0)}</td></tr>')
         relays = f"<b>{PLUMB_NAME} relays these.</b> " if i["filter"] == NONE else ""
         note = f'<div class="note small">{relays}{prose(i["note"])}</div>' if i.get("note") else ""
+        case = f'<p class="small"><b>The case for it.</b> {prose(i["case"])} <a href="/about/#bar">The bar</a>.</p>' if i.get("case") else ""
         secs.append(f'''<section class="panel" id="{t}" style="margin:14px 0"><div class="ftype"><div>
 <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap"><h3 style="margin:0">{esc(i["name"])}</h3>{status_chip(t)}{prs}</div>
-<p style="margin-top:10px">{prose(i["what"])}</p><p class="muted">{prose(i["how"])}</p>{note}
+<p style="margin-top:10px">{prose(i["what"])}</p><p class="muted">{prose(i["how"])}</p>{note}{case}
 <p class="small muted">Seen {plural(s["n"], "time")} in {plural(s["blocks"], "block")}, {"its payload counted where the outputs are spent" if i.get("staged") else size(s["data"]) + " of payload"}. First at <a href="/block/{s["first"]}/">{s["first"]}</a>, latest at <a href="/block/{s["last"]}/">{s["last"]}</a>.</p></div>
 <div><div class="small muted" style="margin-bottom:4px">Refused, measured on every instance</div><div class="tw"><table class="meas">{"".join(measured)}</table></div></div></div></section>''')
     body = f'''<div class="hero"><div class="kicker">Field guide</div><h1>Every shape we have caught</h1>
 <p class="lede">Each kind of spam on the chain since the fork: what it is, how it hides the bytes, and which filter stops it. The refusal rates come from running each policy's code on every instance, so where the label and the measurement disagree, the measurement wins.</p>
 <p class="small"><span class="chip n">No filter yet</span> spam no shipped release refuses &nbsp; <span class="chip p">Plumb</span> refused by a Plumb filter &nbsp;
 <span class="chip k">Knots default</span> refused by stock Knots too &nbsp; <span class="chip a">Allowed</span> gray water inside the default allowance &nbsp;
-<span class="chip ok">Not spam</span> refused by a filter, but every byte it counts is padding, a commitment or a payment</p></div>
+<span class="chip ok">Not spam</span> refused by a filter, but every byte it counts is padding, a commitment or a payment</p>
+<p class="small muted">A filter counts bytes; it cannot say why they are there. Each entry below is held to <a href="/about/#bar">one bar</a>, and where a protocol has defenders, the entry gives their case.</p></div>
 {"".join(secs)}
 <div class="panel"><h3>Found a new shape?</h3><p class="muted" style="margin:0">Plumb takes filter PRs directly. The bar: its own option, tests, numbers from the chain, and a false-positive check against real payments. <a href="{PLUMB_REPO}/blob/29.x-plumb/.github/CONTRIBUTING.md">How to submit a filter</a>.</p></div>'''
     return page("/guide/", "Field Guide", body, nav="guide", desc="Every kind of Bitcoin spam since the fork, and which filter stops it.", og="/og/site.png", tip=tip)
@@ -1540,6 +1542,7 @@ def about_page(idx, tip):
 <li><a href="/guide/#self-pay">Payments back to the spender</a> ({n(tn("self-pay"))}): an output that Plumb reads as data, paying the address one of the transaction's inputs spends from.</li></ul>
 <p>Each one is kept narrow. A sweep's OP_RETURN holds at most {classify.SWEEP_PAD} bytes, and a sweep whose inputs carry anything Plumb or cesspool counts stays sewage. A Flyover spend is recognized by the exact script every PowPeg spend since the fork reveals, so only the keys in that script can spend a match: 5 of its 9, or 3 of its 4 emergency keys after a long timelock. An output that pays the script of a coin the transaction spends adds no chosen bytes: the spend proved the key or hash in it is real, and fitting chosen data into one would take about 2<sup>160</sup> tries.</p>
 <p>One kind stays sewage on purpose. A <a href="/guide/#liquid-emergency">Liquid-layout emergency spend</a> ({n(tn("liquid-emergency"))}) is very likely Liquid's own recovery, but every Liquid deposit tweaks the federation keys, so the layout cannot prove that the keys Plumb counts are real, and anyone could copy it.</p>
+<p>Protocols with defenders that do not pass have their case in the <a href="/guide/">field guide</a>, next to the reason they fail: inscriptions, Runes, JSON token messages, Stamps, Counterparty, Omni, BIP47 notifications, swap memos, and the tags Babylon, Core DAO and Stacks add. Babylon and Core DAO move real bitcoin to ordinary scripts, and that part passes; the tag beside it is a record for another chain.</p>
 <h2 id="known">How protocols are recognized</h2>
 <p>By exact scripts and tags, never by a guess about the content. A transaction that matches one of these and also carries other data, a runestone beside a Lightning close say, is graded on the data, and its page says which protocol matched. The PowPeg is pinned to its federation's exact script; the others are matched by template or tag, so a match says what the script is, not who holds the coins.</p>
 <div class="tw"><table><tr><th>Protocol, matched by</th><th class="r">Since the fork</th><th class="r">Gray</th><th class="r">Sewage</th></tr>{krows}</table></div>

@@ -260,6 +260,27 @@ TYPES = {
 }
 
 
+# What a protocol's defenders say, and why it still fails the bar on /about/#bar. Shown in the field guide.
+CASES = {
+    "fake-multisig": "Nobody defends this one in public. The inputs were checked, in blocks 961640 to 976951: 319,602 of 319,604 hold 1,000 sats or less, and 319,478 were funded by dust P2WSH runs. No wallet keeps coins that way.",
+    "inscription": "Its defenders say it pays its fees and uses witness space the way segwit allows. It fails the bar because the envelope never runs: it is storage.",
+    "bare-inscription": "Its defenders say it pays its fees and uses witness space the way segwit allows. It fails the bar because the pushes are dropped unused: it is storage.",
+    "envelope": "Its defenders say it pays its fees and uses witness space the way segwit allows. It fails the bar because the envelope never runs: it is storage.",
+    "runes": "Its defenders say it is tidier than BRC-20 because balances follow coins. It fails the bar because the runestone is a ledger entry for a token indexer.",
+    "token-json": "Its defenders say it is open, simple and traded. It fails the bar because the JSON exists for an indexer.",
+    "counterparty": "Its defenders say it is one of the oldest protocols on Bitcoin. It fails the bar because it is a ledger for another system.",
+    "omni": "Its defenders say it carried USDT for years. It fails the bar for the same reason as Counterparty: a ledger for another system.",
+    "olga": "Its defenders say permanence is the point. It fails the bar worst of all: the outputs can never be spent, so they stay in every node's UTXO set.",
+    "olga-acme": "Its defenders say permanence is the point. It fails the bar worst of all: the outputs can never be spent, so they stay in every node's UTXO set.",
+    "stacks": "Its defenders say Stacks miners pay real bitcoin to stackers. It fails the bar because the commitment is Stacks block data; the bitcoin moved here is small.",
+    "babylon": "Its defenders say it secures a proof-of-stake chain with bitcoin that never leaves its owner. The payment passes the bar; the tag does not, because it serves Babylon's indexer, not the spend.",
+    "coredao": "Its defenders say it secures a chain with bitcoin that never leaves its owner. The payment passes the bar; the tag does not, because it serves Core DAO's indexer, not the spend.",
+    "bip47": "Its defenders say it is a payment setup for a person, not an indexer. That is true, and it is the closest of these to passing. It still fails the bar: nothing in the spend uses the 80 bytes.",
+    "swap-memo": "Its defenders say it routes a real swap. It fails the bar because the memo is an instruction for another chain's router.",
+}
+for _t, _c in CASES.items():
+    TYPES[_t]["case"] = _c
+
 # Protocols recognized by their exact scripts or tags (classify.known), for the transaction page.
 # The grade never depends on these; a transaction that also carries data is graded on the data.
 KNOWN = {
