@@ -1017,6 +1017,24 @@ SIGOP_FACTS = {"value": 51, "fake": 700, "fake_plumb": 699, "fake_value": 675, "
 # Liquid-layout emergency spend rejectfakemultisig refuses.
 LEGIT_FACTS = {"babylon": 1158, "coredao": 83, "stacks": 1458, "bip47": 11,
                "sweeps": 279, "flyover": 5, "selfpay": 1, "liquid": 1}
+# The aggressive Knots file: the recommended one with dustrelayfee=0.00005 and bytespersigopstrict=55. Same
+# blocks, from tools/aggressive_facts.py 961640 976619 5000 55, which counts every transaction against what the
+# recommended Knots file relays: no filter refuses it and it pays Knots' minimum relay fee on the vsize Knots
+# gives it at datacarriercost=2. sewage: the sewage that file relays, sewage_w its weight; left: what this file
+# still relays; dust_sewage: what 0.00005 refuses of it, strict_sewage what 55 refuses beyond that; run: the
+# p2wsh-run transactions, all of them in those blocks and all relayed by that file, run_w their weight, run_546
+# those with 546-sat P2WSH outputs, run_median such outputs to a transaction; other: what that file relays that
+# is not sewage; dust_other: what 0.00005 refuses of that, ln of them Lightning force closes out of the ln_all
+# that file relays (dust_other_kinds in the tool's output names the outputs that make the rest dust); fees: what
+# everything this file refuses beyond that file paid, in sats. fake_value: the fake multisig refused at 55, from
+# tools/sigop_facts.py 961640 976619 55, which also finds the one Liquid-layout spend (liquid, under Knots' fee
+# floor at 0.6 sat/vB) and nothing else. dust_exact: the lowest rate that makes a 546-sat P2WSH output dust;
+# p2wsh to p2pkh: the dust threshold at 0.00005.
+AGGR_FACTS = {"dust": "0.00005", "dust_exact": "0.00004964", "value": 55, "sewage": 1241, "left": 11,
+              "dust_sewage": 1209, "strict_sewage": 21, "run": 713, "run_546": 711, "run_median": 256,
+              "run_w": 30932788, "sewage_w": 32925359, "other": 3355613, "dust_other": 69174, "ln": 16043,
+              "ln_all": 19197, "fees": 72291075, "fake_value": 696, "liquid": 1,
+              "p2wsh": 550, "p2tr": 550, "p2wpkh": 490, "p2sh": 900, "p2pkh": 910}
 CONF_NAMES = {"knots": "Bitcoin Knots 29.4.2", "plumb": PLUMB_NAME}
 
 
@@ -1122,17 +1140,105 @@ def recommended_conf(prog):
     return "\n".join(lines) + "\n"
 
 
-def conf_pane(prog, on):
-    conf = recommended_conf(prog)
-    return f'''<div class="tabpane{" on" if on else ""}" id="conf-{prog}" data-group="conf">
+def aggressive_conf():
+    """The aggressive Knots file, served at /check/knots-aggressive.conf: the recommended Knots file with
+    dustrelayfee and bytespersigopstrict raised, and what each refuses on both sides."""
+    f, g, a = CONF_FACTS, SIGOP_FACTS, AGGR_FACTS
+    comments = conf_stricter("knots") | {
+        "bytespersigopstrict": conf_comment(
+            f"The default is 20; the recommended file sets {g['value']}. Knots counts signature checks in a multisig "
+            "script: one for each key in segwit, four for each key in plain P2SH, 20 for any multisig over 16 keys. "
+            "It refuses a transaction with fewer than this many weight units for each check. Fake multisig, one "
+            "signature for 15 keys of which 14 are data, comes in at about 50. In the same blocks cesspool.lol "
+            f"lists {n(g['fake'])} fake multisig transactions, and Knots relays all of them at the defaults. "
+            f"{g['value']} refuses {n(g['fake_value'])} of them and {a['value']} refuses {n(a['fake_value'])}. "
+            f"{a['value']} also refuses {n(a['liquid'])} Liquid-layout emergency spend, very likely Liquid's own "
+            "recovery, which cesspool.lol counts as sewage because the layout cannot prove its unsigned keys are "
+            "real; it paid under Knots' minimum relay fee, so Knots refuses it anyway. It refuses nothing else in "
+            f"those blocks; nothing that is not sewage is refused below {g['nearest']}. Other multisig with many "
+            f"keys and few signatures can fall between {g['value']} and {a['value']}: on the 29.4.2 release "
+            f"binary, {a['value']} refused, and {g['value']} let through, a segwit 1-of-14 spend of 200 coins, a "
+            "segwit 2-of-16 spend of 100 coins and plain P2SH 2-of-12, 2-of-13 and 2-of-14 spends of one coin. "
+            "Where the line falls depends on the keys, signatures, coins and outputs. A segwit 2-of-15 spend still "
+            "relays: "
+            f"one of 200 coins comes in at about 55.2 and one of a single coin at about 69. "
+            f"{SITE}/check/#fake-multisig says more."),
+        "dustrelayfee": conf_comment(
+            "The default is 0.00003, which is 3 sats a vbyte, and this file sets 5. Knots refuses a transaction "
+            "that creates dust, an output worth less than the fee to spend it at this rate: at "
+            f"{a['dust']}, an output under {a['p2wsh']} sats to a P2WSH or taproot address, under {a['p2wpkh']} "
+            f"to P2WPKH, under {a['p2sh']} to P2SH and under {a['p2pkh']} to a legacy address. In the same "
+            f"blocks, {n(a['run'])} transactions set up runs of P2WSH outputs for data that lands on chain when "
+            "the outputs are spent, mostly as fake multisig keys. They are "
+            f"{pct(a['run_w'] / a['sewage_w'], 0)} of the block weight of the sewage the recommended file "
+            f"relays. {n(a['run_546'])} of them pay 546 sats to such outputs, a median of {a['run_median']} to a "
+            f"transaction, and a 546-sat P2WSH output is dust from {a['dust_exact']} up. This value refuses "
+            f"{n(a['dust_sewage'])} of the {n(a['sewage'])} sewage transactions the recommended file relays, "
+            f"all {n(a['run'])} of those among them. It also refuses {n(a['dust_other'])} that are not sewage: "
+            f"{n(a['ln'])} Lightning force closes and {n(a['dust_other'] - a['ln'])} others that create small "
+            "outputs, most often 546 sats to a taproot address or 294 to a P2WPKH one. A wallet that sends "
+            "through this node has a payment or change output that small refused the same way."),
+    }
+    lines = [f"# Aggressive bitcoin.conf for {CONF_NAMES['knots']}",
+             "# Not the recommended file: it refuses ordinary transactions too.", f"# {SITE}/check/#aggressive", "#"]
+    lines += conf_comment(
+        "This is the recommended Knots file, which already sets datacarriersize, datacarriercost and "
+        f"bytespersigopstrict stricter than the defaults, with bytespersigopstrict raised from {g['value']} to "
+        f"{a['value']} and dustrelayfee from 0.00003 to {a['dust']}. From block {f['lo']} to {f['hi']}, Knots "
+        f"with the recommended file relays {n(a['sewage'])} of the {n(f['sewage'])} transactions cesspool.lol "
+        f"lists as sewage; with this file it relays {n(a['left'])}. It also refuses {n(a['dust_other'])} "
+        "transactions that the recommended file relays and that are not sewage, "
+        f"{pct(a['dust_other'] / a['other'])} of them. A transaction counts as relayed here when no filter in "
+        "the file refuses it and it pays Knots' minimum relay fee. The comment above each of the two values "
+        "says what it refuses. A node that builds blocks leaves the same transactions out of them, and the "
+        f"{a['fees'] / 1e8:.2f} BTC in fees they paid in those blocks.",
+        "Do not use this file on a node that a Lightning node sends transactions through, directly or through "
+        "an Electrum server. At this dustrelayfee Knots refuses a transaction that creates a 330-sat anchor "
+        "output, as force closes of anchor channels do, even beside a child that pays its fee. A Lightning "
+        "node behind it cannot force close an anchor channel, and a force close that misses its deadline can "
+        "lose "
+        f"the payments in flight in that channel. In those blocks this file refuses {n(a['ln'])} of the "
+        f"{n(a['ln_all'])} Lightning force closes the recommended file relays.",
+        "Knots' spam filter settings are written out so that a corepolicy=1 set elsewhere can no longer reset "
+        "them. The comments above some of the defaults say what they refuse that is not spam. Knots' Spam "
+        "filtering tab also has fee, dynamic dust, rate-limit, package-size, unknown-witness and bare-anchor "
+        "settings; this file leaves those alone. A corepolicy=1 set elsewhere still changes settings this file "
+        "does not set, such as the minimum relay fee.",
+        "If your bitcoin.conf already sets one of these options, or turns one off with a no line such as "
+        "nodatacarrier=1, change or remove that line rather than adding a second one: with two lines, which "
+        "one wins depends on their order and form. A line under [main] wins over lines outside it. "
+        "settings.json and bitcoin_rw.conf in the data directory, where the Knots GUI saves its settings, win "
+        "over this file, as does the command line. Restart the node after editing.") + [""]
+    settings = tuple(o if o != f"bytespersigopstrict={g['value']}" else f"bytespersigopstrict={a['value']}"
+                     for o in SETTINGS_KNOTS) + (f"dustrelayfee={a['dust']}",)
+    for opt in settings:
+        lines += comments.get(opt.split("=")[0], []) + [opt]
+    return "\n".join(lines) + "\n"
+
+
+CONF_FILES = {"plumb": (lambda: recommended_conf("plumb"), f"Download the {CONF_NAMES['plumb'].split(' 29')[0]} file"),
+              "knots": (lambda: recommended_conf("knots"), f"Download the {CONF_NAMES['knots'].split(' 29')[0]} file"),
+              "knots-aggressive": (aggressive_conf, "Download the aggressive Knots file")}
+
+
+def conf_pane(key, on):
+    make, label = CONF_FILES[key]
+    conf = make()
+    return f'''<div class="tabpane{" on" if on else ""}" id="conf-{key}" data-group="conf">
 <pre class="conf">{esc(conf)}</pre>
-<p><a class="btn" href="/check/{prog}.conf" download="bitcoin.conf">Download the {esc(CONF_NAMES[prog].split(" 29")[0])} file</a> <button class="copy" data-copy="{esc(conf)}">Copy it</button></p></div>'''
+<p><a class="btn" href="/check/{key}.conf" download="bitcoin.conf">{esc(label)}</a> <button class="copy" data-copy="{esc(conf)}">Copy it</button></p></div>'''
+
+
+def aggressive_note():
+    f, a = CONF_FACTS, AGGR_FACTS
+    return f'''<p class="small" id="aggressive" style="max-width:75ch"><b>The aggressive Knots file is not the recommendation.</b> It is the recommended Knots file with <code>dustrelayfee={a["dust"]}</code> and <code>bytespersigopstrict={a["value"]}</code>, for operators who will refuse some ordinary transactions to refuse more spam. From block {f["lo"]} to {f["hi"]} cesspool.lol lists {n(f["sewage"])} transactions as sewage. Knots relays {n(a["sewage"])} of them with the recommended file and {n(a["left"])} with this one, which also refuses {n(a["dust_other"])} more that are not sewage, {n(a["ln"])} of them Lightning force closes. Do not use it on a node that a Lightning node sends transactions through: the Lightning node cannot force close an anchor channel, and a force close that misses its deadline can lose the payments in flight. Plumb with its own recommended file refuses {n(f["plumb42_sewage"])} of the {n(f["sewage"])} without raising either value.</p>'''
 
 
 def settings_section():
     return f'''<h3 id="settings" style="margin-top:22px">Recommended bitcoin.conf</h3>
-<p class="small" style="max-width:75ch">The usual ways a filter gets turned off are <code>corepolicy=1</code>, a filter switched off, <code>acceptnonstdtxn=1</code>, or a setting changed in the Knots GUI. These files write their filter settings out, so a <code>corepolicy=1</code> set elsewhere can no longer reset them (it still changes settings they do not set, such as the minimum relay fee), and set three values stricter than the defaults: <code>datacarriersize=42</code>, <code>datacarriercost=2</code> and <code>bytespersigopstrict=51</code>. The comment above each says what it does, and <a href="#fake-multisig">the last section</a> explains the third. If your <code>bitcoin.conf</code> already sets one of these options, or turns one off with a no line such as <code>nodatacarrier=1</code>, change or remove that line rather than adding a second one. Keep any stricter value you set on purpose, such as <code>datacarrier=0</code>. Knots does not know Plumb&#39;s five options, so use the file for the program you run.</p>
-<div class="tabs" data-group="conf"><button data-pane="conf-plumb" class=on>Plumb</button><button data-pane="conf-knots">Knots</button></div>{conf_pane("plumb", True)}{conf_pane("knots", False)}
+<p class="small" style="max-width:75ch">The usual ways a filter gets turned off are <code>corepolicy=1</code>, a filter switched off, <code>acceptnonstdtxn=1</code>, or a setting changed in the Knots GUI. The Plumb and Knots files write their filter settings out, so a <code>corepolicy=1</code> set elsewhere can no longer reset them (it still changes settings they do not set, such as the minimum relay fee), and set three values stricter than the defaults: <code>datacarriersize=42</code>, <code>datacarriercost=2</code> and <code>bytespersigopstrict=51</code>. The comment above each says what it does, and <a href="#fake-multisig">the last section</a> explains the third. If your <code>bitcoin.conf</code> already sets one of these options, or turns one off with a no line such as <code>nodatacarrier=1</code>, change or remove that line rather than adding a second one. Keep any stricter value you set on purpose, such as <code>datacarrier=0</code>. Knots does not know Plumb&#39;s five options, so use the file for the program you run.</p>
+<div class="tabs" data-group="conf"><button data-pane="conf-plumb" class=on>Plumb</button><button data-pane="conf-knots">Knots</button><button data-pane="conf-knots-aggressive">Knots, aggressive</button></div>{conf_pane("plumb", True)}{conf_pane("knots", False)}{conf_pane("knots-aggressive", False)}
+{aggressive_note()}
 <p class="small" style="max-width:75ch">The Knots GUI saves these settings to <code>settings.json</code> and <code>bitcoin_rw.conf</code> in the data directory, and both win over <code>bitcoin.conf</code>, as does anything on the command line or in a service file. Remove the matching entries there. After a restart, this shows each value and where it came from:</p>
 <pre class="conf">{esc(SETTINGS_CHECK)}</pre>
 <p class="small" style="max-width:75ch">When <code>bitcoin.conf</code> sets an option more than once, a line under <code>[main]</code> is the one in use, even though it is listed last. Otherwise the first plain line is, except that a no line such as <code>nodatacarrier=1</code> cancels the lines above it. <code>~/.bitcoin</code> is the default data directory on Linux; use yours if it differs. A Plumb node also logs one <code>Plumb filter</code> line per filter. Plumb&#39;s filter guide measures what <a href="{LOWER_LIMITS}">lower data limits</a> refuse.</p>'''
@@ -1838,8 +1944,8 @@ def build(out, heights=None, all_blocks=False, og=True):
     write(out, "shame/index.html", shame_page(idx, tip))
     write(out, "past-defaults/index.html", past_page(idx, tip))
     write(out, "check/index.html", check_page(tip))
-    for prog in ("plumb", "knots"):
-        write(out, f"check/{prog}.conf", recommended_conf(prog))
+    for key, (make, _) in CONF_FILES.items():
+        write(out, f"check/{key}.conf", make())
     write(out, "guide/index.html", guide_page(idx, tip))
     write(out, "plumb/index.html", plumb_page(idx, tip))
     write(out, "about/index.html", about_page(idx, tip))
