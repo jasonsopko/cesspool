@@ -162,13 +162,37 @@ TYPES = {
     "stacks": {
         "name": "Stacks commitment",
         "what": "A Stacks block commitment in OP_RETURN, usually beside a burn to the all-zero hash.",
-        "how": "Plumb exempts the all-zero burn on purpose; it is a burn, not a payload.",
+        "how": "Plumb exempts the all-zero burn on purpose; it is a burn, not a payload. The commitment fits the default 83-byte allowance, so it is gray here; the recommended `datacarriersize=42` refuses every one.",
         "filter": ALLOWED,
     },
     "swap-memo": {
         "name": "Swap memo",
         "what": "A cross-chain swap instruction for a bridge or DEX router, in OP_RETURN.",
-        "how": "Fits the default 83-byte OP_RETURN allowance.",
+        "how": "Fits the default 83-byte OP_RETURN allowance. The recommended `datacarriersize=42` refuses the longer ones.",
+        "filter": ALLOWED,
+    },
+    "babylon": {
+        "name": "Babylon staking tag",
+        "what": "Pays bitcoin to a taproot output and adds an OP_RETURN starting with `bbn1`, the tag Babylon uses to mark staking transactions for its proof-of-stake chain. Two layouts appear, 63 and 78 bytes.",
+        "how": "The payment is ordinary script. The OP_RETURN is a record for another chain's indexer. It fits the default 83-byte allowance, so it is gray here; the recommended `datacarriersize=42` refuses every one.",
+        "filter": ALLOWED,
+    },
+    "coredao": {
+        "name": "Core DAO staking tag",
+        "what": "Pays bitcoin to a P2WSH output and adds an OP_RETURN starting with `SAT+`, the tag Core DAO uses to mark bitcoin staking for its chain. Two layouts appear, 52 and 80 bytes.",
+        "how": "The payment is ordinary script. The OP_RETURN is a record for another chain's indexer. It fits the default 83-byte allowance, so it is gray here; the recommended `datacarriersize=42` refuses every one.",
+        "filter": ALLOWED,
+    },
+    "bip47": {
+        "name": "BIP47 notification",
+        "what": "The one-time notification that sets up a BIP47 reusable payment code: an 80-byte OP_RETURN holding the sender's payment code, blinded for the recipient's wallet.",
+        "how": "It fits the default 83-byte allowance, so it is gray here; the recommended `datacarriersize=42` refuses it. Silent payments (BIP352) do the same job without writing any data.",
+        "filter": ALLOWED,
+    },
+    "commitment": {
+        "name": "32-byte commitment",
+        "what": "A single 32-byte OP_RETURN, the form OpenTimestamps, proof-of-reserves and RGB commitments take: one hash standing for data kept elsewhere.",
+        "how": "Gray when it rides a payment, and the recommended `datacarriersize=42` keeps it. One that is a transaction's only output stays sewage: Knots refuses a transaction that only writes bytes. The length is matched, not the content: nearly any 32 bytes that are not text land here.",
         "filter": ALLOWED,
     },
     "opreturn-text": {

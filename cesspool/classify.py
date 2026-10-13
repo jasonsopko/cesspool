@@ -98,6 +98,12 @@ def nulldata(tx, spk_hex, token=False):
         return "opreturn-empty", "Empty OP_RETURN"
     if payload.startswith(b"omni"):
         return "omni", "Omni Layer token message"
+    if payload.startswith(b"bbn1"):
+        return "babylon", "Babylon staking tag"
+    if payload.startswith(b"SAT+"):
+        return "coredao", "Core DAO staking tag"
+    if len(payload) == 80 and payload[0] in (1, 2, 3) and payload[2] in (2, 3) and payload[67:] == bytes(13):
+        return "bip47", "BIP47 payment code notification"
     if token and payload[:1] == b"{":
         return "token-json", "JSON token message (BRC-20 format)"
     if payload[:2] in (b"X2", b"id") and len(payload) > 2 and payload[2:3] in (b"[", b"^", b"$", b"p", b"x", b"#"):
@@ -109,6 +115,8 @@ def nulldata(tx, spk_hex, token=False):
             return "counterparty", "Counterparty message (RC4 under the first input's txid)"
     if SWAP_MEMO.match(payload):
         return "swap-memo", "Cross-chain swap memo"
+    if len(payload) == 32 and not printable(payload):
+        return "commitment", "32-byte commitment"
     if printable(payload):
         return "opreturn-text", f"Text note, {len(payload)} bytes"
     return "opreturn-data", f"Binary note, {len(payload)} bytes"
