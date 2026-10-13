@@ -182,9 +182,9 @@
     plumb: "Find the line that sets it to 0 the same way: bitcoin.conf, settings.json, bitcoin_rw.conf or the command line."
   };
   var NOTES = {
-    core: "Bitcoin Core does not follow this chain: it has no BLAKE2b proof of work. Run Knots 29.4.2 or Plumb.",
-    tooold: "This checker covers Knots 29.4 and later. Knots before 29.4.1 has no Counterparty check and does not follow the BLAKE2b chain: upgrade to Knots 29.4.2 or Plumb.",
-    old: "This is Knots 29.4. It does not follow the BLAKE2b chain, which needs 29.4.1 or later, it has no Counterparty check, and its rejecttokens starts off. Upgrade to Knots 29.4.2 or Plumb; the table shows the rest of its settings.",
+    core: "Bitcoin Core does not accept block 961640 or any block after it. Run Knots 29.4.2 or Plumb.",
+    tooold: "This checker covers Knots 29.4 and later. Knots before 29.4.1 has no Counterparty check and does not accept block 961640 or any block after it: upgrade to Knots 29.4.2 or Plumb.",
+    old: "This is Knots 29.4. It does not accept block 961640 or any block after it (29.4.1 and later do), it has no Counterparty check, and its rejecttokens starts off. Upgrade to Knots 29.4.2 or Plumb; the table shows the rest of its settings.",
     restarts: "The text covers more than one start of the node; this reads the last one.",
     noversion: "No version line found, so this assumes Knots 29.4.2 on mainnet. Include the version line for a sure answer.",
     corepolicy: "corepolicy=1 is set. It turns off every filter below that nothing else sets.",

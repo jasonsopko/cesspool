@@ -1,8 +1,8 @@
 # cesspool.lol
 
-Every Bitcoin block since the BLAKE2b fork (961640), every transaction in it,
-graded for spam, with the pool that mined it and the filter that would have
-kept it out.
+Every Bitcoin block since the fork at 961640, every transaction in it, graded
+for spam, with the pool that mined it and the filter that would have kept it
+out.
 
 ## How it works
 
@@ -13,8 +13,8 @@ kept it out.
   trips and the data bytes it counts, plus, for Plumb, where the bytes sit
   and how many each of its four data-counting filters adds (the count with
   that filter alone off). Nothing reimplements a filter.
-  The site shows the Knots and Plumb verdicts only: Bitcoin Core has no
-  BLAKE2b proof of work, so no Core node follows this chain.
+  The site shows the Knots and Plumb verdicts only: Bitcoin Core does not
+  accept block 961640 or any block after it, so no Core node has these blocks.
 - `cesspool/classify.py` names the protocol and finds the shapes Plumb does
   not count yet (fake multisig keys), so a miss shows as a miss.
 - `cesspool/miner.py` names the pool with reorg-watch's own rules.

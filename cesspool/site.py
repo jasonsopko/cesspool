@@ -434,7 +434,7 @@ def page(path, title, body, *, nav="", desc="", og=None, tip=None):
 '''
 
 
-ASSET_V = "22"
+ASSET_V = "23"
 
 
 def write(out, rel, text):
@@ -482,8 +482,8 @@ def io_html(rows, kind, limit=8, missed=False):
     return "".join(parts)
 
 
-# Bitcoin Core is graded too (plumb_check's core profile) but not shown: it has no BLAKE2b proof of work,
-# so no Core node follows this chain.
+# Bitcoin Core is graded too (plumb_check's core profile) but not shown: it does not accept block 961640
+# or any block after it, so no Core node has these blocks.
 VERDICT_NAMES = [("knots", "Knots 29.4.2"), ("plumb", PLUMB_NAME)]
 
 
@@ -753,11 +753,11 @@ RULES = {
 def tx_page(tip):
     body = f'''<div id="txapp" data-plumb="{esc(PLUMB_NAME)}">
 <div class="hero"><div class="kicker">Transaction</div><h1>Look up a transaction</h1>
-<p class="lede">Paste a transaction id from any BLAKE2b block, height {FORK} on. The page shows what the transaction does, what it carries, and what Knots and {esc(PLUMB_NAME)} would do with it.</p></div>
+<p class="lede">Paste a transaction id from any block, height {FORK} on. The page shows what the transaction does, what it carries, and what Knots and {esc(PLUMB_NAME)} would do with it.</p></div>
 <form class="txform"><input class="mono" spellcheck="false" autocomplete="off" placeholder="Transaction id (64 hex characters)" aria-label="Transaction id"><button class="btn">Look up</button></form>
 <div class="txout" aria-live="polite"></div>
 <noscript><p class="muted">This page needs JavaScript to load the transaction.</p></noscript></div>'''
-    return page("/tx/", "Transaction", body, desc="What a transaction in a BLAKE2b block does, what it carries, and what each node policy does with it.", tip=tip)
+    return page("/tx/", "Transaction", body, desc="What a Bitcoin transaction does, what it carries, and what each node policy does with it.", tip=tip)
 
 
 def write_gz(path, obj):
@@ -1005,7 +1005,7 @@ def conf_stricter(prog):
         refused = f"Plumb refuses {n(f['plumb_sewage'])} of them at 83 and at 42."
     return {
         "datacarriersize": conf_comment(
-            f"The default is 83. From block {f['lo']}, the first BLAKE2b block, to {f['hi']} "
+            f"The default is 83. From block {f['lo']} to {f['hi']} "
             f"({n(f['txs'])} transactions, not counting coinbases), cesspool.lol lists {n(f['sewage'])} as sewage. "
             f"With the other options at their defaults, {refused} 42 also refuses {n(f['extra'])} transactions "
             "that are not on that list, each carrying one OP_RETURN: a text or binary note, a swap memo or a "
@@ -1167,8 +1167,8 @@ def check_page(tip):
 <h2>Recommended settings</h2>
 <p style="max-width:75ch">The recommended settings are the ones in the <a href="#settings">bitcoin.conf files below</a>, with the data size at 42 bytes, the data cost at 2 and bytes per sigop strict at 51, all stricter than Knots&#39; defaults of 83, 1 and 20. The last one refuses most <a href="#fake-multisig">fake multisig</a>. Here they are on each platform, under the names each one uses. Where a platform starts a switch somewhere else, it says so. A stricter value you chose on purpose, such as turning OP_RETURN data off altogether, is fine to keep.</p>
 <h3>Umbrel</h3>
-<p style="max-width:75ch">The Bitcoin Knots app in the Umbrel App Store is at version 1.2.13, which runs Knots 29.4. That Knots has no Counterparty check and no BLAKE2b proof of work, and its <b>Reject tokens transactions</b> switch starts off. The app update with Knots 29.4.2, version 1.2.18, has been waiting on the App Store since 21 September (<a href="https://github.com/getumbrel/umbrel-apps/pull/6108">umbrel-apps#6108</a>).</p>
-<p style="max-width:75ch">Builds of the app that run Knots 29.4.1 or later, such as the BLAKE2b Knots app in the PaulsCode community store, have also started that switch off, although that Knots turns it on. They write <code>rejecttokens=0</code> for the node, so a default node there relays and mines Runes and Counterparty transactions.</p>
+<p style="max-width:75ch">The Bitcoin Knots app in the Umbrel App Store is at version 1.2.13, which runs Knots 29.4. That Knots has no Counterparty check, does not accept block {FORK} or any block after it, and its <b>Reject tokens transactions</b> switch starts off. The app update with Knots 29.4.2, version 1.2.18, has been waiting on the App Store since 21 September (<a href="https://github.com/getumbrel/umbrel-apps/pull/6108">umbrel-apps#6108</a>).</p>
+<p style="max-width:75ch">Builds of the app that run Knots 29.4.1 or later, such as the one the PaulsCode community store lists as Knots (BLAKE2b) Companion, have also started that switch off, although that Knots turns it on. They write <code>rejecttokens=0</code> for the node, so a default node there relays and mines Runes and Counterparty transactions.</p>
 <p style="max-width:75ch">Open the app, go to Settings, choose the Policy tab, set these, and save. The app restarts the node with them.</p>
 {switch_list("umbrel")}
 <p style="max-width:75ch">The app has no switch for <code>bytespersigopstrict</code>. Under Settings, choose the Advanced tab, add the line <code>bytespersigopstrict=51</code> to <b>Custom bitcoin.conf overrides</b>, and save. The app restarts the node with it.</p>
@@ -1452,10 +1452,10 @@ def found_page(tip):
 
 def about_page(tip):
     body = f'''<div class="hero prose"><div class="kicker">About</div><h1>How the water gets tested</h1>
-<p class="lede">Every block since the BLAKE2b fork at height {FORK}, every transaction in it, run through the Knots and Plumb policy checks.</p></div>
+<p class="lede">Every block since the fork at height {FORK}, every transaction in it, run through the Knots and Plumb policy checks.</p></div>
 <div class="prose">
 <h2>Verdicts come from the shipped code</h2>
-<p>Each transaction, with the coins it spends, goes through the policy checks of Plumb {PLUMB_VERSION}: <code>IsStandardTx</code>, <code>AreInputsStandard</code>, the data-carrier count, <code>IsWitnessStandard</code> and the sigop limits, once with each software's default policy: stock Knots 29.4.2 (Plumb's filters off) and Plumb. Bitcoin Core is not compared: it has no BLAKE2b proof of work, so no Core node follows this chain. Nothing here reimplements a filter, so this page and a Plumb node cannot disagree about a transaction.</p>
+<p>Each transaction, with the coins it spends, goes through the policy checks of Plumb {PLUMB_VERSION}: <code>IsStandardTx</code>, <code>AreInputsStandard</code>, the data-carrier count, <code>IsWitnessStandard</code> and the sigop limits, once with each software's default policy: stock Knots 29.4.2 (Plumb's filters off) and Plumb. Bitcoin Core is not compared: it does not accept block {FORK} or any block after it, so no Core node has these blocks. Nothing here reimplements a filter, so this page and a Plumb node cannot disagree about a transaction.</p>
 <p>Each refusal on a block or transaction page names the rule it comes from and the option behind it. Plumb's count is also taken with each of its four data-counting filters turned off alone, so the bytes a filter is responsible for come from the code too (the fifth, <code>-rejecttokenmessages</code>, names itself in its reason), and a refusal that rests on Knots' own rules says so.</p>
 <p>Where Knots or Plumb relays a transaction shown here, the engine also tries four settings one at a time and keeps the value that would refuse it: the largest <code>datacarriersize</code>; the largest <code>maxscriptsize</code> of {MIN_USEFUL_SCRIPT_LIMIT} or more, the size of the largest push a script may hold, since a limit below that starts refusing ordinary multisig witnesses (a 3-of-5 P2WSH witness is about 395 bytes); the smallest <code>bytespersigopstrict</code> up to {MAX_USEFUL_SIGOP_STRICT}, since above that it starts refusing segwit 2-of-15 spends (a 2-of-15 P2WSH input has about 55 weight units for each of its 15 signature checks; multisig with many keys and few signatures can be refused lower); and the smallest <code>dustrelayfee</code> up to {feerate_conf(MAX_DUST_RATE)} (100 sat/vB, where a P2TR output under 11,000 sat is already dust; higher rates were not tried). Each value comes from rerunning the same checks with only that setting changed. A setting that refuses the transaction at no value in its range is left out, and a verdict that offers none names the four that were tried.</p>
 <p>Not modeled: fee floors, mempool limits, replacement rules and address reuse. Those depend on the mempool at the time, not on what the transaction carries.</p>
@@ -1553,7 +1553,7 @@ def index_page(idx, tip):
     body = f'''<div class="herogrid"><div class="hero"><div class="kicker">Bitcoin water quality, block by block</div>
 <h1><span>Clean blocks carry payments.</span> <span>The rest is sewage.</span></h1>
 <p class="lede">Every block since the fork, every transaction, tested with the policy code a Plumb node runs. See what got mined, who mined it, and which filter would have kept it out.</p>
-<p class="lede"><a href="/tx/">Look up any transaction</a> in a BLAKE2b block, height {FORK} on, or <a href="/found/">find the blocks you mined</a>.</p></div>
+<p class="lede"><a href="/tx/">Look up any transaction</a> from height {FORK} on, or <a href="/found/">find the blocks you mined</a>.</p></div>
 <a class="sample" href="/block/{tb["h"]}/"><div class="kicker">Latest sample</div><div class="bigcube">{cube(tb)}</div>
 <div class="sh">Block {tb["h"]}</div><div class="muted small">{esc(short_who(tb))} · {tm(tb["t"])}</div>
 <div style="margin:12px 0 6px">{stamp(tb["grade"])}</div><div class="small muted">{tline}</div></a></div>
