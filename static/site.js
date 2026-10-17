@@ -579,10 +579,11 @@
     box.appendChild(document.createTextNode("."));
     return box;
   }
-  function verdicts(tx, cat, plumb, normal) {
-    // On spam, relaying is the failure; on a normal transaction or a small note, refusing is.
+  function verdicts(tx, cat, plumb, mode) {
+    // On spam, relaying is the failure; on a normal transaction or a refusal that is not spam, refusing is.
+    // On a small note neither is ("neutral"): it is data, inside the room the defaults leave.
     if (tx.e) return el("p", { cls: "note", text: "No verdicts: the policy check did not run on this transaction." });
-    var box = el("div", { cls: "verd" + (normal ? " normal" : "") });
+    var box = el("div", { cls: "verd" + (mode ? " " + mode : "") });
     cat.verdicts.forEach(function (v) {
       var k = v[0], name = v[1];
       var rs = (tx.x && tx.x[k]) || [], dc = tx.dc && tx.dc[k], total = dc ? dc[0] + dc[1] : 0;
@@ -708,7 +709,7 @@
       if (info.case) what.push(el("p", { cls: "small" }, el("b", { text: "The case for it. " }), prose(info.case), " ", el("a", { href: "/about/#bar", text: "The bar" }), "."));
     } else if (tier === "gray") {
       title = (tx.lb && tx.lb[0]) || "Small note"; st = [stamp("Gray water", "var(--gray)")];
-      what.push(el("p", { text: tx.dt ? "Carries a little data inside the default 83-byte allowance, the room Knots leaves for notes such as swap memos. cesspool does not count it as sewage."
+      what.push(el("p", { text: tx.dt ? "Carries data inside the default 83-byte allowance, the room Knots leaves for notes such as swap memos. cesspool does not count it as sewage, and does not call it clean either."
         : "Carries an OP_RETURN with no data in it. cesspool does not count it as sewage." }));
     } else {
       var sh = shape(tx), kn = tx.kp && cat.known && cat.known[tx.kp];
@@ -738,7 +739,7 @@
     meta.appendChild(copy);
     sec.appendChild(meta);
     what.forEach(function (w) { sec.appendChild(w); });
-    if (!tx.cb) sec.appendChild(verdicts(tx, cat, plumb, tier !== "sewage"));
+    if (!tx.cb) sec.appendChild(verdicts(tx, cat, plumb, tier === "sewage" ? "" : tier === "gray" && !(info && info.filter === cat.filters.notspam) ? "neutral" : "normal"));
     if (!tx.cb && !tx.e && tx.x && ["knots", "plumb"].some(function (k) { return tx.x[k] && tx.x[k].length; })) {
       var policy = "Refusing is policy, not a consensus rule: a node that refuses it does not relay it or put it in a block it builds, but it still accepts a block that has it.";
       var notSpam = info && info.filter === cat.filters.notspam, kr = tx.x.knots && tx.x.knots.length, pr = tx.x.plumb && tx.x.plumb.length;

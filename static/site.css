@@ -276,6 +276,7 @@ table.iot .db { color: var(--text); font-weight: 600; }
 .txout .btn.ghost { margin-top: 8px; }
 .verd.normal .pass { color: var(--ok); }
 .verd.normal .stop { color: var(--miss); }
+.verd.neutral .pass, .verd.neutral .stop { color: var(--gray); }
 .txout .anat > div { min-width: 0; }
 .dis.normal { border-left-color: var(--ok); }
 .dis.coinbase { border-left-color: var(--water); }
