@@ -20,6 +20,9 @@ SECP_P = 2**256 - 2**32 - 977
 DATA_REASONS = re.compile(r"^(txn-datacarrier-|tokens-|parasite-|bare-datacarrier|multi-op-return|bare-multisig|bad-txns-input-.*datacarrier|bad-witness-.*datacarrier)")
 
 SWAP_MEMO = re.compile(rb"^(=\||=|s|swap|SWAP|\+|a|add|ADD|-|wd|WITHDRAW|withdraw|OUT|REFUND|LOAN\+|LOAN-|\$\+|\$-|n|trade\+|TRADE\+|~|BOND|UNBOND|LEAVE)[:|]")
+# A swap service's order: an optional short order id, then "to:ASSET(CHAIN):address", such as
+# "0Z2:to:USDT(BSC):0x4F5c...". 36,461 in blocks 961640 to 977731, the first at 961642.
+SWAP_ORDER = re.compile(rb"^(?:[A-Za-z0-9]{1,4}:)?to:[A-Z0-9]+(\([A-Z0-9]+\))?:")
 
 # The Lightning anchor script from BOLT 3, as hex, and the keyless pay-to-anchor output script.
 H = "[0-9a-f]"
@@ -137,7 +140,7 @@ def nulldata(tx, spk_hex, token=False):
     if tx["vin"] and "txid" in tx["vin"][0]:
         if rc4(bytes.fromhex(tx["vin"][0]["txid"]), payload[:8]) == b"CNTRPRTY":
             return "counterparty", "Counterparty message (RC4 under the first input's txid)"
-    if SWAP_MEMO.match(payload):
+    if SWAP_MEMO.match(payload) or SWAP_ORDER.match(payload):
         return "swap-memo", "Cross-chain swap memo"
     if len(payload) == 32 and not printable(payload):
         return "commitment", "32-byte commitment"
