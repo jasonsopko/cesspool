@@ -9,7 +9,9 @@ refuses at its defaults or its fix.<profile>.dcs, the largest datacarriersize th
 42 or more. "<profile>42_extra" counts the transactions 42 refuses beyond the defaults that are not
 sewage; "extra_both" those both profiles count, "extra_opreturn" and "extra_one_opreturn" those with
 an OP_RETURN output and with exactly one, and "extra_text", "extra_binary", "extra_swapmemo" and
-"extra_stacks" those whose OP_RETURN carries that label (classify.nulldata).
+"extra_stacks" those whose OP_RETURN carries that label (classify.nulldata). "knots42_gain" counts
+the sewage Knots refuses at 42 and not at its defaults, and "gain_<type>" the same by the record's
+primary type.
 Prints the counts as JSON.
 """
 import json, os, sys
@@ -36,6 +38,9 @@ def main():
                 at42 = default or fx.get(p, {}).get("dcs", -1) >= 42
                 c[f"{p}_sewage"] += default and sewage
                 c[f"{p}42_sewage"] += at42 and sewage
+                if p == "knots" and at42 and not default and sewage:
+                    c["knots42_gain"] += 1
+                    c[f"gain_{(r.get('ty') or ['?'])[0]}"] += 1
                 if at42 and not default and not sewage:
                     extra.append(p)
                     c[f"{p}42_extra"] += 1

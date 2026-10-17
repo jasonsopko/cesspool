@@ -464,10 +464,14 @@
   }
   // One line per reason: the code, what it means, the option behind it. dc is the policy's
   // [OP_RETURN bytes, other bytes] count, shown on the data-carrier reasons.
-  function ruleList(cat, rs, dc) {
+  function ruleList(cat, rs, dc, k) {
     var ul = el("ul", { cls: "rules" });
     rs.forEach(function (r) {
-      var rule = (cat.rules && cat.rules[r]) || ["", null], words = rule[0];
+      var rule = (cat.rules && cat.rules[r]) || ["", null];
+      // The size reason names the profile's own -datacarriersize default: Knots 83, Plumb 42
+      if (r === "txn-datacarrier-exceeded" && cat.dcsize && cat.dcsize[k])
+        rule = ["data counted, over the " + cat.dcsize[k] + "-byte allowance", "-datacarriersize=" + cat.dcsize[k]];
+      var words = rule[0];
       if (dc && r === "txn-datacarrier-nonstandard") words = num(dc[1]) + " B of " + words;
       else if (dc && r === "txn-datacarrier-exceeded") words = num(dc[0] + dc[1]) + " B of " + words;
       var li = el("li", {}, el("code", { text: r }));
@@ -500,7 +504,7 @@
       var f = document.createDocumentFragment();
       if (fix.dcs === 0) f.appendChild(el("code", { text: "datacarrier=0" }));
       else { f.appendChild(el("code", { text: "datacarriersize=" + fix.dcs })); f.appendChild(text(" or lower")); }
-      f.appendChild(text(" (counts " + num(counted) + " B; default " + lim.dcsize + ")"));
+      f.appendChild(text(" (counts " + num(counted) + " B; default " + (lim.dcsize || {})[k] + ")"));
       parts.push(f);
     }
     if ("mss" in fix) {
@@ -555,6 +559,27 @@
   function plumbBy(cat, tx, dataRs) {
     var knots = (tx.x && tx.x.knots) || [], fc = tx.fc || {}, dc = tx.dc || {};
     var sum = function (a) { return (a || [0, 0]).reduce(function (x, y) { return x + y; }, 0); };
+    // p83: Plumb's reasons at Knots' 83-byte -datacarriersize, there when its 42-byte default changes them
+    var by42 = Array.isArray(tx.p83), dcs = cat.dcsize || {};
+    var size42 = function (box) {
+      box.appendChild(document.createTextNode(cat.plumb + "'s default "));
+      box.appendChild(el("code", { text: "datacarriersize=" + dcs.plumb }));
+    };
+    if (by42) {
+      dataRs = dataRs.filter(function (r) { return r !== "txn-datacarrier-exceeded"; });
+      if (!dataRs.length) {
+        var only = el("div", { cls: "by" }, "Refused by ");
+        size42(only);
+        only.appendChild(document.createTextNode(": it counts " + num(sum(dc.plumb)) + " B. Knots' default is " + dcs.knots + (knots.length ? "." : ", so stock Knots relays it.")));
+        return only;
+      }
+    }
+    var also = function (box) {
+      if (!by42) return;
+      box.appendChild(document.createTextNode(" It is also over "));
+      size42(box);
+      box.appendChild(document.createTextNode("; Knots' is " + dcs.knots + "."));
+    };
     var added = sum(dc.plumb) - sum(dc.knots);
     var own = plumbOwn(cat, tx, dataRs);
     var parts = own.map(function (o) {
@@ -568,15 +593,17 @@
     if (added > 0 && !Object.keys(fc).length) parts.push(document.createTextNode("its filters together count " + num(added) + " B that Knots does not"));
     var box = el("div", { cls: "by" }), knotsRefuses = knots.some(function (r) { return DATA_REASON.test(r); });
     if (!parts.length) {
-      if (knotsRefuses) { box.textContent = "Same rules as Knots. None of Plumb's added filters is needed here."; return box; }
+      if (knotsRefuses) { box.textContent = "Same rules as Knots. None of Plumb's added filters is needed here."; also(box); return box; }
       box.appendChild(document.createTextNode("Knots relays it; the refusal comes from rules Knots does not have: "));
       dataRs.filter(function (r) { return knots.indexOf(r) < 0; }).forEach(function (r, i) { if (i) box.appendChild(document.createTextNode(", ")); box.appendChild(el("code", { text: r })); });
       box.appendChild(document.createTextNode("."));
+      also(box);
       return box;
     }
     box.appendChild(document.createTextNode(knotsRefuses ? "Knots' rules already refuse it. Plumb's own filters add: " : "Refused by Plumb's own filters: "));
     parts.forEach(function (p, i) { if (i) box.appendChild(document.createTextNode("; ")); box.appendChild(p); });
     box.appendChild(document.createTextNode("."));
+    also(box);
     return box;
   }
   function verdicts(tx, cat, plumb, mode) {
@@ -591,13 +618,13 @@
       if (rs.length) {
         var dataRs = rs.filter(function (r) { return DATA_REASON.test(r); });
         cell.appendChild(el("span", { cls: "stop", text: "Refuses it" }));
-        cell.appendChild(ruleList(cat, rs, dc));
+        cell.appendChild(ruleList(cat, rs, dc, k));
         if (!dataRs.length) cell.appendChild(el("div", { cls: "by", text: "Not a data rule." }));
         else if (k === "plumb") cell.appendChild(plumbBy(cat, tx, dataRs));
       } else {
         cell.appendChild(el("span", { cls: "pass", text: "Relays and mines it" }));
         var text = k === "plumb" && tx.m ? "this one gets past its filters" : "no rule matches";
-        text += total ? "; counts " + num(total) + " B of data" + (cat.dcsize ? ", inside the " + cat.dcsize + "-byte allowance" : "") : ", no data counted";
+        text += total ? "; counts " + num(total) + " B of data" + (cat.dcsize && cat.dcsize[k] ? ", inside the " + cat.dcsize[k] + "-byte allowance" : "") : ", no data counted";
         cell.appendChild(el("div", { cls: "why", text: text }));
         var rw = refuseWith(cat, tx, k, total);
         if (rw) cell.appendChild(rw);
@@ -693,7 +720,13 @@
         "The payload itself comes when those outputs are spent. This page shows sizes, never the bytes."));
       else what.push(el("p", {}, "Payload: ", el("b", { text: num(tx.dt || 0) + " bytes" }), " of a " + num(tx.s) + "-byte transaction. ",
         "The rows marked below are where it sits. This page shows sizes, never the bytes."));
-      if (info.option && (info.filter === cat.filters.plumb || info.filter === cat.filters.knots)) {
+      if (info.option && info.option.indexOf("-datacarriersize") === 0) {
+        // the verdict below says it already when the 42-byte limit made the difference (p83)
+        if (!Array.isArray(tx.p83)) {
+          var dcs = cat.dcsize || {};
+          what.push(el("p", { cls: "small" }, plumb + "'s default ", el("code", { text: "datacarriersize=" + dcs.plumb }), " refuses this kind once it counts more than " + dcs.plumb + " bytes; Knots' default is " + dcs.knots + "."));
+        }
+      } else if (info.option && (info.filter === cat.filters.plumb || info.filter === cat.filters.knots)) {
         var line = el("p", { cls: "small" }, (info.filter === cat.filters.plumb ? "Plumb ships " : "Knots ships "), el("code", { text: info.option }));
         (info.prs || []).forEach(function (p) { line.appendChild(document.createTextNode(" ")); line.appendChild(el("a", { href: p[1], text: p[0] })); });
         what.push(line);
@@ -709,7 +742,7 @@
       if (info.case) what.push(el("p", { cls: "small" }, el("b", { text: "The case for it. " }), prose(info.case), " ", el("a", { href: "/about/#bar", text: "The bar" }), "."));
     } else if (tier === "gray") {
       title = (tx.lb && tx.lb[0]) || "Small note"; st = [stamp("Gray water", "var(--gray)")];
-      what.push(el("p", { text: tx.dt ? "Carries data inside the default 83-byte allowance, the room Knots leaves for notes such as swap memos. cesspool does not count it as sewage, and does not call it clean either."
+      what.push(el("p", { text: tx.dt ? "Carries data inside " + plumb + "'s default " + (cat.dcsize || {}).plumb + "-byte allowance, the room it leaves for notes such as 32-byte commitments. cesspool does not count it as sewage, and does not call it clean either."
         : "Carries an OP_RETURN with no data in it. cesspool does not count it as sewage." }));
     } else {
       var sh = shape(tx), kn = tx.kp && cat.known && cat.known[tx.kp];

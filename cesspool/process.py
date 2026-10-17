@@ -93,6 +93,7 @@ def process_block(b, rows):
                          "fee": fee, "v": {k: c["reasons"][k]["reasons"] for k in ("core", "knots", "plumb")},
                          "dc": {k: [c["reasons"][k]["data"], c["reasons"][k]["data_nonstd"]] for k in ("core", "knots", "plumb")},
                          "fc": row.get("fc", {}), "fix": row.get("fix", {}),
+                         **({"p83": row["p83"]} if "p83" in row else {}),
                          **({"kp": k} if k else {}), **d})
             tmap.append([t["vsize"], fee, tier, len(spam) - 1])
         else:

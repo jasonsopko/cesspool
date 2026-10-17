@@ -10,6 +10,7 @@ PLUMB = "Plumb"
 NONE = "No filter yet"
 ALLOWED = "Allowed"
 NOT_SPAM = "Not spam"
+DATACARRIER = "-datacarriersize=42"  # Plumb's default since plumb7; Knots' is 83
 
 TYPES = {
     "fake-multisig": {
@@ -149,28 +150,28 @@ TYPES = {
     "token-json": {
         "name": "JSON token message",
         "what": "A token operation written as a JSON object in OP_RETURN: the BRC-20 format that ico-20, crc-20 and others copy, with a `\"p\"` field naming the protocol and `\"op\"` the operation.",
-        "how": "The message itself fits the default 83-byte OP_RETURN allowance, so stock Knots relays it unless the transaction carries other data too. Plumb reads the object and refuses it with `-rejecttokenmessages`.",
+        "how": "The message itself fits Knots' default 83-byte OP_RETURN allowance, so stock Knots relays it unless the transaction carries other data too. Plumb reads the object and refuses it with `-rejecttokenmessages`.",
         "filter": PLUMB, "option": "-rejecttokenmessages",
         "prs": [("plumb#2", "https://github.com/plumb-node/plumb/pull/2")],
     },
     "omni": {
         "name": "Omni Layer",
         "what": "An Omni token message in OP_RETURN.",
-        "how": "Small enough for the default 83-byte OP_RETURN allowance, so stock Knots relays it. Plumb refuses it with `-rejecttokenmessages`.",
+        "how": "Small enough for Knots' default 83-byte OP_RETURN allowance, so stock Knots relays it. Plumb refuses it with `-rejecttokenmessages`.",
         "filter": PLUMB, "option": "-rejecttokenmessages",
         "prs": [("plumb#2", "https://github.com/plumb-node/plumb/pull/2")],
     },
     "stacks": {
         "name": "Stacks commitment",
         "what": "A Stacks block commitment in OP_RETURN, usually beside a burn to the all-zero hash.",
-        "how": "Plumb exempts the all-zero burn on purpose; it is a burn, not a payload. The commitment fits the default 83-byte allowance, so it is gray here; the recommended `datacarriersize=42` refuses every one.",
-        "filter": ALLOWED,
+        "how": "Plumb exempts the all-zero burn on purpose; it is a burn, not a payload. The commitment fits Knots' default 83-byte allowance, so stock Knots relays it; Plumb's default of 42 refuses every one.",
+        "filter": PLUMB, "option": DATACARRIER,
     },
     "swap-memo": {
         "name": "Swap memo",
-        "what": "A cross-chain swap instruction for a bridge or DEX router, in OP_RETURN.",
-        "how": "Fits the default 83-byte OP_RETURN allowance. The recommended `datacarriersize=42` refuses the longer ones.",
-        "filter": ALLOWED,
+        "what": "A cross-chain swap instruction in OP_RETURN, in one of two forms: a THORChain or Maya memo such as `=:BTC.BTC:<address>`, or a swap service's order, `to:USDT(BSC):<address>` behind a short order id.",
+        "how": "It fits Knots' default 83-byte OP_RETURN allowance, so stock Knots relays it. Plumb's default of 42 refuses one that counts more than 42 bytes, which makes it sewage here; a shorter one stays gray.",
+        "filter": PLUMB, "option": DATACARRIER,
     },
     "ln-anchor-sweep": {
         "name": "Lightning anchor sweep",
@@ -198,8 +199,8 @@ TYPES = {
     },
     "self-pay": {
         "name": "Payment back to the spender",
-        "what": "Pays the address that one of its own inputs spends from with a signature. The one case since the fork pays a vanity address whose hash starts with six zero bytes.",
-        "how": "Plumb's `-rejectfakeoutputs` reads the run of zeros as data, and Knots relays it. An output that pays the script of a coin the transaction spends adds no chosen bytes: the spend proved the key or hash in it is real, and fitting chosen data into one would take at least 2^128 tries. cesspool does not count it as sewage. The fix is on Plumb's `filter/rejectfakeoutputs` branch, not in a release yet.",
+        "what": "Pays the address that one of its own inputs spends from with a signature. The ones since the fork pay a vanity address whose hash starts with six zero bytes.",
+        "how": "Plumb 6's `-rejectfakeoutputs` read the run of zeros as data, and Knots relays it. An output that pays the script of a coin the transaction spends adds no chosen bytes: the spend proved the key or hash in it is real, and fitting chosen data into one would take at least 2^128 tries. cesspool does not count it as sewage. Plumb 7 ships the fix, so these grade clean now.",
         "filter": NOT_SPAM, "option": "-rejectfakeoutputs",
     },
     "liquid-emergency": {
@@ -212,38 +213,38 @@ TYPES = {
     "babylon": {
         "name": "Babylon staking tag",
         "what": "Pays bitcoin to a taproot output and adds an OP_RETURN starting with `bbn1`, the tag Babylon uses to mark staking transactions for its proof-of-stake chain. Two layouts appear, 63 and 78 bytes.",
-        "how": "The payment is ordinary script. The OP_RETURN is a record for another chain's indexer. It fits the default 83-byte allowance, so it is gray here; the recommended `datacarriersize=42` refuses every one.",
-        "filter": ALLOWED,
+        "how": "The payment is ordinary script. The OP_RETURN is a record for another chain's indexer. It fits Knots' default 83-byte allowance, so stock Knots relays it; Plumb's default of 42 refuses every one.",
+        "filter": PLUMB, "option": DATACARRIER,
     },
     "coredao": {
         "name": "Core DAO staking tag",
         "what": "Pays bitcoin to a P2WSH output and adds an OP_RETURN starting with `SAT+`, the tag Core DAO uses to mark bitcoin staking for its chain. Two layouts appear, 52 and 80 bytes.",
-        "how": "The payment is ordinary script. The OP_RETURN is a record for another chain's indexer. It fits the default 83-byte allowance, so it is gray here; the recommended `datacarriersize=42` refuses every one.",
-        "filter": ALLOWED,
+        "how": "The payment is ordinary script. The OP_RETURN is a record for another chain's indexer. It fits Knots' default 83-byte allowance, so stock Knots relays it; Plumb's default of 42 refuses every one.",
+        "filter": PLUMB, "option": DATACARRIER,
     },
     "bip47": {
         "name": "BIP47 notification",
         "what": "The one-time notification that sets up a BIP47 reusable payment code: an 80-byte OP_RETURN holding the sender's payment code, blinded for the recipient's wallet.",
-        "how": "It fits the default 83-byte allowance, so it is gray here; the recommended `datacarriersize=42` refuses it. Silent payments (BIP352) do the same job without writing any data.",
-        "filter": ALLOWED,
+        "how": "It fits Knots' default 83-byte allowance, so stock Knots relays it; Plumb's default of 42 refuses it. Silent payments (BIP352) do the same job without writing any data.",
+        "filter": PLUMB, "option": DATACARRIER,
     },
     "commitment": {
         "name": "32-byte commitment",
         "what": "A single 32-byte OP_RETURN, the form OpenTimestamps, proof-of-reserves and RGB commitments take: one hash standing for data kept elsewhere.",
-        "how": "Gray when it rides a payment, and the recommended `datacarriersize=42` keeps it. One that is a transaction's only output stays sewage: Knots refuses a transaction that only writes bytes. The length is matched, not the content: nearly any 32 bytes that are not text land here.",
+        "how": "Gray when it rides a payment: it fits Plumb's default of 42. One that is a transaction's only output stays sewage: Knots refuses a transaction that only writes bytes. The length is matched, not the content: nearly any 32 bytes that are not text land here.",
         "filter": ALLOWED,
     },
     "opreturn-text": {
         "name": "OP_RETURN text",
         "what": "A short text note in OP_RETURN: bridge tags, protocol markers, messages.",
-        "how": "Fits the default 83-byte OP_RETURN allowance. Shown as gray water, not sewage.",
-        "filter": ALLOWED,
+        "how": "It fits Knots' default 83-byte OP_RETURN allowance, so stock Knots relays it. Plumb's default of 42 refuses one that counts more than 42 bytes, which makes it sewage here; a shorter one stays gray.",
+        "filter": PLUMB, "option": DATACARRIER,
     },
     "opreturn-data": {
         "name": "OP_RETURN data",
         "what": "Short binary data in OP_RETURN: commitments, staking markers, bridge tags.",
-        "how": "Fits the default 83-byte OP_RETURN allowance. Shown as gray water, not sewage.",
-        "filter": ALLOWED,
+        "how": "It fits Knots' default 83-byte OP_RETURN allowance, so stock Knots relays it. Plumb's default of 42 refuses one that counts more than 42 bytes, which makes it sewage here; a shorter one stays gray.",
+        "filter": PLUMB, "option": DATACARRIER,
     },
     "opreturn-empty": {
         "name": "Empty OP_RETURN",

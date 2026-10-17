@@ -94,7 +94,20 @@
     return true;
   }
 
-  // spec: {options: [{name, label, kind, def, core, good, falseIs, max, over, min, under, std, before}], plumb: [{name, label, std}],
+  // v<base>.plumb<N>, base being the Knots release (29.4.2.knots20260508): true from release p.n on base p.base, and
+  // for any release on a later base. Compares the numbers of the base, then its knots date.
+  function plumbFrom(version, p) {
+    var m = /^v?(\d+(?:\.\d+)*)\.knots(\d+)\.plumb(\d+)/.exec(version || ""), w = /^v?(\d+(?:\.\d+)*)\.knots(\d+)/.exec(p.base);
+    if (!m || !w) return false;
+    var a = m[1].split(".").map(Number), b = w[1].split(".").map(Number);
+    for (var i = 0; i < Math.max(a.length, b.length); i++) {
+      if ((a[i] || 0) !== (b[i] || 0)) return (a[i] || 0) > (b[i] || 0);
+    }
+    if (m[2] !== w[2]) return m[2] > w[2];
+    return parseInt(m[3], 10) >= p.n;
+  }
+
+  // spec: {options: [{name, label, kind, def, core, good, falseIs, max, over, min, under, std, before, plumbFrom}], plumb: [{name, label, std}],
   // since, oldest}. std: acceptnonstdtxn=1 turns it off. before: [[version, default]] for Knots older than that version.
   function checkNode(text, spec) {
     var log = readLog(text);
@@ -110,6 +123,9 @@
     if (corepolicy) res.notes.push("corepolicy");
     if (nonstd) { res.notes.push("acceptnonstdtxn"); res.nonstdFrom = nst.from; }
     spec.options.forEach(function (o) {
+      // A Plumb release can start an option somewhere else than Knots does (plumbFrom: from release n on its
+      // Knots base, and on every later base, where the release number starts again at 1).
+      if (o.plumbFrom && plumbFrom(log.version, o.plumbFrom)) o = Object.assign({}, o, o.plumbFrom.set);
       var r = resolve(log.args[o.name]), value, from, def = o.def;
       (o.before || []).forEach(function (b) { if (log.version && !versionAtLeast(log.version, b[0])) def = b[1]; });
       if (r) { value = r.value; from = r.from; }

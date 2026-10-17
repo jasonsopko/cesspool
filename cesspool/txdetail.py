@@ -132,6 +132,9 @@ def tx_record(t, row, c, known=None):
         # Settings whose value would refuse it, per software that relays it (plumb-check "fix").
         if row.get("fix"):
             rec["fx"] = row["fix"]
+        # Plumb's reasons at Knots' 83-byte -datacarriersize, when its 42-byte default changes them.
+        if "p83" in row:
+            rec["p83"] = row["p83"]
     if known:
         rec["kp"] = known
     if row is None or "error" in row:

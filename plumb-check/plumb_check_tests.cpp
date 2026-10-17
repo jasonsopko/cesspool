@@ -9,7 +9,9 @@
 // of Plumb's filters is responsible for ("fc": the count with that filter
 // alone turned off, taken from the full count). For a transaction the knots
 // or plumb profile relays while the other side sees data in it, "fix" says
-// what a node on that profile could set to refuse it (see Fix below).
+// what a node on that profile could set to refuse it (see Fix below). When
+// Plumb's 42-byte -datacarriersize default changes its reasons, "p83" holds
+// the reasons the plumb profile gives at Knots' 83.
 #include <chainparams.h>
 #include <coins.h>
 #include <common/args.h>
@@ -264,9 +266,12 @@ BOOST_AUTO_TEST_CASE(plumb_check)
     // (30), which Knots has no option for, so that reason is dropped below. Core 30's larger
     // datacarriersize cannot matter here: BIP110 caps OP_RETURN outputs at 83 bytes by consensus.
     profiles.push_back(MakeProfile("core", {{"-corepolicy", "1"}, {"-maxtxlegacysigops", "2500"}}, defaults));
-    // Stock Knots 29.4.2: none of Plumb's filters exist there.
-    profiles.push_back(MakeProfile("knots", {{"-rejectfakeoutputs", "0"}, {"-rejectdeadbranches", "0"}, {"-rejectbareenvelopes", "0"}, {"-rejectfakemultisig", "0"}, {"-rejecttokenmessages", "0"}}, defaults));
+    // Stock Knots 29.4.2: none of Plumb's filters exist there, and -datacarriersize defaults to 83
+    // where Plumb's is 42.
+    profiles.push_back(MakeProfile("knots", {{"-rejectfakeoutputs", "0"}, {"-rejectdeadbranches", "0"}, {"-rejectbareenvelopes", "0"}, {"-rejectfakemultisig", "0"}, {"-rejecttokenmessages", "0"}, {"-datacarriersize", "83"}}, defaults));
     profiles.push_back(MakeProfile("plumb", {}, defaults));
+    // Plumb with Knots' -datacarriersize, to tell what the 42-byte default refuses on its own.
+    const Profile plumb83{MakeProfile("plumb", {{"-datacarriersize", "83"}}, defaults)};
     // Plumb with one data-counting filter off at a time, to measure what each adds to the
     // count. -rejecttokenmessages needs no measurement: its reasons name it.
     std::vector<Profile> plumb_without;
@@ -359,6 +364,11 @@ BOOST_AUTO_TEST_CASE(plumb_check)
                 if (diff) fc.pushKV(q.name, diff);
             }
             row.pushKV("fc", fc);
+            if (!reasons.empty()) {
+                std::pair<size_t, size_t> unused;
+                const auto at83{Reasons(plumb83, tx, view, unused)};
+                if (at83 != reasons) row.pushKV("p83", Strings(at83));
+            }
         }
         // Settings that would refuse what a profile relays, for the transactions the site
         // shows: anything some profile refuses or counts data in. Clean transactions skip it.

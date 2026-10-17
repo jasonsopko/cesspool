@@ -9,10 +9,11 @@ out.
 - `plumb-check/plumb_check_tests.cpp` is built into `test_bitcoin` from a Plumb
   tree (`plumb-check/build.sh`). It runs the shipped policy code on each
   transaction three ways, each with that software's defaults: Bitcoin Core 31 (`-corepolicy` plus Core 30's legacy-sigop limit and multiple OP_RETURN outputs), stock Knots 29.4.2
-  (Plumb's filters off) and Plumb, and reports every reason each one
+  (Plumb's filters off and `-datacarriersize` at Knots' 83) and Plumb (42 since plumb7), and reports every reason each one
   trips and the data bytes it counts, plus, for Plumb, where the bytes sit
   and how many each of its four data-counting filters adds (the count with
-  that filter alone off). Nothing reimplements a filter.
+  that filter alone off), and, when Plumb's 42-byte limit changes its reasons, the
+  reasons it gives at 83 (`p83`). Nothing reimplements a filter.
   The site shows the Knots and Plumb verdicts only: Bitcoin Core does not
   accept block 961640 or any block after it, so no Core node has these blocks.
 - `cesspool/classify.py` names the protocol and finds the shapes Plumb does
