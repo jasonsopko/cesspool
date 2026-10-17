@@ -118,11 +118,11 @@ void Collect(F check, std::vector<std::string>& reasons)
 
 // Outputs whose hash or key is data, as MemPoolAccept::PreChecks finds them for the datacarrier
 // checks and the extra weight.
-std::vector<size_t> DataOutputs(const CTransaction& tx, const kernel::MemPoolOptions& o)
+std::vector<size_t> DataOutputs(const CTransaction& tx, const CCoinsViewCache& view, const kernel::MemPoolOptions& o)
 {
     std::vector<size_t> data_outputs(tx.vout.size(), 0);
     if (o.reject_fake_outputs && (o.datacarrier_fullcount || !o.accept_non_std_datacarrier || ::g_weight_per_data_byte > WITNESS_SCALE_FACTOR)) {
-        data_outputs = DataOutputBytes(tx);
+        data_outputs = DataOutputBytes(tx, &view);
     }
     return data_outputs;
 }
@@ -130,7 +130,7 @@ std::vector<size_t> DataOutputs(const CTransaction& tx, const kernel::MemPoolOpt
 // The datacarrier part of MemPoolAccept::PreChecks, same conditions.
 void DatacarrierReasons(const CTransaction& tx, const CCoinsViewCache& view, const kernel::MemPoolOptions& o, std::vector<std::string>& reasons, std::pair<size_t, size_t>& dcb_out)
 {
-    const auto dcb = DatacarrierBytes(tx, view, DataOutputs(tx, o));
+    const auto dcb = DatacarrierBytes(tx, view, DataOutputs(tx, view, o));
     dcb_out = dcb;
     if (o.datacarrier_fullcount || !o.accept_non_std_datacarrier) {
         if (dcb.second > 0 && !o.accept_non_std_datacarrier) reasons.emplace_back("txn-datacarrier-nonstandard");
@@ -145,7 +145,7 @@ void DatacarrierReasons(const CTransaction& tx, const CCoinsViewCache& view, con
 void SigopReasons(const CTransaction& tx, const CCoinsViewCache& view, const kernel::MemPoolOptions& o, std::vector<std::string>& reasons)
 {
     const int64_t sigops{GetTransactionSigOpCost(tx, view, STANDARD_SCRIPT_VERIFY_FLAGS)};
-    const int32_t extra_weight{CalculateExtraTxWeight(tx, view, ::g_weight_per_data_byte, DataOutputs(tx, o))};
+    const int32_t extra_weight{CalculateExtraTxWeight(tx, view, ::g_weight_per_data_byte, DataOutputs(tx, view, o))};
     const int64_t vsize{GetVirtualTransactionSize(GetTransactionWeight(tx) + extra_weight, sigops, ::nBytesPerSigOp)};
     if (sigops > MAX_STANDARD_TX_SIGOPS_COST || (::nBytesPerSigOpStrict && GetAccurateTransactionSigOpCost(tx, view, STANDARD_SCRIPT_VERIFY_FLAGS) > vsize * WITNESS_SCALE_FACTOR / ::nBytesPerSigOpStrict)) {
         reasons.emplace_back("bad-txns-too-many-sigops");
@@ -326,7 +326,7 @@ BOOST_AUTO_TEST_CASE(plumb_check)
 
             if (p.name != "plumb") continue;
             // Where the plumb profile finds the data, same calls as DatacarrierBytes.
-            const auto data_outputs{DataOutputBytes(tx)};
+            const auto data_outputs{DataOutputBytes(tx, &view)};
             UniValue ins{UniValue::VARR};
             size_t total{0};
             for (const CTxIn& txin : tx.vin) {
