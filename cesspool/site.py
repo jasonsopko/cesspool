@@ -1,5 +1,5 @@
 """Render cesspool.lol as static files from the block records."""
-import collections, datetime, functools, gzip, html, json, math, os, shutil, subprocess, tempfile, textwrap, time
+import collections, datetime, functools, gzip, hashlib, html, json, math, os, shutil, subprocess, tempfile, textwrap, time
 
 from . import classify, found, miner
 from .types import TYPES, info, KNOTS, PLUMB, NONE, ALLOWED, NOT_SPAM, KNOWN, DATACARRIER
@@ -8,6 +8,7 @@ HOME = os.environ.get("CESSPOOL_HOME", os.path.expanduser("~/.cesspool"))
 BLOCKS = f"{HOME}/blocks"
 TXD = f"{HOME}/txd"
 INDEX = f"{HOME}/index.json"
+OG_DRAWN = f"{HOME}/og.json"   # sha256 of the SVG behind each share image; delete it to draw every card again
 SRC = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 FILTERS = os.environ.get("PLUMB_FILTERS", os.path.expanduser("~/src/plumb/plumb/filters.json"))
 SITE = "https://cesspool.lol"
@@ -1894,11 +1895,34 @@ def og_svg(kind, **k):
     raise ValueError(kind)
 
 
+_og_drawn = None
+
+
 def render_png(svg, path):
+    """Draw a share card, unless this same SVG already drew the PNG at path."""
+    global _og_drawn
+    if _og_drawn is None:
+        try:
+            with open(OG_DRAWN) as f:
+                _og_drawn = json.load(f)
+        except (OSError, ValueError):
+            _og_drawn = {}
+    key = hashlib.sha256(svg.encode()).hexdigest()
+    if _og_drawn.get(path) == key and os.path.exists(path):
+        return
     os.makedirs(os.path.dirname(path), exist_ok=True)
     r = subprocess.run(["rsvg-convert", "-w", "1200", "-h", "630", "-o", path + ".tmp"], input=svg.encode(), capture_output=True)
     if r.returncode == 0:
         os.replace(path + ".tmp", path)
+        _og_drawn[path] = key
+
+
+def save_og_drawn():
+    if _og_drawn is None:
+        return
+    with open(OG_DRAWN + ".tmp", "w") as f:
+        json.dump(_og_drawn, f)
+    os.replace(OG_DRAWN + ".tmp", OG_DRAWN)
 
 
 # ---------------------------------------------------------------- build
@@ -1919,6 +1943,8 @@ def build(out, heights=None, all_blocks=False, og=True):
     # A --watch run can build more than once, so nothing read for the last build carries over.
     for cached in (named_by_payout, pool_addresses, miner.survey_kinds):
         cached.cache_clear()
+    global _og_drawn
+    _og_drawn = None   # read og.json again, so deleting it counts from the next build
     idx, changed = load_index()
     if not idx:
         return
@@ -2021,5 +2047,6 @@ def build(out, heights=None, all_blocks=False, og=True):
     write(out, "feed.xml", feed(idx))
     write(out, "robots.txt", "User-agent: *\nAllow: /\n")
     write(out, "404.html", page("/404", "Not found", '<div class="hero"><h1>Nothing down here</h1><p class="lede">That page does not exist. <a href="/">Back to the surface</a>.</p></div>', tip=tip))
+    save_og_drawn()
     # Last, so a page that sees the new tip reloads into pages that already show it.
     write(out, "tip.json", json.dumps({"h": tip["h"]}) + "\n")

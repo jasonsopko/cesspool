@@ -26,7 +26,7 @@ out.
 - `tools/update.py` runs from cron each minute with `--watch 57`: it checks the
   node's tip every 2 seconds, and when the best block changes fetches new
   blocks over REST, reprocesses anything a reorg replaced, renders what
-  changed.
+  changed. A share image is drawn again only when its SVG changed.
 
 The payload is never decoded or displayed.
 
@@ -39,7 +39,9 @@ write pages from the old code next to the new static files.
 
 `~/.cesspool/`: `raw/` gzipped REST blocks (about 340 kB each), `blocks/`
 one record per block, `index.json` summaries, `found.json` each block's
-coinbase tag and paying outputs, `bin/test_bitcoin-plumb`.
+coinbase tag and paying outputs, `og.json` a hash of the SVG behind each share
+image (delete it while holding `lock` to draw them all again, as after a font
+or rsvg-convert change), `bin/test_bitcoin-plumb`.
 
 Rebuild everything after a classifier change:
 
