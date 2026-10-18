@@ -1,4 +1,4 @@
-# cesspool.lol: static files rendered once a minute by tools/update.py.
+# cesspool.lol: static files rendered by tools/update.py, which checks the node every 2 seconds.
 server {
     listen 80;
     listen [::]:80;

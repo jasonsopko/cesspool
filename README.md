@@ -23,10 +23,17 @@ out.
 - `cesspool/found.py` writes the indexes behind Your Blocks (`/found/`): pool
   names, coinbase tags and payout addresses to block heights, as static JSON
   under `/d/` that `site.js` searches in the browser.
-- `tools/update.py` runs from cron each minute: fetches new blocks over REST,
-  reprocesses anything a reorg replaced, renders what changed.
+- `tools/update.py` runs from cron each minute with `--watch 57`: it checks the
+  node's tip every 2 seconds, and when the best block changes fetches new
+  blocks over REST, reprocesses anything a reorg replaced, renders what
+  changed.
 
 The payload is never decoded or displayed.
+
+A `--watch` run keeps the code it started with until it ends, 57 seconds after
+it started or later if an update is still running then. After a code change,
+wait for it to end before counting on the new code: until then a build can
+write pages from the old code next to the new static files.
 
 ## State
 

@@ -1715,7 +1715,7 @@ def about_page(idx, tip):
 <p>The payload. No images, no text, no file names. A spam transaction gets its type, its size and where the bytes sit. Displaying the contents is the service the spammer paid for.</p>
 <h2>Who mined it</h2>
 <p>Pools are named from the coinbase tag and payout addresses against Kilombino's pools-v2 list, with the same rules as <a href="https://reorg.watch">reorg.watch</a>. {esc(DATUM_NOTE)} Miners and pools can find their own blocks by payout address, pool name or coinbase tag on <a href="/found/">Your Blocks</a>.</p>
-<h2>Data</h2><p>One Plumb node's REST interface, checked every minute. Blocks replaced in a reorg are reprocessed.
+<h2>Data</h2><p>One Plumb node's REST interface, checked every 2 seconds. Blocks replaced in a reorg are reprocessed.
 The foul and raw-sewage blocks are also an <a href="/feed.xml">Atom feed</a>.</p>
 </div>'''
     return page("/about/", "About", body, nav="about", desc="How cesspool.lol grades blocks.", tip=tip)
@@ -1916,6 +1916,9 @@ def copy_static(out):
 
 def build(out, heights=None, all_blocks=False, og=True):
     """Render the summary pages, and block pages for `heights` (or all)."""
+    # A --watch run can build more than once, so nothing read for the last build carries over.
+    for cached in (named_by_payout, pool_addresses, miner.survey_kinds):
+        cached.cache_clear()
     idx, changed = load_index()
     if not idx:
         return

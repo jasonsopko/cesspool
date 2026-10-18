@@ -28,5 +28,5 @@ sudo nginx -t && sudo systemctl reload nginx
 
 # 3. Render the whole site once, then the minute cron.
 python3 tools/update.py --out /var/www/cesspool.lol --all
-( crontab -l; echo '* * * * * /usr/bin/nice -n 10 /usr/bin/python3 /home/jason/src/cesspool/tools/update.py --out /var/www/cesspool.lol >> /home/jason/cesspool.log 2>&1' ) | crontab -
+( crontab -l; echo '* * * * * /usr/bin/nice -n 10 /usr/bin/python3 /home/jason/src/cesspool/tools/update.py --out /var/www/cesspool.lol --watch 57 >> /home/jason/cesspool.log 2>&1' ) | crontab -
 curl -sI https://cesspool.lol/ | head -5
