@@ -1490,7 +1490,7 @@ def pool_page(idx, name, tip):
         body = f'''<div class="hero"><div class="kicker">Inspection report</div><h1>{esc(name)}</h1>
 <p class="lede">{plural(len(via), "block")} mined through {esc(name)} since the fork, and a DATUM gateway with {esc(name)} upstream built {"its" if len(via) == 1 else "every"} template.
 The gateway&#39;s node chooses the transactions, normally the miner&#39;s own, so {"that block is" if len(via) == 1 else "those blocks are"} counted under {via_link}.</p></div>'''
-        return page(f"/pool/{miner.slug(name)}/", name, body, nav="shame", desc=f"Every block mined through {name} was built by a DATUM miner.", tip=tip), None, None
+        return page(f"/pool/{miner.slug(name)}/", name, body, nav="shame", desc=f"Every block mined through {name} was built by a DATUM miner.", tip=tip), None, None, None
     p30 = pool_stats(window_blocks(idx, 30 * 86400)).get(name)
     pall = pool_stats(allb)[name]
     cur = p30 or pall
@@ -1567,7 +1567,7 @@ The gateway&#39;s node chooses the transactions, normally the miner&#39;s own, s
 {past_part}{operator}{plumb_cta() if cur["sn"] else ""}'''
     desc = f"Grade {L}. {pct(cur['share'], 2)} of {name}'s block space is spam."
     og = f"/og/pool/{miner.slug(name)}.png"
-    return page(f"/pool/{miner.slug(name)}/", f"{name}: grade {L}", body, nav="shame", desc=desc, og=og, tip=tip), cur, L
+    return page(f"/pool/{miner.slug(name)}/", f"{name}: grade {L}", body, nav="shame", desc=desc, og=og, tip=tip), cur, L, p30 is not None
 
 
 def status_chip(t):
@@ -1868,7 +1868,7 @@ def og_svg(kind, **k):
         else:
             name = f'<text x="70" y="230" font-family="IBM Plex Sans" font-weight="650" font-size="78" fill="{fg}">{esc(p["pool"][:22])}</text>'
         return (head + name +
-                f'<text x="70" y="296" font-family="IBM Plex Sans" font-size="34" fill="{mut}">Spam inspection report, last 30 days</text>'
+                f'<text x="70" y="296" font-family="IBM Plex Sans" font-size="34" fill="{mut}">Spam inspection report, {"last 30 days" if k["recent"] else "since the fork"}</text>'
                 f'<text x="70" y="400" font-family="IBM Plex Mono" font-weight="600" font-size="64" fill="{fg}">{esc(pct(p["share"], 2))}</text>'
                 f'<text x="70" y="450" font-family="IBM Plex Sans" font-size="32" fill="{mut}">of its block space is spam</text>'
                 f'<text x="70" y="540" font-family="IBM Plex Sans" font-size="32" fill="{fg}">{n(p["sn"])} spam transactions, {btc(p["sf"])} BTC in fees {"paid" if p["pool"].startswith(miner.DATUM_PREFIX) else "taken"}</text>'
@@ -2016,7 +2016,7 @@ def build(out, heights=None, all_blocks=False, og=True):
         r = pool_page(idx, name, tip)
         if not r:
             continue
-        html_, cur, L = r
+        html_, cur, L, recent = r
         write(out, f"pool/{miner.slug(name)}/index.html", html_)
         if cur is None:
             try:
@@ -2024,7 +2024,7 @@ def build(out, heights=None, all_blocks=False, og=True):
             except OSError:
                 pass
         if og and cur is not None:
-            render_png(og_svg("pool", p=cur, L=L), f"{out}/og/pool/{miner.slug(name)}.png")
+            render_png(og_svg("pool", p=cur, L=L, recent=recent), f"{out}/og/pool/{miner.slug(name)}.png")
     # A name that left the index (a renamed pool) would leave its page behind, frozen at an old tip.
     keep = {miner.slug(name) for name in pools}
     pdir = f"{out}/pool"
