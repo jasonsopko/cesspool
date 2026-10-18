@@ -59,18 +59,18 @@
   if (tipHave) {
     var checkTip = function () {
       if (document.hidden) return;
-      fetch("/tip.json?m=" + Math.floor(Date.now() / 30000), { cache: "no-store" })
+      fetch("/tip.json?m=" + Math.floor(Date.now() / 10000), { cache: "no-store" })
         .then(function (r) { return r.ok ? r.json() : null; })
         .then(function (j) {
           if (!j || !(j.h > tipHave)) return;
-          // Once per tip: a page the build no longer refreshes would otherwise reload every minute.
+          // Once per tip: a page the build no longer refreshes would otherwise reload on every check.
           var key = "tip-reload:" + location.pathname;
           try { if (sessionStorage.getItem(key) === String(j.h)) return; sessionStorage.setItem(key, String(j.h)); } catch (e) {}
           location.reload();
         })
         .catch(function () {});
     };
-    setInterval(checkTip, 60000);
+    setInterval(checkTip, 10000);
     document.addEventListener("visibilitychange", checkTip);
   }
 

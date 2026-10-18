@@ -459,7 +459,7 @@ def page(path, title, body, *, nav="", desc="", og=None, tip=None):
 '''
 
 
-ASSET_V = "27"
+ASSET_V = "28"
 
 
 def write(out, rel, text):
@@ -1749,13 +1749,13 @@ def privacy_page(tip):
 <h2>Everything else</h2>
 <ul><li>This site sets no cookies, and its own code runs no analytics. It has no accounts or ads.</li>
 <li>Every script, font and image comes from cesspool.lol. Nothing loads from other sites.</li>
-<li>Some pages check for a new block once a minute while they are on screen, and again when you come back to the tab. Each check is logged like any other request.</li>
+<li>Some pages check for a new block every 10 seconds while they are on screen, and again when you come back to the tab. Each check is logged like any other request.</li>
 <li>What you paste into <a href="/check/">Check Node</a> never leaves your browser.</li>
 <li>Your browser keeps two notes for this site: the tab you last picked, and the last block a page reloaded for. Neither is sent to us.</li>
 <li>Links to other sites leave this one, and those sites have their own policies. Your browser tells them only that you came from cesspool.lol, not which page.</li></ul>
 <h2>Questions</h2>
 <p>Open an issue on <a href="https://github.com/jasonsopko/cesspool/issues">the site's GitHub repository</a>, where its source and its nginx configuration also live. If the logging changes, this page changes with it.</p>
-<p class="small muted">Updated 11 October 2026.</p>
+<p class="small muted">Updated 18 October 2026.</p>
 </div>'''
     return page("/privacy/", "Privacy", body, desc="What cesspool.lol records when you visit, and how long it keeps it.", tip=tip)
 
