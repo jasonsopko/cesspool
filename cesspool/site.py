@@ -1855,7 +1855,7 @@ def og_svg(kind, **k):
                 f'<text x="70" y="268" font-family="IBM Plex Sans" font-size="{36 if len(by_text(b)) <= 40 else 28}" fill="{mut}">{esc(by_text(b)[:52])}</text>'
                 f'<g transform="rotate(-3 300 380)"><rect x="70" y="330" width="{60 + 34 * len(label)}" height="86" fill="none" stroke="{color}" stroke-width="6"/>'
                 f'<text x="100" y="391" font-family="IBM Plex Mono" font-weight="700" font-size="48" letter-spacing="6" fill="{color}">{label.upper()}</text></g>'
-                f'<text x="70" y="500" font-family="IBM Plex Sans" font-size="38" fill="{fg}">{pct(b["share"])} of the block is spam: {n(b["sn"])} transaction{"s" if b["sn"] != 1 else ""}</text>'
+                f'<text x="70" y="500" font-family="IBM Plex Sans" font-size="38" fill="{fg}">{esc(pct(b["share"]))} of the block is spam: {n(b["sn"])} transaction{"s" if b["sn"] != 1 else ""}</text>'
                 f'<text x="70" y="560" font-family="IBM Plex Sans" font-size="28" fill="{mut}">{size(b["sd"])} of payload. Fees taken: {btc(b["sf"])} BTC.</text>'
                 + cube_svg + "</svg>")
     if kind == "pool":
@@ -1869,7 +1869,7 @@ def og_svg(kind, **k):
             name = f'<text x="70" y="230" font-family="IBM Plex Sans" font-weight="650" font-size="78" fill="{fg}">{esc(p["pool"][:22])}</text>'
         return (head + name +
                 f'<text x="70" y="296" font-family="IBM Plex Sans" font-size="34" fill="{mut}">Spam inspection report, last 30 days</text>'
-                f'<text x="70" y="400" font-family="IBM Plex Mono" font-weight="600" font-size="64" fill="{fg}">{pct(p["share"], 2)}</text>'
+                f'<text x="70" y="400" font-family="IBM Plex Mono" font-weight="600" font-size="64" fill="{fg}">{esc(pct(p["share"], 2))}</text>'
                 f'<text x="70" y="450" font-family="IBM Plex Sans" font-size="32" fill="{mut}">of its block space is spam</text>'
                 f'<text x="70" y="540" font-family="IBM Plex Sans" font-size="32" fill="{fg}">{n(p["sn"])} spam transactions, {btc(p["sf"])} BTC in fees {"paid" if p["pool"].startswith(miner.DATUM_PREFIX) else "taken"}</text>'
                 f'<g transform="rotate(-4 960 320)"><rect x="840" y="200" width="240" height="240" rx="18" fill="none" stroke="{color}" stroke-width="12"/>'
@@ -1890,7 +1890,7 @@ def og_svg(kind, **k):
             y = 250 + i * 70
             rows += (f'<text x="70" y="{y}" font-family="IBM Plex Mono" font-size="34" fill="{mut}">{i + 1}</text>'
                      f'<text x="130" y="{y}" font-family="IBM Plex Sans" font-weight="600" font-size="40" fill="{fg}">{esc(p["pool"][:34])}</text>'
-                     f'<text x="1130" y="{y}" text-anchor="end" font-family="IBM Plex Mono" font-weight="600" font-size="40" fill="#b98a3c">{pct(p["share"], 2)}</text>')
+                     f'<text x="1130" y="{y}" text-anchor="end" font-family="IBM Plex Mono" font-weight="600" font-size="40" fill="#b98a3c">{esc(pct(p["share"], 2))}</text>')
         return (head + f'<text x="70" y="175" font-family="IBM Plex Sans" font-weight="650" font-size="56" fill="{fg}">Hall of Shame, last 7 days</text>' + rows + "</svg>")
     raise ValueError(kind)
 
