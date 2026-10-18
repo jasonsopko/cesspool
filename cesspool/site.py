@@ -1370,7 +1370,7 @@ def check_page(tip):
 <p style="max-width:75ch">Bitcoin Knots for StartOS 0.3 runs Knots 29.4 at its newest, with the same limits as above, and starts Reject Tokens off. Under Config, Mempool:</p>
 {switch_list("startos03")}
 <h3>StartOS 0.4</h3>
-<p style="max-width:75ch">Under Actions, Mempool Settings. A switch left unset writes nothing, so Knots&#39; own default applies, whatever the footnote under it says. Plumb&#39;s StartOS package uses the same screen; its five extra filters are on and have no switches there.</p>
+<p style="max-width:75ch">Under Actions &amp; Config, Mempool Settings. A switch left unset writes nothing, so Knots&#39; own default applies, whatever the footnote under it says. Plumb&#39;s StartOS package uses the same screen; its five extra filters are on and have no switches there.</p>
 {switch_list("startos04")}
 <h3>Knots or Plumb, anywhere else</h3>
 <p style="max-width:75ch">Set them in <code>bitcoin.conf</code>: <a href="#settings">the recommended files are below</a>.</p>
