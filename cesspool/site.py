@@ -1055,6 +1055,17 @@ AGGR_FACTS = {"dust": "0.00005", "dust_exact": "0.00004964", "value": 55, "sewag
               "ln_all": 19197, "fees": 72291075, "fake_value": 696, "liquid": 1,
               "p2wsh": 550, "p2tr": 550, "p2wpkh": 490, "p2sh": 900, "p2pkh": 910}
 CONF_NAMES = {"knots": "Bitcoin Knots 29.4.2", "plumb": PLUMB_NAME}
+# The Lightning files: the recommended ones with three settings changed. From tools/lightning_facts.py 961640
+# 978047, which counts every transaction in the cached blocks. txs: transactions, not counting coinbases;
+# p2a_under_240: those with a pay-to-anchor output under 240 sat; v3_sub_floor: version 3 transactions paying
+# less than their plain vsize in sat, so under the 1 sat/vB floor on any sizing, v3_zero_fee of them paying
+# nothing, v3_sub_floor_relayed those with a version 3 child in the same block paying 1 sat/vB for the pair,
+# the only way such a parent gets through package relay; ln: Lightning force closes (locktime's top byte 0x20,
+# every sequence's top byte 0x80), ln_anchor_pair those with two 330-sat P2WSH outputs, ln_run_hit those with
+# three or more distinct P2WSH outputs sharing one value of 546 sat or less, which -rejectfakeoutputs
+# refuses. The weight share of the P2WSH runs comes from AGGR_FACTS.
+LN_FACTS = {"lo": 961640, "hi": 978047, "txs": 3878328, "p2a_under_240": 0, "v3_sub_floor": 37, "v3_zero_fee": 37,
+            "v3_sub_floor_relayed": 0, "ln": 19448, "ln_anchor_pair": 6839, "ln_run_hit": 0}
 
 
 def conf_comment(*paras):
@@ -1103,10 +1114,11 @@ def conf_stricter(prog):
             "whose scripts start with a 32-byte value dropped that way. cesspool.lol does not count those as "
             f"sewage: {SITE}/about/#bar."),
         "subdustfeepenalty": conf_comment(
-            "The default. With it, and with mempooltruc at its default, a fee-free version 3 transaction with a "
-            "zero-value pay-to-anchor output is refused even beside a child that pays its fee: the package "
-            "Lightning's zero-fee commitment channels use. It relays only with subdustfeepenalty=0 and "
-            f"mempooltruc=enforce together. None was mined from block {f['lo']} to {f['hi']}."),
+            "The default. With it, a version 3 transaction that pays no fee and carries a pay-to-anchor output of at "
+            "most 240 sat is refused even beside a child that pays for both: the package Lightning's zero-fee "
+            "commitment channels use. It relays only with subdustfeepenalty=0 and mempooltruc=enforce, plus "
+            "permitephemeral=anchor,-send,dust when the anchor holds 1 to 239 sat; the Lightning file at "
+            f"{SITE}/check/#lightning sets all three. None was mined from block {LN_FACTS['lo']} to {LN_FACTS['hi']}."),
         "permitbaredatacarrier": conf_comment(
             "The default. It refuses a transaction whose only output is an OP_RETURN. In the same blocks it "
             f"also refuses {n(k['sweeps'])} sweeps of Lightning anchors and other dust into fees, whose OP_RETURN "
@@ -1240,9 +1252,124 @@ def aggressive_conf():
     return "\n".join(lines) + "\n"
 
 
+def lightning_conf(prog):
+    """The Lightning file for "knots" or "plumb", served at /check/<prog>-lightning.conf: the recommended file
+    with the three settings a zero-fee commitment channel needs, the dust fee settings written out at their
+    defaults, and what the change lets through, from LN_FACTS."""
+    a, l = AGGR_FACTS, LN_FACTS
+    name = "Knots" if prog == "knots" else "Plumb"
+    comments = conf_stricter(prog) | {
+        "subdustfeepenalty": conf_comment(
+            "The Knots default is 1, which refuses the zero-fee commitment package described above. Off, a "
+            "pay-to-anchor output under its dust limit no longer counts against the fee of the transaction that "
+            "creates it. It is the only dust output Knots permits at all: permitephemeral below keeps every other "
+            "dust output refused, with or without this line."),
+        "mempooltruc": conf_comment(
+            "The Knots default is accept, which treats a version 3 transaction like any other and holds it to the "
+            "relay floor on its own. enforce is the Core default: a version 3 parent may pay nothing when its child "
+            "pays for both, and in return it gets at most one unconfirmed parent or child, 10,000 vbytes for the "
+            "parent and 1,000 for the child."),
+        "permitephemeral": conf_comment(
+            "The Knots default is anchor,-send,-dust: the only dust output it permits is a pay-to-anchor worth "
+            "exactly zero. dust adds a pay-to-anchor holding less than its dust limit, which a zero-fee commitment "
+            "carries when the channel trimmed a small output into it. send stays off, so no other output type is "
+            "relayed as dust. The transaction must still pay no fee of its own, and the child must still spend the "
+            "anchor."),
+        "dustrelayfee": conf_comment(
+            "The defaults, written out. Anything above 0.00003 makes 330-sat anchors dust; see the note at the top."),
+    }
+    if prog == "plumb":
+        comments["rejectfakeoutputs"] = conf_comment(
+            "Three or more P2WSH outputs in one transaction sharing one value of 546 sat or less count as data, "
+            "which refuses a force close whose commitment carries three or more HTLC outputs of the same value "
+            f"between 354 sat, the floor channels trim HTLCs under, and 546. None of the {n(l['ln'])} force closes "
+            f"mined from block {l['lo']} to {l['hi']} carried three or more P2WSH outputs of one value of 546 sat or "
+            "less. Set rejectfakeoutputs=0 to remove the case; "
+            "the node then relays everything that filter catches, among it the runs of small P2WSH outputs that "
+            f"stage data for later reveals, {pct(a['run_w'] / a['sewage_w'], 0)} by weight of the sewage the "
+            "recommended Knots file relays.")
+    apart = ("apart from the OP_RETURN close noted below" if prog == "knots" else
+             "apart from the OP_RETURN close noted below and the one case noted above rejectfakeoutputs at the end "
+             "of this file")
+    if prog == "knots":
+        own = ("Knots' spam filter settings are written out so that a corepolicy=1 set elsewhere can no longer reset "
+               "them. The comments above some of the defaults say what they refuse that is not spam. Knots' Spam "
+               "filtering tab also has fee, rate-limit, package-size, unknown-witness and bare-anchor settings; this "
+               "file leaves those alone. A corepolicy=1 set elsewhere still changes settings this file does not set, "
+               "such as the minimum relay fee.")
+        files = ("settings.json and bitcoin_rw.conf in the data directory, where the Knots GUI saves its settings, "
+                 "win over this file, as does the command line.")
+    else:
+        own = ("Plumb's spam filter settings are written out so that a corepolicy=1 set elsewhere can no longer reset "
+               "them. The comments above some of the defaults say what they refuse that is not spam. The last five "
+               "are Plumb's own; the rest match the Knots file. Fee, rate-limit, package-size, unknown-witness and "
+               "bare-anchor settings are left alone. A corepolicy=1 set elsewhere still changes settings this file "
+               "does not set, such as the minimum relay fee.")
+        files = "settings.json and bitcoin_rw.conf in the data directory win over this file, as does the command line."
+    lines = [f"# bitcoin.conf for {CONF_NAMES[prog]} behind a Lightning node", f"# {SITE}/check/", "#"] + conf_comment(
+        f"The recommended {name} file with three lines changed, subdustfeepenalty=0, mempooltruc=enforce and "
+        "permitephemeral=anchor,-send,dust, and the dust fee settings written out at their defaults. A Lightning "
+        "node that opens zero-fee commitment channels needs the three lines: LDK 0.2 and later can open them "
+        "between LDK peers, eclair 0.14 has them as an option that is off by default, and LND 0.21 and CLN 26.06 "
+        "show no sign of them. Everything else Lightning sends, force closes of anchor channels with their 330-sat "
+        "anchors, the fee bump that spends an anchor, HTLC-timeout spends and mutual closes, already relays with "
+        f"the recommended file, {apart}, so a node that does not open those channels does not need this one.",
+        "The commitment transaction of a zero-fee commitment channel is version 3, pays no fee itself beyond a "
+        "trimmed remainder, and carries one pay-to-anchor output of at most 240 sat, zero unless a trimmed output "
+        "or rounding leaves something in it; a child spends the anchor and pays for both. Knots' default "
+        "subdustfeepenalty=1 takes the anchor's dust shortfall, 240 sat for an empty anchor, off the parent's fee, "
+        "which must be exactly zero for a transaction with a dust output, so the parent is refused: \"dust, tx with "
+        "dust output must be 0-fee\". With the penalty off, mempooltruc=accept still holds the parent to the 1 "
+        "sat/vB relay floor on its own: \"min relay fee not met\". And the default permitephemeral=anchor,-send,-dust "
+        "refuses an anchor holding a trimmed amount, 1 to 239 sat: \"dust-nonzero\". All three lines are needed. "
+        "Core 29 relays these packages and LDK's 0.2 release notes say a path of Core 29 nodes to a miner is "
+        "required; with these three lines Knots relays them too. Two Knots pull requests on the first two "
+        "settings, #438 and #447, are open.",
+        "What the three lines let through that the recommended file refuses: a version 3 transaction that pays "
+        "less than the 1 sat/vB relay floor on its own, nothing or some fee under it, with at most one "
+        "pay-to-anchor output under its dust limit, when it arrives with a version 3 child that pays the floor for "
+        "both and spends the anchor if there is one. The child pays on the same sizing as any other transaction "
+        "here, so data in the parent still costs 2 vbytes a byte, and every other setting in this file applies to "
+        "both. TRUC enforcement also caps the parent at 10,000 vbytes and the child at 1,000, with no other "
+        "unconfirmed parent or child, and refuses an unconfirmed chain that mixes version 3 with other versions, "
+        f"as Core does. From block {l['lo']} to {l['hi']} ({n(l['txs'])} transactions, not counting coinbases) "
+        "nothing mined is relayed by this file and refused by the recommended one: no mined transaction had a "
+        f"pay-to-anchor output under 240 sat, and the {l['v3_sub_floor']} version 3 transactions mined paying less "
+        "than the floor on their own, every one of them paying nothing, each lack a version 3 child paying the "
+        "floor for both, so a miner took them directly.",
+        "Do not raise dustrelayfee or turn on dustdynamic on this node. Anchor channels put two 330-sat anchors on "
+        "every commitment transaction, and any dustrelayfee above the default 0.00003 makes 330 sat dust, and from "
+        "there Knots refuses every anchor force close; a force close that misses its deadline can lose the "
+        "payments in flight in that channel. A fee-paying child does not help; dust is not a fee failure.",
+        f"The datacarriersize of {DATACARRIER_SIZE['plumb']} refuses one Lightning transaction the Knots default of "
+        f"{DATACARRIER_SIZE['knots']} relays: a mutual close that burns a balance too small to pay out into an "
+        f"OP_RETURN script longer than {DATACARRIER_SIZE['plumb']} bytes, which is a push of more than "
+        f"{DATACARRIER_SIZE['plumb'] - 2}. The spec lets a side do that with a push of 6 to 80 bytes; raise the "
+        f"value to {DATACARRIER_SIZE['knots']} if your node does.",
+        own,
+        "If your bitcoin.conf already sets one of these options, or turns one off with a no line such as "
+        "nodatacarrier=1, change or remove that line rather than adding a second one: with two lines, which "
+        f"one wins depends on their order and form. A line under [main] wins over lines outside it. {files} "
+        "Restart the node after editing.") + [""]
+    settings = []
+    for o in SETTINGS_KNOTS:
+        if o == "subdustfeepenalty=1":
+            settings += ["subdustfeepenalty=0", "mempooltruc=enforce"]
+        elif o == "permitephemeral=anchor,-send,-dust":
+            settings.append("permitephemeral=anchor,-send,dust")
+        else:
+            settings.append(o)
+    settings += ["dustrelayfee=0.00003", "dustdynamic=off"] + (list(SETTINGS_PLUMB) if prog == "plumb" else [])
+    for opt in settings:
+        lines += comments.get(opt.split("=")[0], []) + [opt]
+    return "\n".join(lines) + "\n"
+
+
 CONF_FILES = {"plumb": (lambda: recommended_conf("plumb"), f"Download the {CONF_NAMES['plumb'].split(' 29')[0]} file"),
               "knots": (lambda: recommended_conf("knots"), f"Download the {CONF_NAMES['knots'].split(' 29')[0]} file"),
-              "knots-aggressive": (aggressive_conf, "Download the aggressive Knots file")}
+              "knots-aggressive": (aggressive_conf, "Download the aggressive Knots file"),
+              "plumb-lightning": (lambda: lightning_conf("plumb"), "Download the Plumb Lightning file"),
+              "knots-lightning": (lambda: lightning_conf("knots"), "Download the Knots Lightning file")}
 
 
 def conf_pane(key, on):
@@ -1258,11 +1385,29 @@ def aggressive_note():
     return f'''<p class="small" id="aggressive" style="max-width:75ch"><b>The aggressive Knots file is not the recommendation.</b> It is the recommended Knots file with <code>dustrelayfee={a["dust"]}</code> and <code>bytespersigopstrict={a["value"]}</code>, for operators who will refuse some ordinary transactions to refuse more spam. From block {f["lo"]} to {f["hi"]} cesspool.lol lists {n(f["sewage"])} transactions as sewage. Knots relays {n(a["sewage"])} of them with the recommended file and {n(a["left"])} with this one, which also refuses {n(a["dust_other"])} more that are not sewage, {n(a["ln"])} of them Lightning force closes. Do not use it on a node that a Lightning node sends transactions through: the Lightning node cannot force close an anchor channel, and a force close that misses its deadline can lose the payments in flight. Plumb with its own recommended file refuses {n(f["plumb_sewage"])} of the {n(f["sewage"])} without raising either value.</p>'''
 
 
+def lightning_pane():
+    """One pane for both Lightning files, Plumb first."""
+    parts = []
+    for key, head in (("plumb-lightning", "Plumb"), ("knots-lightning", "Knots")):
+        make, label = CONF_FILES[key]
+        conf = make()
+        parts.append(f'<p class="small" style="margin:10px 0 4px"><b>{head}</b></p>\n<pre class="conf">{esc(conf)}</pre>\n'
+                     f'<p><a class="btn" href="/check/{key}.conf" download="bitcoin.conf">{esc(label)}</a> '
+                     f'<button class="copy" data-copy="{esc(conf)}">Copy it</button></p>')
+    return '<div class="tabpane" id="conf-lightning" data-group="conf">\n' + "\n".join(parts) + "</div>"
+
+
+def lightning_note():
+    l = LN_FACTS
+    return f'''<p class="small" id="lightning" style="max-width:75ch"><b>The Lightning files are for a node that a Lightning node sends transactions through.</b> Everything a CLN or LND node broadcasts relays with the recommended files, apart from a mutual close that burns a tiny balance into an OP_RETURN over 42 bytes and, on Plumb, the one case at the end of this note: force closes of anchor channels with their 330-sat anchors, the fee bump that spends an anchor, HTLC-timeout spends, mutual closes. The commitment transaction of a zero-fee commitment channel does not: it is version 3, pays no fee itself beyond a trimmed remainder, and carries one pay-to-anchor output of at most 240 sat, with a child paying for both, and three Knots defaults refuse it. The Lightning files are the recommended files with those three changed, <code>subdustfeepenalty=0</code>, <code>mempooltruc=enforce</code> and <code>permitephemeral=anchor,-send,dust</code>, and the dust fee settings written out at their defaults. What the three lines let through: a version 3 transaction that pays less than the 1 sat/vB relay floor on its own, with at most one pay-to-anchor output under its dust limit, when it arrives with a version 3 child that pays the floor for both. Data in it costs what it costs anywhere else in the file. From block {l["lo"]} to {l["hi"]} nothing mined fits that description. LDK 0.2 and later can open these channels between LDK peers, eclair 0.14 has them as an option that is off by default, and LND 0.21 and CLN 26.06 show no sign of them. Do not raise <code>dustrelayfee</code> or turn on <code>dustdynamic</code> on such a node: anything above the default makes the 330-sat anchors dust, and every anchor force close is refused. Plumb only: <code>rejectfakeoutputs</code> refuses a commitment with three or more HTLC outputs of the same value between 354 and 546 sat; none of the {n(l["ln"])} force closes mined in those blocks carried three or more P2WSH outputs of one value of 546 sat or less. The comments above each changed setting say the rest.</p>'''
+
+
 def settings_section():
     return f'''<h3 id="settings" style="margin-top:22px">Recommended bitcoin.conf</h3>
-<p class="small" style="max-width:75ch">The usual ways a filter gets turned off are <code>corepolicy=1</code>, a filter switched off, <code>acceptnonstdtxn=1</code>, or a setting changed in the Knots GUI. The Plumb and Knots files write their filter settings out, so a <code>corepolicy=1</code> set elsewhere can no longer reset them (it still changes settings they do not set, such as the minimum relay fee), and set three values stricter than Knots&#39; defaults: <code>datacarriersize=42</code> (Plumb&#39;s own default since plumb7), <code>datacarriercost=2</code> and <code>bytespersigopstrict=51</code>. The comment above each says what it does, and <a href="#fake-multisig">the last section</a> explains the third. If your <code>bitcoin.conf</code> already sets one of these options, or turns one off with a no line such as <code>nodatacarrier=1</code>, change or remove that line rather than adding a second one. Keep any stricter value you set on purpose, such as <code>datacarrier=0</code>. Knots does not know Plumb&#39;s five options, so use the file for the program you run.</p>
-<div class="tabs" data-group="conf"><button data-pane="conf-plumb" class=on>Plumb</button><button data-pane="conf-knots">Knots</button><button data-pane="conf-knots-aggressive">Knots, aggressive</button></div>{conf_pane("plumb", True)}{conf_pane("knots", False)}{conf_pane("knots-aggressive", False)}
+<p class="small" style="max-width:75ch">The usual ways a filter gets turned off are <code>corepolicy=1</code>, a filter switched off, <code>acceptnonstdtxn=1</code>, or a setting changed in the Knots GUI. The Plumb and Knots files write their filter settings out, so a <code>corepolicy=1</code> set elsewhere can no longer reset them (it still changes settings they do not set, such as the minimum relay fee), and set three values stricter than Knots&#39; defaults: <code>datacarriersize=42</code> (Plumb&#39;s own default since plumb7), <code>datacarriercost=2</code> and <code>bytespersigopstrict=51</code>. The comment above each says what it does, and <a href="#fake-multisig">the last section</a> explains the third. If your <code>bitcoin.conf</code> already sets one of these options, or turns one off with a no line such as <code>nodatacarrier=1</code>, change or remove that line rather than adding a second one. Keep any stricter value you set on purpose, such as <code>datacarrier=0</code>. Knots does not know Plumb&#39;s five options, so use the file for the program you run. A node that a Lightning node sends transactions through takes the <a href="#lightning">Lightning</a> file for its program instead.</p>
+<div class="tabs" data-group="conf"><button data-pane="conf-plumb" class=on>Plumb</button><button data-pane="conf-knots">Knots</button><button data-pane="conf-knots-aggressive">Knots, aggressive</button><button data-pane="conf-lightning">Lightning</button></div>{conf_pane("plumb", True)}{conf_pane("knots", False)}{conf_pane("knots-aggressive", False)}{lightning_pane()}
 {aggressive_note()}
+{lightning_note()}
 <p class="small" style="max-width:75ch">The Knots GUI saves these settings to <code>settings.json</code> and <code>bitcoin_rw.conf</code> in the data directory, and both win over <code>bitcoin.conf</code>, as does anything on the command line or in a service file. Remove the matching entries there. After a restart, this shows each value and where it came from:</p>
 <pre class="conf">{esc(SETTINGS_CHECK)}</pre>
 <p class="small" style="max-width:75ch">When <code>bitcoin.conf</code> sets an option more than once, a line under <code>[main]</code> is the one in use, even though it is listed last. Otherwise the first plain line is, except that a no line such as <code>nodatacarrier=1</code> cancels the lines above it. <code>~/.bitcoin</code> is the default data directory on Linux; use yours if it differs. A Plumb node also logs one <code>Plumb filter</code> line per filter. Plumb&#39;s filter guide measures what <a href="{LOWER_LIMITS}">lower data limits</a> refuse.</p>'''
@@ -1373,7 +1518,7 @@ def check_page(tip):
 <p style="max-width:75ch">Under Actions &amp; Config, Mempool Settings. A switch left unset writes nothing, so Knots&#39; own default applies, whatever the footnote under it says. Plumb&#39;s StartOS package uses the same screen; its five extra filters are on and have no switches there.</p>
 {switch_list("startos04")}
 <h3>Knots or Plumb, anywhere else</h3>
-<p style="max-width:75ch">Set them in <code>bitcoin.conf</code>: <a href="#settings">the recommended files are below</a>.</p>
+<p style="max-width:75ch">Set them in <code>bitcoin.conf</code>: <a href="#settings">the recommended files are below</a>, with <a href="#lightning">a Lightning version</a> for a node that a Lightning node sends transactions through.</p>
 <h2>Any node: read its startup lines</h2>
 <p style="max-width:75ch">Each time it starts, the node writes its version and every setting it was given, with where each one came from, to <code>debug.log</code>. Run this where the node runs, paste the result, and the checker below says which filters are on and what turned any of them off.</p>
 <pre class="conf">{esc(SETTINGS_CHECK)}</pre>
