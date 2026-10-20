@@ -742,7 +742,7 @@
       if (info.case) what.push(el("p", { cls: "small" }, el("b", { text: "The case for it. " }), prose(info.case), " ", el("a", { href: "/about/#bar", text: "The bar" }), "."));
     } else if (tier === "gray") {
       title = (tx.lb && tx.lb[0]) || "Small note"; st = [stamp("Gray water", "var(--gray)")];
-      what.push(el("p", { text: tx.dt ? "Carries data inside " + plumb + "'s default " + (cat.dcsize || {}).plumb + "-byte allowance, the room it leaves for notes such as 32-byte commitments. cesspool does not count it as sewage, and does not call it clean either."
+      what.push(el("p", { text: tx.dt ? "Carries data inside " + plumb + "'s default " + (cat.dcsize || {}).plumb + "-byte allowance, the room it leaves for notes such as 32-byte commitments. cesspool does not count it as sewage, and it does not touch the block's grade."
         : "Carries an OP_RETURN with no data in it. cesspool does not count it as sewage." }));
     } else {
       var sh = shape(tx), kn = tx.kp && cat.known && cat.known[tx.kp];

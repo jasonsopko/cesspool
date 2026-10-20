@@ -99,7 +99,6 @@ nav.main.more { -webkit-mask-image: linear-gradient(to right, #000 calc(100% - 3
 
 /* grade colors */
 .g-pristine { color: var(--pristine); }
-.g-clean { color: var(--water); }
 .g-tainted { color: var(--tainted); }
 .g-foul { color: var(--foul); }
 .g-raw { color: var(--sewage); }

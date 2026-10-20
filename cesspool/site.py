@@ -28,7 +28,6 @@ FORK = 961640
 
 GRADES = [  # key, label, css
     ("pristine", "Pristine", "g-pristine"),
-    ("clean", "Clean", "g-clean"),
     ("tainted", "Tainted", "g-tainted"),
     ("foul", "Foul", "g-foul"),
     ("raw", "Raw sewage", "g-raw"),
@@ -90,9 +89,14 @@ def tm(t, ago=True):
 
 # ---------------------------------------------------------------- grading
 
-def grade(sn, gn, share):
+GRADE_VERSION = 2  # bump when grade() changes: load_index then regrades every stored summary
+
+
+def grade(sn, share):
+    """Pristine is a block with no sewage, what a Plumb node at its defaults builds. Small notes inside the
+    data allowance are gray water: the block page counts them, the grade does not."""
     if sn == 0:
-        return "pristine" if gn == 0 else "clean"
+        return "pristine"
     if share < 0.01:
         return "tainted"
     if share < 0.10:
@@ -146,7 +150,7 @@ def summarize(rec):
         "sn": rec["sewage"]["n"], "sw": sw, "sf": rec["sewage"]["fee"], "sd": rec["sewage"]["data"],
         "sm": rec["sewage"]["missed"], "gn": rec["gray"]["n"], "gw": rec["gray"]["w"],
         "ps": plumb_stops, "psw": plumb_stops_w, "ksw": knots_stops_w,
-        "share": share, "grade": grade(rec["sewage"]["n"], rec["gray"]["n"], share),
+        "share": share, "grade": grade(rec["sewage"]["n"], share),
         "ty": ty, "top": top, "bld": rec.get("bld", ""), "dtag": rec.get("dtag", ""), "via": rec.get("via", False),
         "kp": rec.get("kp", {}), "kpf": kp_flagged(rec),
     }
@@ -166,24 +170,31 @@ def load_index():
     if os.path.exists(INDEX):
         with open(INDEX) as f:
             idx = {int(k): v for k, v in json.load(f).items()}
-    changed = []
+    changed = []  # heights whose summary differs: their pages get rendered again
+    rewrite = False
     for name in os.listdir(BLOCKS):
         if not name.endswith(".json"):
             continue
         h = int(name[:-5])
         p = f"{BLOCKS}/{name}"
         m = os.path.getmtime(p)
-        if h not in idx or idx[h].get("_m") != m:
+        old = idx.get(h)
+        stale = old is None or old.get("_m") != m  # a new or rewritten record always counts as changed
+        if stale or old.get("_g") != GRADE_VERSION:
             with open(p) as f:
                 rec = json.load(f)
             s = summarize(rec)
             s["_m"] = m
+            s["_g"] = GRADE_VERSION
             idx[h] = s
-            changed.append(h)
+            rewrite = True
+            # A regrade touches every stored summary; only the blocks it changes need their pages again.
+            if stale or {k: v for k, v in old.items() if k[0] != "_"} != {k: v for k, v in s.items() if k[0] != "_"}:
+                changed.append(h)
     for h in [h for h in idx if not os.path.exists(f"{BLOCKS}/{h}.json")]:
         del idx[h]
         changed.append(h)
-    if changed:
+    if changed or rewrite:
         tmp = INDEX + ".tmp"
         with open(tmp, "w") as f:
             json.dump(idx, f, separators=(",", ":"))
@@ -197,12 +208,13 @@ def pool_stats(blocks):
     by = {}
     for b in blocks:
         k = who(b)
-        p = by.setdefault(k, {"pool": k, "blocks": 0, "dirty": 0, "pristine": 0, "w": 0, "sw": 0,
+        p = by.setdefault(k, {"pool": k, "blocks": 0, "dirty": 0, "pristine": 0, "nodata": 0, "w": 0, "sw": 0,
                                        "sn": 0, "sf": 0, "sd": 0, "sm": 0, "fees": 0, "psw": 0, "worst": None,
                                        "ty": collections.Counter()})
         p["blocks"] += 1
         p["dirty"] += b["sn"] > 0
         p["pristine"] += b["grade"] == "pristine"
+        p["nodata"] += b["sn"] == 0 and b["gn"] == 0  # not one byte of data, not even a small note
         for k in ("w", "sw", "sn", "sf", "sd", "sm", "fees", "psw"):
             p[k] += b[k]
         if b["sn"] and (p["worst"] is None or b["sw"] > p["worst"]["sw"]):
@@ -229,12 +241,12 @@ def window_blocks(idx, seconds):
 
 def totals(blocks):
     t = {"blocks": len(blocks), "w": 0, "sw": 0, "sn": 0, "sf": 0, "sd": 0, "sm": 0, "fees": 0, "psw": 0, "ksw": 0,
-         "clean": 0, "pristine": 0, "raw": 0, "ntx": 0}
+         "clean": 0, "nodata": 0, "raw": 0, "ntx": 0}
     for b in blocks:
         for k in ("w", "sw", "sn", "sf", "sd", "sm", "fees", "psw", "ksw", "ntx"):
             t[k] += b[k]
         t["clean"] += b["sn"] == 0
-        t["pristine"] += b["grade"] == "pristine"
+        t["nodata"] += b["sn"] == 0 and b["gn"] == 0
         t["raw"] += b["grade"] == "raw"
     t["share"] = t["sw"] / t["w"] if t["w"] else 0
     return t
@@ -362,7 +374,7 @@ PLUMB_MARK = ('<svg viewBox="-72 -72 144 144" aria-hidden="true"><defs><mask id=
               '<circle cx="0" cy="0" r="15"/><path d="M-6,10 L6,10 L6,15 C6,20 18,20 18,28 L18,36 L0,72 L-18,36 L-18,28 C-18,20 -6,20 -6,15 Z"/>'
               '<rect x="-4" y="-57" width="8" height="7"/><circle cx="0" cy="-63" r="9"/></g></svg>')
 
-LIQUID = {"pristine": ("#8fe6ff", "#c8f4ff"), "clean": ("#3aa8d8", "#7cc9ea"), "tainted": ("#6e9a9c", "#97b7b4"),
+LIQUID = {"pristine": ("#8fe6ff", "#c8f4ff"), "tainted": ("#6e9a9c", "#97b7b4"),
           "foul": ("#8a7a48", "#a8986a"), "raw": ("#6b4f1d", "#8c6b30")}
 SLUDGE = "#5a3f12"
 
@@ -459,7 +471,7 @@ def page(path, title, body, *, nav="", desc="", og=None, tip=None):
 '''
 
 
-ASSET_V = "28"
+ASSET_V = "29"
 
 
 def write(out, rel, text):
@@ -727,7 +739,7 @@ def block_page(rec, s, prev_h, next_h, tip):
         caught = s["ps"]
         if caught:
             verdict += f' A Plumb node refuses {n(caught)} of the {n(s["sn"])}.'
-    elif s["grade"] == "clean":
+    elif s["gn"]:
         verdict = f'No sewage. {n(s["gn"])} small note{"s" if s["gn"] != 1 else ""} inside {PLUMB_NAME}&#39;s default {DATACARRIER_SIZE["plumb"]}-byte data allowance.'
     else:
         verdict = "Every transaction in this block is a payment. Not one byte of data."
@@ -943,7 +955,7 @@ def shame_pane(idx, key, label, seconds, min_blocks):
     wb = "".join(f'<tr><td><a href="/block/{b["h"]}/">{b["h"]}</a></td><td>{pool_link(who(b))}</td><td>{stamp(b["grade"], True)}</td>'
                  f'<td class="r num">{pct(b["share"])}</td><td class="r num">{n(b["sn"])}</td><td class="r num">{size(b["sd"])}</td>'
                  f'<td>{esc(info(b["top"][1])["name"]) if b["top"] else ""}</td></tr>' for b in worst_blocks)
-    hon = "".join(f'<tr><td>{pool_link(p["pool"])}</td><td class="r num">{n(p["blocks"])}</td><td class="r num">{n(p["pristine"])}</td></tr>' for p in honor)
+    hon = "".join(f'<tr><td>{pool_link(p["pool"])}</td><td class="r num">{n(p["blocks"])}</td></tr>' for p in honor)
     sm = ""
     if small:
         sm = ('<p class="small muted" style="margin-top:12px">Also mined sewage, with too few blocks to rank: ' +
@@ -958,7 +970,7 @@ def shame_pane(idx, key, label, seconds, min_blocks):
 {table if ranked else '<p class="muted">Nobody, in this window.</p>'}{sm}
 <div class="grid2" style="margin-top:26px"><div><h3>Biggest dumps</h3><div class="tw"><table><tr><th>Block</th><th>Pool</th><th>Grade</th><th class="r">Share</th><th class="r">Txs</th><th class="r">Payload</th><th>Main kind</th></tr>{wb}</table></div></div>
 <div class="honor"><h3>Clean water roll</h3><p class="small muted" style="margin-bottom:8px">Pools with {min_blocks} or more blocks in the window and not one sewage transaction.</p>
-<div class="tw"><table><tr><th>Pool</th><th class="r">Blocks</th><th class="r">Pristine</th></tr>{hon or '<tr><td colspan="3" class="muted">Nobody qualified.</td></tr>'}</table></div></div></div>
+<div class="tw"><table><tr><th>Pool</th><th class="r">Blocks</th></tr>{hon or '<tr><td colspan="2" class="muted">Nobody qualified.</td></tr>'}</table></div></div></div>
 </div>'''
 
 
@@ -1644,7 +1656,7 @@ The gateway&#39;s node chooses the transactions, normally the miner&#39;s own, s
     tiles = f'''<div class="tiles"><div class="tile"><div class="v g-raw">{pct(cur["share"], 2)}</div><div class="l">of its block space is sewage</div><div class="s">{"last 30 days" if p30 else "since the fork"}</div></div>
 <div class="tile"><div class="v">{n(cur["sn"])}</div><div class="l">sewage transactions mined</div><div class="s">in {n(cur["dirty"])} of {n(cur["blocks"])} blocks</div></div>
 <div class="tile"><div class="v">{btc(cur["sf"])}</div><div class="l">BTC in fees {"paid" if dtm else "taken"} for them</div><div class="s">{pct(cur["fee_share"])} of {"the fees in these blocks" if dtm else "its fee income"}</div></div>
-<div class="tile"><div class="v">{n(cur["pristine"])}</div><div class="l">pristine blocks</div><div class="s">not one byte of data</div></div>
+<div class="tile"><div class="v">{n(cur["pristine"])}</div><div class="l">pristine blocks</div><div class="s">{n(cur["nodata"])} with not one byte of data</div></div>
 <div class="tile"><div class="v">{n(len(pb))} <span class="muted" style="font-size:1rem">/ {n(len(allb))}</span></div><div class="l">blocks past the defaults</div><div class="s">since the fork, <a href="/past-defaults/">what this means</a></div></div></div>'''
     worst = sorted([b for b in allb if b["sn"]], key=lambda b: -b["sw"])[:15]
     wrows = "".join(f'<tr><td><a href="/block/{b["h"]}/">{b["h"]}</a></td><td>{tm(b["t"], False)}</td><td>{stamp(b["grade"], True)}</td>'
@@ -1835,8 +1847,7 @@ def about_page(idx, tip):
 <p>Where Knots or Plumb relays a transaction shown here, the engine also tries four settings one at a time and keeps the value that would refuse it: the largest <code>datacarriersize</code>; the largest <code>maxscriptsize</code> of {MIN_USEFUL_SCRIPT_LIMIT} or more, the size of the largest push a script may hold, since a limit below that starts refusing ordinary multisig witnesses (a 3-of-5 P2WSH witness is about 395 bytes); the smallest <code>bytespersigopstrict</code> up to {MAX_USEFUL_SIGOP_STRICT}, since above that it starts refusing segwit 2-of-15 spends (a 2-of-15 P2WSH input has about 55 weight units for each of its 15 signature checks; multisig with many keys and few signatures can be refused lower); and the smallest <code>dustrelayfee</code> up to {feerate_conf(MAX_DUST_RATE)} (100 sat/vB, where a P2TR output under 11,000 sat is already dust; higher rates were not tried). Each value comes from rerunning the same checks with only that setting changed. A setting that refuses the transaction at no value in its range is left out, and a verdict that offers none names the four that were tried.</p>
 <p>Not modeled: fee floors, mempool limits, replacement rules and address reuse. Those depend on the mempool at the time, not on what the transaction carries.</p>
 <h2>Grades</h2>
-<ul><li>{stamp("pristine", True)} every transaction is a payment. Not one byte of data.</li>
-<li>{stamp("clean", True)} no sewage. Small notes inside Plumb's default {DATACARRIER_SIZE["plumb"]}-byte allowance only, such as 32-byte commitments and short tags. We call that gray water and do not count it against anyone.</li>
+<ul><li>{stamp("pristine", True)} no sewage. Every transaction is a payment, or carries at most a small note inside Plumb's default {DATACARRIER_SIZE["plumb"]}-byte allowance, such as a 32-byte commitment. We call those notes gray water: the block page counts them and the grade does not.</li>
 <li>{stamp("tainted", True)} sewage under 1% of the block's weight.</li>
 <li>{stamp("foul", True)} sewage from 1% to 10%.</li>
 <li>{stamp("raw", True)} sewage over 10%.</li></ul>
@@ -1940,7 +1951,7 @@ def index_page(idx, tip):
     tb = latest[0]
     tl, _ = GRADE[tb["grade"]]
     tline = (f'{pct(tb["share"])} sewage, {n(tb["sn"])} transaction{"s" if tb["sn"] != 1 else ""}.' if tb["sn"]
-             else ("Not one byte of data." if tb["grade"] == "pristine" else f'No sewage. {n(tb["gn"])} small note{"s" if tb["gn"] != 1 else ""}.'))
+             else ("Not one byte of data." if not tb["gn"] else f'No sewage. {n(tb["gn"])} small note{"s" if tb["gn"] != 1 else ""}.'))
     body = f'''<div class="herogrid"><div class="hero"><div class="kicker">Bitcoin water quality, block by block</div>
 <h1><span>Clean blocks carry payments.</span> <span>The rest is sewage.</span></h1>
 <p class="lede">Every block since the fork, every transaction, tested with the policy code a Plumb node runs. See what got mined, who mined it, and which filter would have kept it out.</p>
@@ -1953,7 +1964,7 @@ def index_page(idx, tip):
 <div class="tiles"><div class="tile"><div class="v g-raw">{pct(t1["share"], 2)}</div><div class="l">of block space taken by sewage</div></div>
 <div class="tile"><div class="v">{n(t1["sn"])}</div><div class="l">sewage transactions mined</div></div>
 <div class="tile"><div class="v">{btc(t1["sf"])}</div><div class="l">BTC paid to miners to carry it</div></div>
-<div class="tile"><div class="v">{n(t1["clean"])} <span class="muted" style="font-size:1rem">/ {n(t1["blocks"])}</span></div><div class="l">blocks tested clean</div><div class="s">{n(t1["pristine"])} pristine</div></div></div>
+<div class="tile"><div class="v">{n(t1["clean"])} <span class="muted" style="font-size:1rem">/ {n(t1["blocks"])}</span></div><div class="l">pristine blocks</div><div class="s">{n(t1["nodata"])} with not one byte of data</div></div></div>
 <h2>Hall of Shame, this week</h2>
 <div class="podium">{"".join(pod) or '<div class="panel">Nobody qualified this week.</div>'}</div>
 <p><a href="/shame/">Full rankings, biggest dumps, and the clean water roll &rarr;</a></p>
@@ -1993,7 +2004,7 @@ def og_svg(kind, **k):
     if kind == "block":
         b = k["b"]
         label, _ = GRADE[b["grade"]]
-        color = {"pristine": "#8fe6ff", "clean": "#3aa8d8", "tainted": "#b5a165", "foul": "#c19243", "raw": "#b98a3c"}[b["grade"]]
+        color = {"pristine": "#8fe6ff", "tainted": "#b5a165", "foul": "#c19243", "raw": "#b98a3c"}[b["grade"]]
         cube_svg = cube(b).replace('<svg viewBox="0 0 128 132" role="img">', '<svg x="820" y="150" width="300" height="310" viewBox="0 0 128 132">')
         cube_svg = cube_svg.replace("var(--panel2)", "#172a30").replace("var(--panel)", "#122126").replace("var(--line)", "#233a41").replace("var(--faint)", "#5d757b")
         return (head + f'<text x="70" y="210" font-family="IBM Plex Sans" font-weight="650" font-size="84" fill="{fg}">Block {b["h"]}</text>'
@@ -2021,9 +2032,9 @@ def og_svg(kind, **k):
                 f'<text x="960" y="385" text-anchor="middle" font-family="IBM Plex Mono" font-weight="700" font-size="190" fill="{color}">{L}</text></g></svg>')
     if kind == "site":
         cubes = ""
-        for i, g in enumerate(["pristine", "clean", "tainted", "foul", "raw"]):
-            fake = {"grade": g, "sn": 0 if g in ("pristine", "clean") else 1, "share": {"tainted": .005, "foul": .05, "raw": .3}.get(g, 0)}
-            c = cube(fake).replace('<svg viewBox="0 0 128 132" role="img">', f'<svg x="{70 + i * 215}" y="330" width="190" height="196" viewBox="0 0 128 132">')
+        for i, g in enumerate(["pristine", "tainted", "foul", "raw"]):
+            fake = {"grade": g, "sn": 0 if g == "pristine" else 1, "share": {"tainted": .005, "foul": .05, "raw": .3}.get(g, 0)}
+            c = cube(fake).replace('<svg viewBox="0 0 128 132" role="img">', f'<svg x="{70 + i * 287}" y="330" width="190" height="196" viewBox="0 0 128 132">')
             c = c.replace("var(--panel2)", "#172a30").replace("var(--panel)", "#122126").replace("var(--line)", "#233a41").replace("var(--faint)", "#5d757b")
             cubes += c
         return (head + f'<text x="70" y="200" font-family="IBM Plex Sans" font-weight="650" font-size="62" fill="{fg}">Clean blocks carry payments.</text>'
