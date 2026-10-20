@@ -152,6 +152,7 @@ def summarize(rec):
         "ps": plumb_stops, "psw": plumb_stops_w, "ksw": knots_stops_w,
         "share": share, "grade": grade(rec["sewage"]["n"], share),
         "ty": ty, "top": top, "bld": rec.get("bld", ""), "dtag": rec.get("dtag", ""), "via": rec.get("via", False),
+        "own": rec.get("own", ""),
         "kp": rec.get("kp", {}), "kpf": kp_flagged(rec),
     }
 
@@ -303,21 +304,37 @@ def short_who(b):
     return f'DATUM miner via {b["pool"]}' if who(b) != b["pool"] else b["pool"]
 
 
+def own_text(b):
+    """For a DATUM-pool block the pool's own gateway built: how the site knows the gateway is the pool's."""
+    return {"port": "built by its public stratum port", "tag": "built by its own gateway"}.get(b.get("own") or "", "")
+
+
 def by_html(b):
     """'mined by X', or 'built by a DATUM miner via X' when a DATUM gateway with the pool upstream built the template."""
     if who(b) != b["pool"]:
         return f'built by <a href="/pool/{miner.slug(who(b))}/">a DATUM miner</a> via {pool_link(b["pool"])}'
-    return f'mined by {pool_link(b["pool"])}'
+    o = own_text(b)
+    return f'mined by {pool_link(b["pool"])}' + (f", {o}" if o else "")
 
 
 def by_text(b):
-    return f'built by a DATUM miner via {b["pool"]}' if who(b) != b["pool"] else f'mined by {b["pool"]}'
+    if who(b) != b["pool"]:
+        return f'built by a DATUM miner via {b["pool"]}'
+    o = own_text(b)
+    return f'mined by {b["pool"]}' + (f", {o}" if o else "")
 
 
 def dtm_line(rec):
     """For a block a DATUM gateway built: who chose its contents, and where the site counts it."""
     if who(rec) == rec["pool"]:
-        return ""
+        if not rec.get("own"):
+            return ""
+        if rec["own"] == "port":
+            how = "its public stratum port handed out the very job this block was found on, so the gateway behind that port is the pool&#39;s own"
+        else:
+            how = f'the gateway tags its blocks "{esc(rec.get("dtag") or "")}", the pool&#39;s own name'
+        return (f'<p class="small muted" style="margin-top:10px;max-width:70ch">A DATUM gateway with {pool_link(rec["pool"])} upstream built this template, and {how}. '
+                f'The pool&#39;s node chose the transactions, so this block counts toward {esc(rec["pool"])} like the rest of its blocks.</p>')
     tag = rec.get("dtag") or ""
     tagged = f', which tags its blocks "{esc(tag)}"' if tag else ", which set no tag of its own"
     return (f'<p class="small muted" style="margin-top:10px;max-width:70ch">A DATUM gateway with {pool_link(rec["pool"])} upstream built this template{tagged}. '
@@ -328,7 +345,9 @@ def dtm_line(rec):
 DATUM_NOTE = ("A block whose template came from a DATUM gateway with the pool upstream is listed under DATUM miners via that pool, "
               "apart from the pool's own blocks, because the gateway's node chose what went in, normally the miner's own. "
               "A block whose name is not a pool's, such as a miner known by payout address or tag, keeps that name. "
-              "A pool that serves a stratum port through its own gateway looks the same from the chain.")
+              "A pool that serves a stratum port through its own gateway looks the same from the chain, so such a block counts toward the pool "
+              "only when the site knows the gateway is the pool's: reorg.watch keeps a client on every public stratum port and saw the port hand "
+              "out the job the block was found on, or the gateway's own tag is the pool's name.")
 
 
 def known_stats(idx):
@@ -1690,15 +1709,25 @@ The gateway&#39;s node chooses the transactions, normally the miner&#39;s own, s
                      f'refuse at their default settings. <a href="/past-defaults/">What this means</a>.</p>')
     plumb_part = pct(cur["psw"] / cur["sw"]) if cur["sw"] else "0%"
     gateways = ""
+    own = [b for b in allb if b.get("own")]
+    own_line = ""
+    if own and not dtm:
+        np_, nt = sum(1 for b in own if b["own"] == "port"), sum(1 for b in own if b["own"] == "tag")
+        hows = [f"{n(np_)} found on a job its public stratum port handed out" if np_ else "",
+                f"{n(nt)} tagged with the pool&#39;s own name" if nt else ""]
+        own_line = (f' {plural(len(own), "block")} that a gateway with {esc(name)} upstream built count{"s" if len(own) == 1 else ""} here, '
+                    f'because the gateway is {esc(name)}&#39;s own: {", ".join(x for x in hows if x)}.')
     if dtm:
         intro = (f'<p style="margin-top:12px;max-width:70ch">These are the blocks mined through {pool_link(base)} whose templates a DATUM gateway with the pool upstream built. '
                  f'The gateway&#39;s node chooses the transactions, normally the miner&#39;s own; the pool sets who the coinbase pays and its first tag, not what goes in the block. '
-                 f'A pool serving a stratum port through its own gateway looks the same from the chain.</p>')
+                 f'A pool serving a stratum port through its own gateway looks the same from the chain; the blocks known to be the pool&#39;s own count on <a href="/pool/{miner.slug(base)}/">its page</a>.</p>')
         gateways = gateway_table(allb, base)
     elif via:
         intro = (f'<p class="small muted" style="margin-top:12px;max-width:70ch">{plural(len(via), "more block")} mined through {esc(name)} '
-                 f'{"was" if len(via) == 1 else "were"} built by DATUM gateways with {esc(name)} upstream, so {"it is" if len(via) == 1 else "they are"} counted under {via_link}.</p>')
+                 f'{"was" if len(via) == 1 else "were"} built by DATUM gateways with {esc(name)} upstream, so {"it is" if len(via) == 1 else "they are"} counted under {via_link}.{own_line}</p>')
         gateways = gateway_table(via, name)
+    elif own_line:
+        intro = f'<p class="small muted" style="margin-top:12px;max-width:70ch">{own_line.strip()}</p>'
     else:
         intro = ""
     if cur["sn"] and dtm:

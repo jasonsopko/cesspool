@@ -34,7 +34,7 @@ def identify(coinbase_tx):
 
 
 def builder(coinbase_tx, pool):
-    """(class, miner tag, via) for whoever built the template, by reorg-watch's reading of the coinbase
+    """(class, miner tag, via, own) for whoever built the template, by reorg-watch's reading of the coinbase
     layout the DATUM gateway writes. D: a gateway with a DATUM pool upstream, so the gateway's node
     chose the transactions, normally the miner's own. G: a gateway running standalone, so the payout
     owner's node built it. O: other software, such as a pool's own stratum server. The miner tag is
@@ -42,15 +42,25 @@ def builder(coinbase_tx, pool):
     to the DATUM miners of the pool it is named for: the name is a pool or marketplace in reorg-watch's
     pool survey, or, for a name the survey does not cover, the pool the block's first tag names. A D block
     whose name the survey calls an individual or a category, or that another pool's tag names, keeps
-    its name: that name already points at the miner."""
+    its name: that name already points at the miner.
+
+    own names a D block the pool's own gateway built, which counts toward the pool like any other
+    block of its node: "port" when the gateway's coinbase identity is one sv1-jobs.py learned from a
+    job the pool's public stratum port handed out, "tag" when the gateway's own tag is the pool's name."""
     rw, pools = _load()
     sig = bytes.fromhex(coinbase_tx["vin"][0].get("coinbase", ""))
     vouts = [(round(v.get("value", 0) * 1e8), bytes.fromhex(v["scriptPubKey"]["hex"])) for v in coinbase_tx["vout"]]
     cls, primary, secondary = rw.classify_coinbase(sig, vouts)
     if cls != "D":
-        return cls, "", False
+        return cls, "", False, ""
     # classify_coinbase reads the tags as latin1; gateways write UTF-8
     primary, secondary = (x.encode("latin1").decode("utf-8", "replace") for x in (primary, secondary))
+    pushes = rw.script_pushes(sig)
+    uid = pushes[2][1:].hex() if len(pushes) > 2 and pushes[2] else ""   # after the hasher's difficulty byte
+    if (pool, primary, secondary, uid) in port_identities():
+        return cls, secondary, False, "port"
+    if names_pool(secondary, pool, pools):
+        return cls, secondary, False, "tag"
     kind = survey_kinds().get(pool)
     if kind in ("pool", "marketplace"):
         via = True
@@ -59,7 +69,42 @@ def builder(coinbase_tx, pool):
     else:
         named = {n for t, n in pools.tags if t in primary and t.lower() != "datum"}
         via = pool in named or (len(pool) >= 3 and pool.lower() in primary.lower())
-    return cls, secondary, via
+    return cls, secondary, via, ""
+
+
+def names_pool(tag, pool, pools):
+    """True when a gateway's own tag is the pool's name or one of the pool's listed tags, or carries
+    the name (four letters or more) inside it, as "Lazarus-GW-57-251" does. Anyone can write any tag,
+    so a miner who signs templates with a pool's name is read as that pool."""
+    t = tag.strip().lower()
+    if not t:
+        return False
+    if t == pool.lower() or t in {x.lower() for x, n in pools.tags if n == pool}:
+        return True
+    return len(pool) >= 4 and pool.lower() in t
+
+
+IDENTITIES = os.environ.get("SV1_PORT_IDENTITIES", os.path.expanduser("~/.reorg-watch/sv1-port-identities.json"))
+_identities = (None, frozenset())
+
+
+def port_identities():
+    """{(pool, first tag, gateway tag, unique-id bytes)} of the gateways behind public stratum ports, as
+    reorg-watch's sv1-jobs.py learned them: each from a block whose job the port handed to its client.
+    Read again whenever the file changes; empty without it."""
+    global _identities
+    try:
+        m = os.path.getmtime(IDENTITIES)
+    except OSError:
+        return frozenset()
+    if m != _identities[0]:
+        try:
+            with open(IDENTITIES) as f:
+                rows = json.load(f).get("identities", [])
+            _identities = (m, frozenset((r["label"], r["primary"], r["secondary"], r["uid"]) for r in rows))
+        except (OSError, ValueError, KeyError, TypeError, AttributeError):
+            return _identities[1]
+    return _identities[1]
 
 
 @functools.lru_cache(maxsize=None)

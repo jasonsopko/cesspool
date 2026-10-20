@@ -99,14 +99,14 @@ def process_block(b, rows):
         else:
             tmap.append([t["vsize"], fee, 0, -1])
     pool, tag = miner.identify(cb)
-    bld, dtag, via = miner.builder(cb, pool)
+    bld, dtag, via, own = miner.builder(cb, pool)
     txd = {"h": b["height"], "hash": b["hash"], "t": b["time"], "pool": pool, "ps": miner.slug(pool),
            "bld": bld, "ws": miner.slug(miner.who(pool, via)), "cb": txdetail.coinbase_record(cb), "tx": txd}
     sewage = [s for s in spam if s["tier"] == "sewage"]
     gray = [s for s in spam if s["tier"] == "gray"]
     return txd, {
         "h": b["height"], "hash": b["hash"], "prev": b.get("previousblockhash"), "t": b["time"],
-        "pool": pool, "tag": tag, "bld": bld, "dtag": dtag, "via": via, "ntx": len(txs), "w": b["weight"],
+        "pool": pool, "tag": tag, "bld": bld, "dtag": dtag, "via": via, "own": own, "ntx": len(txs), "w": b["weight"],
         "size": b["size"], "reward": reward, "fees": total_fee, "txw": total_w,
         "sewage": {"n": len(sewage), "w": sum(s["w"] for s in sewage), "fee": sum(s["fee"] for s in sewage),
                    "data": sum(s["data"] for s in sewage), "missed": sum(1 for s in sewage if s["missed"])},
@@ -114,6 +114,42 @@ def process_block(b, rows):
                  "data": sum(s["data"] for s in gray)},
         "map": tmap, "spam": spam, "kp": kp,
     }
+
+
+def reread_builder(h, rec):
+    """Read who built block h again and rewrite its block and transaction records when that changed.
+    True when it did."""
+    cb = load_raw(h)["tx"][0]
+    bld, dtag, via, own = miner.builder(cb, rec["pool"])
+    if (rec.get("bld"), rec.get("dtag"), rec.get("via"), rec.get("own", "")) == (bld, dtag, via, own):
+        return False
+    rec["bld"], rec["dtag"], rec["via"], rec["own"] = bld, dtag, via, own
+    tp = f"{TXD}/{h}.json"
+    if os.path.exists(tp):
+        with open(tp) as f:
+            txd = json.load(f)
+        txd["bld"], txd["ws"] = bld, miner.slug(miner.who(rec["pool"], via))
+        write_json(tp, txd)
+    write_json(f"{BLOCKS}/{h}.json", rec)
+    return True
+
+
+def refresh_own(idx, pairs=None):
+    """Reread the DATUM-pool blocks still charged to DATUM miners via a pool, for the port identities and
+    tag rule now in force. idx is the block index; pairs, when given, limits the work to blocks whose
+    (pool, gateway tag) is among them. Returns the heights whose records changed."""
+    changed = []
+    for h in sorted(idx):
+        s = idx[h]
+        if s.get("bld") != "D" or not s.get("via"):
+            continue
+        if pairs is not None and (s.get("pool"), s.get("dtag") or "") not in pairs:
+            continue
+        with open(f"{BLOCKS}/{h}.json") as f:
+            rec = json.load(f)
+        if reread_builder(h, rec):
+            changed.append(h)
+    return changed
 
 
 def write_json(path, obj):

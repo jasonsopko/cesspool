@@ -10,7 +10,7 @@ for the next minute.
 import argparse, fcntl, json, os, sys, time, urllib.request
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from cesspool import process, site  # noqa: E402
+from cesspool import miner, process, site  # noqa: E402
 
 REST = "http://127.0.0.1:8332/rest"
 REORG_DEPTH = 30
@@ -97,8 +97,38 @@ def update(a):
             os.replace(path + ".tmp", path)
     for i in range(0, len(new), 100):
         process.process_range(new[i:i + 100])
-    if new or a.all or redo_from is not None:
-        site.build(a.out, heights=new, all_blocks=a.all, og=not a.no_og)
+    flipped = apply_port_identities()
+    if new or flipped or a.all or redo_from is not None:
+        site.build(a.out, heights=new + flipped, all_blocks=a.all, og=not a.no_og)
+
+
+def apply_port_identities():
+    """When reorg-watch's sv1-jobs.py has learned a new gateway identity behind a pool's public stratum
+    port, read the blocks that identity could claim again. Returns the heights whose records changed."""
+    marker = f"{process.HOME}/port-identities.applied"
+    try:
+        m = os.path.getmtime(miner.IDENTITIES)
+    except OSError:
+        return []
+    try:
+        with open(marker) as f:
+            if float(f.read().strip() or 0) == m:
+                return []
+    except OSError:
+        pass
+    pairs = {(r["label"], r["secondary"]) for r in (json.load(open(miner.IDENTITIES)).get("identities") or [])
+             if isinstance(r, dict) and "label" in r and "secondary" in r}
+    try:
+        with open(site.INDEX) as f:
+            idx = {int(k): v for k, v in json.load(f).items()}
+    except (OSError, ValueError):
+        idx = {}
+    changed = process.refresh_own(idx, pairs)
+    if changed:
+        print(f"port identities: {len(changed)} blocks now count toward their pool: {changed[:10]}", flush=True)
+    with open(marker, "w") as f:
+        f.write(repr(m))
+    return changed
 
 
 if __name__ == "__main__":
