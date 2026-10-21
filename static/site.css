@@ -303,3 +303,4 @@ ul.switches .flag { color: var(--miss); }
 .choices { list-style: none; padding: 0; margin: 0 0 1em; }
 .choices li { margin-bottom: .4em; }
 .foundhelp { margin-top: 30px; }
+.foundout p { overflow-wrap: anywhere; }
