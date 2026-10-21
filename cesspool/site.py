@@ -725,6 +725,43 @@ Fee <span class="num">{n(s["fee"])}</span> sat ({feerate:.1f} sat/vB), paid {pai
 </section>'''
 
 
+PAYOUTS_SHOWN = 10  # coinbase outputs listed before the rest go under "The other N outputs"
+
+
+def coinbase_payouts(rec):
+    """Every output the coinbase pays, largest first, each address opening Address Lookup."""
+    try:
+        with open(f"{TXD}/{rec['h']}.json") as f:
+            cb = json.load(f).get("cb") or {}
+    except (OSError, ValueError):
+        return ""
+    outs = sorted((o for o in cb.get("o", []) if o.get("a", 0) > 0), key=lambda o: -o["a"])
+    if not outs:
+        return ""
+    total = sum(o["a"] for o in outs)
+    pool = rec["pool"]
+    on_file = pool_addresses().get(pool, set())
+
+    def row(o):
+        ad = o.get("ad")
+        to = (f'<a href="/address/#{esc(ad)}"><code>{esc(ad)}</code></a>' if ad
+              else f'<span class="muted">{esc(TYPE_SHORT.get(o["t"], o["t"]))} output, no address</span>')
+        note = f"on file for {esc(pool)}" if ad in on_file else ""
+        return f'<tr><td>{to}</td><td class="r num">{btc(o["a"], 8)}</td><td class="r num">{pct(o["a"] / total)}</td><td class="small muted">{note}</td></tr>'
+
+    head = '<tr><th>Paid to</th><th class="r">BTC</th><th class="r">Share</th><th></th></tr>'
+    shown, rest = outs[:PAYOUTS_SHOWN], outs[PAYOUTS_SHOWN:]
+    other = "The other output" if len(rest) == 1 else f"The other {n(len(rest))} outputs"
+    more = (f'<details class="more"><summary>{other}</summary>'
+            f'<div class="tw"><table>{head}{"".join(row(o) for o in rest)}</table></div></details>') if rest else ""
+    n_ad = sum(1 for o in outs if o.get("ad"))
+    look = ("" if not n_ad else " The address opens Address Lookup for it." if n_ad == 1
+            else " Each address opens Address Lookup for it.")
+    return (f'<h2>Coinbase payouts</h2><p class="muted">The <a href="/tx/{esc(cb["id"])}">coinbase</a> pays {btc(total, 8)} BTC in '
+            f'{plural(len(outs), "output")}.{look}</p>'
+            f'<div class="tw"><table>{head}{"".join(row(o) for o in shown)}</table></div>{more}')
+
+
 def gray_table(gray):
     if not gray:
         return ""
@@ -789,6 +826,7 @@ def block_page(rec, s, prev_h, next_h, tip):
 <span><i style="background:var(--sewage)"></i>Sewage</span><span><i style="border:2px solid var(--miss)"></i>Sewage {PLUMB_NAME} misses</span></div>
 <script type="application/json" id="mapdata">{json.dumps(mapdata, separators=(",", ":"))}</script>
 '''
+    body += coinbase_payouts(rec)
     if sew:
         body += f'<h2>Dissection</h2><p class="muted">Every sewage transaction in the block, what it hides and where, and what each node policy does with it.</p>'
         body += "".join(dissection(x, "into this block&#39;s coinbase" if dtm else f"to {esc(pool)}", None) for x in sew[:200])
@@ -1654,7 +1692,44 @@ def gateway_table(blocks, pool):
             f'<div class="tw"><table><tr><th>Gateway tag</th><th class="r">Blocks</th><th class="r">Sewage txs</th><th class="r">Sewage share</th><th class="r">Payload</th><th>Last block</th></tr>{"".join(rows)}</table></div>')
 
 
-def pool_page(idx, name, tip):
+PAYOUT_ROWS = 25  # payout addresses listed on a pool page
+
+
+def payout_table(blocks, pool, fstate):
+    """The addresses these blocks' coinbases paid most, from Your Blocks' state of each block's paying outputs."""
+    paid = collections.defaultdict(lambda: [0, 0, 0])  # blocks, sats, last height
+    for b in blocks:
+        st = fstate.get(str(b["h"]))
+        if not st:
+            continue
+        for a in {a for a, _ in st["o"]}:
+            paid[a][0] += 1
+            paid[a][2] = max(paid[a][2], b["h"])
+        for a, s in st["o"]:
+            paid[a][1] += s
+    if not paid:
+        return ""
+    total = sum(p[1] for p in paid.values())
+    on_file = pool_addresses().get(pool, set())
+    top = sorted(paid.items(), key=lambda kv: (-kv[1][1], kv[0]))[:PAYOUT_ROWS]
+    rows = "".join(f'<tr><td><a href="/address/#{esc(a)}"><code>{esc(a)}</code></a></td><td class="r num">{n(p[0])}</td>'
+                   f'<td class="r num">{btc(p[1], 8)}</td><td class="r num">{pct(p[1] / total)}</td>'
+                   f'<td><a href="/block/{p[2]}/">{p[2]}</a></td><td class="small muted">{f"on file for {esc(pool)}" if a in on_file else ""}</td></tr>'
+                   for a, p in top)
+    nb, na = len(blocks), len(paid)
+    whose = "The coinbase of its one block" if nb == 1 else f"The coinbases of its {n(nb)} blocks"
+    to = "1 address" if na == 1 else f"{n(na)} addresses"
+    listed = ("The address is below and opens Address Lookup for it." if na == 1 else
+              "Every one is below, and each opens Address Lookup for it." if na <= PAYOUT_ROWS else
+              f"The {PAYOUT_ROWS} paid the most are below, and each opens Address Lookup for it.")
+    return (f'<h3 style="margin-top:22px">Payout addresses</h3><p class="small muted" style="margin-bottom:8px">{whose} since the fork '
+            f'paid {btc(total, 8)} BTC to {to}. {listed} A pool that pays its miners in the coinbase shows their addresses here. '
+            f'A pool that holds rewards and pays its miners later does not: their addresses never appear in a coinbase.</p>'
+            f'<div class="tw"><table><tr><th>Address</th><th class="r">Blocks</th><th class="r">BTC</th><th class="r">Share</th>'
+            f'<th>Last block</th><th></th></tr>{rows}</table></div>')
+
+
+def pool_page(idx, name, tip, fstate):
     everything = window_blocks(idx, None)
     allb = [b for b in everything if who(b) == name]
     dtm = name.startswith(miner.DATUM_PREFIX)
@@ -1751,7 +1826,7 @@ The gateway&#39;s node chooses the transactions, normally the miner&#39;s own, s
 <div class="strip">{"".join(cube_link(b) for b in recent)}</div>
 <div class="grid2"><div><h3>Worst blocks</h3><div class="tw"><table><tr><th>Block</th><th>Time</th><th>Grade</th><th class="r">Share</th><th class="r">Txs</th><th class="r">Payload</th></tr>{wrows or '<tr><td colspan="6" class="muted">None.</td></tr>'}</table></div></div>
 <div><h3>What it mined</h3><div class="tw"><table><tr><th>Kind</th><th class="r">Txs</th><th>Filter</th></tr>{trows or '<tr><td colspan="3" class="muted">Nothing.</td></tr>'}</table></div></div></div>
-{past_part}{operator}{plumb_cta() if cur["sn"] else ""}'''
+{payout_table(allb, base, fstate)}{past_part}{operator}{plumb_cta() if cur["sn"] else ""}'''
     desc = f"Grade {L}. {pct(cur['share'], 2)} of {name}'s block space is spam."
     og = f"/og/pool/{miner.slug(name)}.png"
     return page(f"/pool/{miner.slug(name)}/", f"{name}: grade {L}", body, nav="shame", desc=desc, og=og, tip=tip), cur, L, p30 is not None
@@ -2187,8 +2262,8 @@ def build(out, heights=None, all_blocks=False, og=True, pages=False):
     else:
         publish_txd(out, sorted(publish))
     # The Your Blocks indexes and page go up before the block pages and header boxes that lead to them.
-    found.publish(out, idx, pool_addresses(), {k: label for k, label, _ in GRADES},
-                  [[below, L, LETTER_TEXT[L]] for below, L in LETTER_STEPS] + [[None, "F", LETTER_TEXT["F"]]])
+    fstate = found.publish(out, idx, pool_addresses(), {k: label for k, label, _ in GRADES},
+                           [[below, L, LETTER_TEXT[L]] for below, L in LETTER_STEPS] + [[None, "F", LETTER_TEXT["F"]]])
     write(out, "found/index.html", found_page(tip))
     # neighbors' prev/next links
     pos = {h: i for i, h in enumerate(hs)}
@@ -2227,7 +2302,7 @@ def build(out, heights=None, all_blocks=False, og=True, pages=False):
     write_gz(f"{out}/d/pools.json.gz", {name: sorted(addrs[name]) for name in sorted({b["pool"] for b in idx.values()}) if addrs.get(name)})
     pools = sorted({who(b) for b in idx.values()} | {b["pool"] for b in idx.values()})
     for name in pools:
-        r = pool_page(idx, name, tip)
+        r = pool_page(idx, name, tip, fstate)
         if not r:
             continue
         html_, cur, L, recent = r

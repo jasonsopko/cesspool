@@ -120,7 +120,8 @@ def payout_key(heights, state, kind, own):
 
 def publish(out, idx, pool_addresses, grades, letters):
     """Write every index for the blocks in idx. pool_addresses: name -> payout addresses on file for it;
-    grades: grade key -> label; letters: [[share below which, letter, text], ...], the last with None."""
+    grades: grade key -> label; letters: [[share below which, letter, text], ...], the last with None.
+    Returns the state: each block's coinbase tag and paying outputs."""
     state = refresh_state(idx)
     kinds = miner.survey_kinds()
     pools = sorted({b["pool"] for b in idx.values()})
@@ -157,3 +158,4 @@ def publish(out, idx, pool_addresses, grades, letters):
             os.remove(f"{sdir}/{name}")
     for s, d in shards.items():
         write_gz_if_changed(f"{out}/d/a/{s}.json.gz", {a: sorted([h, v] for h, v in paid.items()) for a, paid in sorted(d.items())})
+    return state
