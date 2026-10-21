@@ -491,7 +491,7 @@ def page(path, title, body, *, nav="", desc="", og=None, tip=None):
 '''
 
 
-ASSET_V = "32"
+ASSET_V = "33"
 
 
 def write(out, rel, text):
@@ -744,7 +744,7 @@ def coinbase_payouts(rec):
 
     def row(o):
         ad = o.get("ad")
-        to = (f'<a href="/address/#{esc(ad)}"><code>{esc(ad)}</code></a>' if ad
+        to = (f'<code class="ad">{esc(ad)}</code> <a class="small" href="/address/#{esc(ad)}">look up</a>' if ad
               else f'<span class="muted">{esc(TYPE_SHORT.get(o["t"], o["t"]))} output, no address</span>')
         note = f"on file for {esc(pool)}" if ad in on_file else ""
         return f'<tr><td>{to}</td><td class="r num">{btc(o["a"], 8)}</td><td class="r num">{pct(o["a"] / total)}</td><td class="small muted">{note}</td></tr>'
@@ -755,8 +755,8 @@ def coinbase_payouts(rec):
     more = (f'<details class="more"><summary>{other}</summary>'
             f'<div class="tw"><table>{head}{"".join(row(o) for o in rest)}</table></div></details>') if rest else ""
     n_ad = sum(1 for o in outs if o.get("ad"))
-    look = ("" if not n_ad else " The address opens Address Lookup for it." if n_ad == 1
-            else " Each address opens Address Lookup for it.")
+    look = ("" if not n_ad else " The address has a look up link to Address Lookup." if n_ad == 1
+            else " Each address has a look up link to Address Lookup.")
     return (f'<h2>Coinbase payouts</h2><p class="muted">The <a href="/tx/{esc(cb["id"])}">coinbase</a> pays {btc(total, 8)} BTC in '
             f'{plural(len(outs), "output")}.{look}</p>'
             f'<div class="tw"><table>{head}{"".join(row(o) for o in shown)}</table></div>{more}')
@@ -1712,16 +1712,16 @@ def payout_table(blocks, pool, fstate):
     total = sum(p[1] for p in paid.values())
     on_file = pool_addresses().get(pool, set())
     top = sorted(paid.items(), key=lambda kv: (-kv[1][1], kv[0]))[:PAYOUT_ROWS]
-    rows = "".join(f'<tr><td><a href="/address/#{esc(a)}"><code>{esc(a)}</code></a></td><td class="r num">{n(p[0])}</td>'
+    rows = "".join(f'<tr><td><code class="ad">{esc(a)}</code> <a class="small" href="/address/#{esc(a)}">look up</a></td><td class="r num">{n(p[0])}</td>'
                    f'<td class="r num">{btc(p[1], 8)}</td><td class="r num">{pct(p[1] / total)}</td>'
                    f'<td><a href="/block/{p[2]}/">{p[2]}</a></td><td class="small muted">{f"on file for {esc(pool)}" if a in on_file else ""}</td></tr>'
                    for a, p in top)
     nb, na = len(blocks), len(paid)
     whose = "The coinbase of its one block" if nb == 1 else f"The coinbases of its {n(nb)} blocks"
     to = "1 address" if na == 1 else f"{n(na)} addresses"
-    listed = ("The address is below and opens Address Lookup for it." if na == 1 else
-              "Every one is below, and each opens Address Lookup for it." if na <= PAYOUT_ROWS else
-              f"The {PAYOUT_ROWS} paid the most are below, and each opens Address Lookup for it.")
+    listed = ("The address is below, with a look up link to Address Lookup." if na == 1 else
+              "Every one is below, each with a look up link to Address Lookup." if na <= PAYOUT_ROWS else
+              f"The {PAYOUT_ROWS} paid the most are below, each with a look up link to Address Lookup.")
     return (f'<h3 style="margin-top:22px">Payout addresses</h3><p class="small muted" style="margin-bottom:8px">{whose} since the fork '
             f'paid {btc(total, 8)} BTC to {to}. {listed} A pool that pays its miners in the coinbase shows their addresses here. '
             f'A pool that holds rewards and pays its miners later does not: their addresses never appear in a coinbase.</p>'

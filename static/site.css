@@ -173,6 +173,7 @@ tr.rank1 td { background: color-mix(in srgb, var(--sewage) 18%, transparent); }
 .dis .hd { display: flex; gap: 12px; align-items: baseline; flex-wrap: wrap; }
 .dis .hd h3 { margin: 0; font-size: 1.15rem; }
 .dis .txid { font-family: "Plex Mono", monospace; font-size: .8rem; color: var(--muted); word-break: break-all; margin: 4px 0 12px; }
+.ad { white-space: normal; overflow-wrap: anywhere; }
 .anat { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin: 12px 0; }
 @media (max-width: 760px) { .anat { grid-template-columns: 1fr; } }
 .anat h4 { margin: 0 0 6px; font-size: .78rem; color: var(--muted); text-transform: uppercase; letter-spacing: .08em; font-weight: 500; }

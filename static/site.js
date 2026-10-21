@@ -129,7 +129,6 @@
     pubkeyhash: "P2PKH", nulldata: "OP_RETURN", multisig: "Bare multisig", pubkey: "P2PK", anchor: "Anchor",
     witness_unknown: "Unknown witness", nonstandard: "Nonstandard" };
   function short(t) { return SHORT[t] || t || "?"; }
-  function addr(a) { return a.length > 22 ? a.slice(0, 10) + "…" + a.slice(-8) : a; }
   function getJSON(url) {
     return fetch(url).then(function (r) { if (r.status === 404) return null; if (!r.ok) throw new Error(r.status); return r.json(); });
   }
@@ -808,7 +807,7 @@
       else if (r.hid === 1) where = el("span", { cls: "x", text: "address hidden: counted as data" });
       else if (r.hid) where = el("span", { cls: "x", text: "address hidden: other " + short(r.t) + " outputs in this transaction carry data" });
       else if (Object.keys(g.ads).length > 1) where = el("span", { cls: "x", text: num(Object.keys(g.ads).length) + " different addresses" });
-      else if (r.ad) where = el("span", { cls: "mono", title: r.ad, text: addr(r.ad) });
+      else if (r.ad) where = el("span", { cls: "mono ad", text: r.ad });
       else where = el("span", { cls: "x", text: "no address" });
       if (kind === "in" && full && r.p) {
         var pv = r.p.split(":");
