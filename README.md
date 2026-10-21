@@ -23,12 +23,19 @@ out.
 - `cesspool/found.py` writes the indexes behind Your Blocks (`/found/`): pool
   names, coinbase tags and payout addresses to block heights, as static JSON
   under `/d/` that `site.js` searches in the browser.
+- `cesspool/address.py` writes the index behind Address Lookup (`/address/`):
+  each address to the sewage transactions that spent from it, paid it, or
+  pointed runes or a Counterparty enhanced send at it, and in what role. It
+  reads runestones and Counterparty enhanced sends to find which addresses
+  they point tokens to.
 - `tools/update.py` runs from cron each minute with `--watch 57`: it checks the
   node's tip every 2 seconds, and when the best block changes fetches new
   blocks over REST, reprocesses anything a reorg replaced, renders what
   changed. A share image is drawn again only when its SVG changed.
 
-The payload is never decoded or displayed.
+The payload is never displayed. Address Lookup shows which addresses a
+runestone or a Counterparty enhanced send points tokens to, and nothing else
+from them.
 
 A `--watch` run keeps the code it started with until it ends, 57 seconds after
 it started or later if an update is still running then. After a code change,
@@ -39,7 +46,9 @@ write pages from the old code next to the new static files.
 
 `~/.cesspool/`: `raw/` gzipped REST blocks (about 340 kB each), `blocks/`
 one record per block, `index.json` summaries, `found.json` each block's
-coinbase tag and paying outputs, `og.json` a hash of the SVG behind each share
+coinbase tag and paying outputs, `address.json` which blocks Address Lookup
+has indexed and where their rows went (delete it to rebuild every address
+file), `og.json` a hash of the SVG behind each share
 image (delete it while holding `lock` to draw them all again, as after a font
 or rsvg-convert change), `bin/test_bitcoin-plumb`.
 

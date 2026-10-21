@@ -12,7 +12,7 @@ site.js; site.py writes the page and calls publish() on every build.
 State: <HOME>/found.json keeps each block's coinbase tag and paying outputs, read from the block
 record and the transaction detail once per record and again when the record's mtime changes, as
 after a reorg, so a build does not reopen fifteen thousand files."""
-import collections, gzip, json, os, statistics
+import collections, gzip, json, os, statistics, zlib
 
 from . import miner
 
@@ -85,8 +85,8 @@ def write_gz_if_changed(path, obj):
         with gzip.open(path) as f:
             if f.read() == data:
                 return False
-    except (OSError, EOFError):
-        pass
+    except (OSError, EOFError, zlib.error):
+        pass  # missing, truncated or corrupt: write it again
     os.makedirs(os.path.dirname(path), exist_ok=True)
     tmp = path + ".tmp"
     with gzip.open(tmp, "wb", compresslevel=6) as f:

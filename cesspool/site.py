@@ -1,7 +1,7 @@
 """Render cesspool.lol as static files from the block records."""
 import collections, datetime, functools, gzip, hashlib, html, json, math, os, shutil, subprocess, tempfile, textwrap, time
 
-from . import classify, found, miner
+from . import address, classify, found, miner
 from .types import TYPES, info, KNOTS, PLUMB, NONE, ALLOWED, NOT_SPAM, KNOWN, DATACARRIER
 
 HOME = os.environ.get("CESSPOOL_HOME", os.path.expanduser("~/.cesspool"))
@@ -462,12 +462,13 @@ def plumb_cta(headline="Run Plumb and this stays out of your blocks.", body=None
 def page(path, title, body, *, nav="", desc="", og=None, tip=None):
     og = og or "/og/site.png"
     nav_items = [("blocks", "/blocks/", "Blocks"), ("found", "/found/", "Your Blocks"), ("shame", "/shame/", "Hall of Shame"), ("past", "/past-defaults/", "Past the Defaults"),
-                 ("check", "/check/", "Check Node"), ("guide", "/guide/", "Field Guide"), ("plumb", "/plumb/", "Plumb"), ("about", "/about/", "About")]
+                 ("check", "/check/", "Check Node"), ("guide", "/guide/", "Field Guide"), ("plumb", "/plumb/", "Plumb"), ("about", "/about/", "About"),
+                 ("address", "/address/", "Address Lookup")]  # last, so it does not push Plumb out of view
     navh = "".join(f'<a href="{u}"{" class=\"on\"" if k == nav else ""}>{t}</a>' for k, u, t in nav_items)
     full_title = f"{title} · cesspool.lol" if title else "cesspool.lol · Bitcoin water quality, block by block"
     foot_tip = f'Tip {tip["h"]}, {tm(tip["t"])}. ' if tip else ""
-    # Summary pages reload themselves when a new block lands; block, transaction, Your Blocks, about and privacy pages do not.
-    live = tip and not path.startswith("/block/") and path not in ("/tx/", "/found/", "/about/", "/privacy/", "/404")
+    # Summary pages reload themselves when a new block lands; block, transaction, Your Blocks, Address Lookup, about and privacy pages do not.
+    live = tip and not path.startswith("/block/") and path not in ("/tx/", "/found/", "/address/", "/about/", "/privacy/", "/404")
     body_attr = f' data-tip="{tip["h"]}"' if live else ""
     return f'''<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
@@ -480,7 +481,7 @@ def page(path, title, body, *, nav="", desc="", og=None, tip=None):
 </head><body{body_attr}>
 <header class="top"><div class="wrap"><a class="brand" href="/">{LOGO}<span>cesspool<span class="tld">.lol</span></span></a>
 <nav class="main">{navh}</nav><span class="spacer"></span>
-<form class="jump" role="search"><input placeholder="Height, txid, address, name" aria-label="Go to a block height or a transaction id, or find the blocks of a payout address, pool or coinbase tag"></form></div></header>
+<form class="jump" role="search"><input placeholder="Height, txid, address, name" aria-label="Go to a block height or a transaction id, look up an address, or find the blocks of a pool or coinbase tag"></form></div></header>
 <main class="wrap">{body}</main>
 <footer><div class="wrap"><div>Verdicts from the policy code in Plumb {PLUMB_VERSION}, run on every transaction.<br>
 {foot_tip}Pool names follow <a href="https://reorg.watch">reorg.watch</a>.</div>
@@ -490,7 +491,7 @@ def page(path, title, body, *, nav="", desc="", og=None, tip=None):
 '''
 
 
-ASSET_V = "31"
+ASSET_V = "32"
 
 
 def write(out, rel, text):
@@ -1836,6 +1837,32 @@ def found_page(tip):
     return page("/found/", "Your blocks", body, nav="found", desc="Find the blocks you mined, by payout address, pool name or coinbase tag, and see how they grade.", tip=tip)
 
 
+def address_page(tip, counts):
+    """counts: [addresses a token was directed to since the fork, how many of those got one in a transaction
+    that also spent from them], from address.publish."""
+    tok, own = counts
+    held = "Nobody controls what other people send to their address, but a token stays where it was sent until the owner moves it."
+    if tok:
+        held += (f" Of the {n(tok)} addresses since the fork that runestones or Counterparty enhanced sends pointed to, {n(own)} ({pct(own / tok)}) "
+                 "were pointed to at least once by a transaction that also spent from that address.")
+    names = json.dumps({t: i["name"] for t, i in TYPES.items()}, separators=(",", ":"))
+    body = f'''<div id="addrapp" data-fork="{FORK}" data-types="{esc(names)}">
+<div class="hero"><div class="kicker">Address lookup</div><h1>Has this address handled sewage?</h1>
+<p class="lede">Type a Bitcoin address. The page lists every sewage transaction since the fork that spent from it, paid it, or pointed runes or a Counterparty enhanced send at it.</p></div>
+<form class="txform foundform"><input spellcheck="false" autocomplete="off" placeholder="Bitcoin address" aria-label="Bitcoin address"><button class="btn">Look up</button></form>
+<div class="addrout" aria-live="polite"></div>
+<div class="prose foundhelp"><h2>What each line means</h2>
+<ul><li><b>Sent:</b> the transaction spent a coin from this address, so its owner took part in it.</li>
+<li><b>Runes sent here:</b> the transaction's runestone sends runes to this address, or this address gets whatever runes are left over. Runes stay on that coin until its owner spends it. Whether any arrived depends on what the inputs held, or for a mint or a new rune on whether it succeeded, which this site does not track.</li>
+<li><b>Counterparty receiver:</b> a Counterparty send in the transaction names this address as the receiver. If Counterparty accepted the send, it keeps that balance on the address until the owner sends it on. This site does not check whether it did.</li>
+<li><b>Got bitcoin:</b> the transaction paid this address and none of the above applies. This site cannot tell a plain payment from a token in a protocol it does not read, and swap services, exchanges and anyone being paid end up here, so this alone says nothing about the owner.</li></ul>
+<p>{esc(held)}</p>
+<p class="small muted">The list covers what this site grades as sewage, from block {FORK} on. No match means none of those transactions touched the address, not that the address is clean. Outputs that are themselves the data, such as fake addresses made of data, are left out, and so are pay-to-anchor outputs, which anyone can spend. Tokens are read from runestones and from Counterparty's enhanced sends. A receiver named in any other Counterparty message is not listed as a Counterparty receiver, and payments in other token protocols show as Got bitcoin.</p>
+<p class="small muted">What you type stays after the # in this page's address, which your browser never sends to the server. The page downloads two files, one of 256 sewage files and one of 256 coinbase payout files, both picked by the same hash of the address, so the server log holds those file names next to your IP address, not the address. Opening a transaction or a block from the result loads that page, and the server logs it like any other. <a href="/privacy/">What the server logs</a>.</p></div>
+<noscript><p class="muted">This page needs JavaScript to search.</p></noscript></div>'''
+    return page("/address/", "Address lookup", body, nav="address", desc="Look up a Bitcoin address: every sewage transaction since the fork that spent from it, paid it, or pointed runes or a Counterparty enhanced send at it.", tip=tip)
+
+
 # How about_page says each protocol in KNOWN is matched; the code is classify.known.
 KNOWN_RULES = [
     ("ln-commitment", "spends the funding script <code>OP_2 &lt;key&gt; &lt;key&gt; OP_2 OP_CHECKMULTISIG</code> as its only input, lock time starting 0x20, sequence starting 0x80 (BOLT 3)"),
@@ -1920,9 +1947,10 @@ def privacy_page(tip):
 <li>your browser's user agent string</li></ul>
 <p>A request that fails can also go into the error log, with your IP address, the address you asked for and the page that linked you there.</p>
 <p>The access log is deleted after at most 15 days. The error log is cleared out the same way, but only on days that had errors, so its entries can stay longer. We open the logs only to look into problems with the site. We run no analytics on them, and we do not share or sell them.</p>
-<h2>Looking up a transaction or your blocks</h2>
+<h2>Looking up a transaction, your blocks or an address</h2>
 <p>A transaction lookup puts the transaction id in the log next to your IP address. If you would rather not leave that link, look up your own transactions on your own node.</p>
 <p>On <a href="/found/">Your Blocks</a>, what you type stays after the # in the page's address, which your browser never sends, unless it is a block height or a transaction id, which opens that page like any other. A pool name or coinbase tag lookup downloads the whole name index, so the log shows only that you opened the page. An address lookup downloads the name index as well, then one of 256 address files, picked by a hash of the address, so the log holds that file's name next to your IP address, not the address. Either way the page then fetches one summary file for each thousand-block range the result falls in, and the log shows those too.</p>
+<p>On <a href="/address/">Address Lookup</a>, what you type also stays after the #. The page downloads one of 256 sewage files and one of 256 coinbase payout files, both picked by the same hash of the address, so the log holds those two file names next to your IP address, not the address. Opening a transaction or a block from the result loads that page, and the log shows it like any other.</p>
 <h2>Cloudflare</h2>
 <p>Requests to cesspool.lol go through Cloudflare first. Cloudflare:</p>
 <ul><li>sees your IP address and what you asked for</li>
@@ -1940,7 +1968,7 @@ def privacy_page(tip):
 <li>Links to other sites leave this one, and those sites have their own policies. Your browser tells them only that you came from cesspool.lol, not which page.</li></ul>
 <h2>Questions</h2>
 <p>Open an issue on <a href="https://github.com/jasonsopko/cesspool/issues">the site's GitHub repository</a>, where its source and its nginx configuration also live. If the logging changes, this page changes with it.</p>
-<p class="small muted">Updated 18 October 2026.</p>
+<p class="small muted">Updated 21 October 2026.</p>
 </div>'''
     return page("/privacy/", "Privacy", body, desc="What cesspool.lol records when you visit, and how long it keeps it.", tip=tip)
 
@@ -2233,5 +2261,8 @@ def build(out, heights=None, all_blocks=False, og=True):
     write(out, "robots.txt", "User-agent: *\nAllow: /\n")
     write(out, "404.html", page("/404", "Not found", '<div class="hero"><h1>Nothing down here</h1><p class="lede">That page does not exist. <a href="/">Back to the surface</a>.</p></div>', tip=tip))
     save_og_drawn()
-    # Last, so a page that sees the new tip reloads into pages that already show it.
+    # After every page that reloads itself, so a page that sees the new tip reloads into pages that already show it.
     write(out, "tip.json", json.dumps({"h": tip["h"]}) + "\n")
+    # After the tip: a block of fake multisig reveals touches nearly every address file, a few seconds the
+    # block pages need not wait for, and Address Lookup does not reload itself.
+    write(out, "address/index.html", address_page(tip, address.publish(out, idx)))
