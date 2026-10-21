@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Minute cron: fetch new blocks, undo reorged ones, render what changed.
 
-update.py --out /var/www/cesspool.lol [--all] [--watch 57]
+update.py --out /var/www/cesspool.lol [--all | --pages] [--watch 57]
 
 With --watch, it keeps checking the node's tip every WATCH_EVERY seconds for that long and
 updates as soon as the best block changes, so a block shows in seconds instead of waiting
@@ -29,14 +29,18 @@ def hash_at(h):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--out", required=True)
-    ap.add_argument("--all", action="store_true", help="re-render every block page")
+    which = ap.add_mutually_exclusive_group()
+    which.add_argument("--all", action="store_true", help="re-render every block page")
+    which.add_argument("--pages", action="store_true", help="re-render every block page without republishing transaction data")
     ap.add_argument("--no-og", action="store_true")
     ap.add_argument("--watch", type=float, metavar="S", help="keep checking the tip for S seconds")
     a = ap.parse_args()
 
     os.makedirs(process.HOME, exist_ok=True)
     if not a.watch:
-        run(a)
+        if not run(a) and (a.all or a.pages):
+            # The minute cron skips quietly when another run holds the lock; a run asked for by hand says so.
+            sys.exit("another update holds the lock: run it again when that one ends")
         return
     deadline = time.monotonic() + a.watch
     seen = None
@@ -98,8 +102,8 @@ def update(a):
     for i in range(0, len(new), 100):
         process.process_range(new[i:i + 100])
     flipped = apply_port_identities()
-    if new or flipped or a.all or redo_from is not None:
-        site.build(a.out, heights=new + flipped, all_blocks=a.all, og=not a.no_og)
+    if new or flipped or a.all or a.pages or redo_from is not None:
+        site.build(a.out, heights=new + flipped, all_blocks=a.all, og=not a.no_og, pages=a.pages)
 
 
 def apply_port_identities():

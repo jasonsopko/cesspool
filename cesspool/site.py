@@ -2151,8 +2151,9 @@ def copy_static(out):
             shutil.copy2(f"{fonts}/{name}", f"{sdir}/fonts/{name}")
 
 
-def build(out, heights=None, all_blocks=False, og=True):
-    """Render the summary pages, and block pages for `heights` (or all)."""
+def build(out, heights=None, all_blocks=False, og=True, pages=False):
+    """Render the summary pages, and block pages for `heights` (or all). `pages` renders every block page
+    again without republishing the transaction data, as after a change to the block page alone."""
     # A --watch run can build more than once, so nothing read for the last build carries over.
     for cached in (named_by_payout, pool_addresses, miner.survey_kinds):
         cached.cache_clear()
@@ -2164,7 +2165,7 @@ def build(out, heights=None, all_blocks=False, og=True):
     hs = sorted(idx)
     tip = idx[hs[-1]]
     copy_static(out)
-    todo = set(hs) if all_blocks else set(heights or []) | set(changed)
+    todo = set(hs) if all_blocks or pages else set(heights or []) | set(changed)
     if not all_blocks:
         # A run that died partway leaves blocks with no page; the next run that renders catches them up.
         todo |= {h for h in hs if not os.path.exists(f"{out}/block/{h}/index.html")}
