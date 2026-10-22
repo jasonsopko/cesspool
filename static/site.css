@@ -58,7 +58,7 @@ h1 { font-size: clamp(1.9rem, 4.5vw, 3.1rem); letter-spacing: -.025em; }
 h2 { font-size: 1.45rem; margin-top: 2.2rem; }
 h3 { font-size: 1.05rem; }
 p { margin: 0 0 1em; }
-.wrap { max-width: 1180px; margin: 0 auto; padding: 0 16px; }
+.wrap { max-width: 1400px; margin: 0 auto; padding: 0 16px; }
 .muted { color: var(--muted); }
 .faint { color: var(--faint); }
 .small { font-size: .875rem; }
@@ -71,7 +71,7 @@ p { margin: 0 0 1em; }
 .brand:hover { text-decoration: none; }
 .brand svg { width: 30px; height: 30px; }
 .brand .tld { color: var(--muted); }
-nav.main { display: flex; gap: 18px; overflow-x: auto; scrollbar-width: none; }
+nav.main { display: flex; gap: 16px; overflow-x: auto; scrollbar-width: none; }
 nav.main a { color: var(--muted); font-size: .93rem; white-space: nowrap; padding: 4px 0; }
 nav.main a.on, nav.main a:hover { color: var(--text); text-decoration: none; }
 nav.main a.on { box-shadow: inset 0 -2px 0 var(--water); }
@@ -127,7 +127,8 @@ nav.main.more { -webkit-mask-image: linear-gradient(to right, #000 calc(100% - 3
 .panel { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 18px 20px; }
 .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
 .grid3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; }
-@media (max-width: 860px) { .grid2, .grid3 { grid-template-columns: 1fr; } }
+.grid2.lead { grid-template-columns: 2fr 1fr; }
+@media (max-width: 860px) { .grid2, .grid2.lead, .grid3 { grid-template-columns: 1fr; } }
 
 /* tables */
 .tw { overflow-x: auto; border: 1px solid var(--line); border-radius: 8px; background: var(--panel); }

@@ -491,7 +491,7 @@ def page(path, title, body, *, nav="", desc="", og=None, tip=None):
 '''
 
 
-ASSET_V = "33"
+ASSET_V = "34"
 
 
 def write(out, rel, text):
@@ -1026,7 +1026,7 @@ def shame_pane(idx, key, label, seconds, min_blocks):
 <div class="podium">{"".join(pod) or '<div class="panel">No pool with enough blocks mined sewage in this window.</div>'}</div>
 <h3>Every pool that mined sewage <span class="muted small">(at least {min_blocks} blocks in the window)</span></h3>
 {table if ranked else '<p class="muted">Nobody, in this window.</p>'}{sm}
-<div class="grid2" style="margin-top:26px"><div><h3>Biggest dumps</h3><div class="tw"><table><tr><th>Block</th><th>Pool</th><th>Grade</th><th class="r">Share</th><th class="r">Txs</th><th class="r">Payload</th><th>Main kind</th></tr>{wb}</table></div></div>
+<div class="grid2 lead" style="margin-top:26px"><div><h3>Biggest dumps</h3><div class="tw"><table><tr><th>Block</th><th>Pool</th><th>Grade</th><th class="r">Share</th><th class="r">Txs</th><th class="r">Payload</th><th>Main kind</th></tr>{wb}</table></div></div>
 <div class="honor"><h3>Clean water roll</h3><p class="small muted" style="margin-bottom:8px">Pools with {min_blocks} or more blocks in the window and not one sewage transaction.</p>
 <div class="tw"><table><tr><th>Pool</th><th class="r">Blocks</th></tr>{hon or '<tr><td colspan="2" class="muted">Nobody qualified.</td></tr>'}</table></div></div></div>
 </div>'''
@@ -1625,7 +1625,7 @@ def past_page(idx, tip):
                     f'<td class="r num">{pct(p["past"] / p["blocks"])}</td><td class="r num">{n(p["text"])}</td><td class="r num">{n(p["txs"])}</td>'
                     f'<td><a href="/block/{p["last"]["h"]}/">{p["last"]["h"]}</a> <span class="faint">{tm(p["last"]["t"], False)}</span></td></tr>' for p in pools)
     brows = "".join(f'<tr><td><a href="/block/{b["h"]}/">{b["h"]}</a></td><td>{tm(b["t"], False)}</td><td>{pool_link(who(b))}</td>'
-                    f'<td>{named_cell(b)}</td><td class="r num">{n(past(b))}</td><td>{past_kinds(b)}</td></tr>' for b in reversed(pb))
+                    f'<td>{named_cell(b)}</td><td class="r num">{n(past(b))}</td><td class="wrapc">{past_kinds(b)}</td></tr>' for b in reversed(pb))
     body = f'''<div class="hero"><div class="kicker">Past the defaults</div><h1>Blocks built past the default filters</h1>
 <p class="lede">Knots refuses every transaction counted here at its default settings, and Plumb refuses them too. A node at those defaults does not accept them from peers or put them in a block unless its operator overrides the refusal. Each block below holds at least one: it was built on a node without those rules, on one with them turned off or overridden, or by pool software that added transactions the node's mempool did not hold. Refusing is policy, not a consensus rule, so these blocks are valid.</p>
 <p class="small muted" style="margin-top:8px">Not counted: dust sweeps and Rootstock PowPeg spends. Knots refuses those at its defaults too, but they <a href="/about/#bar">are not spam</a>: the bytes it counts are padding or a 32-byte commitment.</p>
@@ -1763,7 +1763,7 @@ The gateway&#39;s node chooses the transactions, normally the miner&#39;s own, s
     of_its = f"{n(len(pb))} of its {n(nb)} blocks" if nb != 1 else "Its one block"
     if pb:
         prows = "".join(f'<tr><td><a href="/block/{b["h"]}/">{b["h"]}</a></td><td>{tm(b["t"], False)}</td><td class="r num">{n(past(b))}</td>'
-                        f'<td>{named_cell(b)}</td><td>{past_kinds(b)}</td></tr>' for b in pb)
+                        f'<td>{named_cell(b)}</td><td class="wrapc">{past_kinds(b)}</td></tr>' for b in pb)
         tonly = sum(1 for b in pb if named_by_payout(b["h"], b["pool"]) is False)
         if not tonly:
             basis = ""
