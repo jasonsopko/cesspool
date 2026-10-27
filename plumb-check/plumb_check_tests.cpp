@@ -5,8 +5,9 @@
 // (prevouts in input order). Writes PLUMB_CHECK_OUT: one JSON object per line
 // with, for each of the core, knots and plumb profiles, every policy reason
 // the transaction trips and the data bytes it counts, plus, under the plumb
-// profile, the per-input and per-output data byte counts and the bytes each
-// of Plumb's filters is responsible for ("fc": the count with that filter
+// profile, the per-input and per-output data byte counts, the bytes the BPUB
+// rule adds for the whole transaction ("data_bpub") and the bytes each
+// data-counting rule is responsible for ("fc": the count with that rule
 // alone turned off, taken from the full count). For a transaction the knots
 // or plumb profile relays while the other side sees data in it, "fix" says
 // what a node on that profile could set to refuse it (see Fix below). When
@@ -54,6 +55,7 @@ struct Profile {
     bool reject_dead_branches;
     bool reject_bare_envelopes;
     bool reject_fake_multisig;
+    bool reject_bpub;
     unsigned int bytes_per_sigop;
     unsigned int bytes_per_sigop_strict;
 };
@@ -64,6 +66,7 @@ struct Globals {
     bool reject_dead_branches{::g_reject_dead_branches};
     bool reject_bare_envelopes{::g_reject_bare_envelopes};
     bool reject_fake_multisig{::g_reject_fake_multisig};
+    bool reject_bpub{::g_reject_bpub};
     unsigned int bytes_per_sigop{::nBytesPerSigOp};
     unsigned int bytes_per_sigop_strict{::nBytesPerSigOpStrict};
 };
@@ -76,7 +79,7 @@ Profile MakeProfile(const std::string& name, const Settings& set, const Globals&
     for (const auto& [k, v] : set) args.ForceSetArg(k, v);
     InitParameterInteraction(args);
     Profile p{name, set, kernel::MemPoolOptions{}, defaults.weight_per_data_byte, defaults.script_size_limit,
-              defaults.reject_dead_branches, defaults.reject_bare_envelopes, defaults.reject_fake_multisig, defaults.bytes_per_sigop, defaults.bytes_per_sigop_strict};
+              defaults.reject_dead_branches, defaults.reject_bare_envelopes, defaults.reject_fake_multisig, defaults.reject_bpub, defaults.bytes_per_sigop, defaults.bytes_per_sigop_strict};
     BOOST_REQUIRE(ApplyArgsManOptions(args, Params(), p.opts));
     if (auto parsed = args.GetFixedPointArg("-datacarriercost", 2)) {
         p.weight_per_data_byte = ((*parsed * WITNESS_SCALE_FACTOR) + 99) / 100;
@@ -85,6 +88,7 @@ Profile MakeProfile(const std::string& name, const Settings& set, const Globals&
     p.reject_dead_branches = args.GetBoolArg("-rejectdeadbranches", p.reject_dead_branches);
     p.reject_bare_envelopes = args.GetBoolArg("-rejectbareenvelopes", p.reject_bare_envelopes);
     p.reject_fake_multisig = args.GetBoolArg("-rejectfakemultisig", p.reject_fake_multisig);
+    p.reject_bpub = args.GetBoolArg("-rejectbpub", p.reject_bpub);
     p.bytes_per_sigop = args.GetIntArg("-bytespersigop", p.bytes_per_sigop);
     p.bytes_per_sigop_strict = args.GetIntArg("-bytespersigopstrict", p.bytes_per_sigop_strict);
     return p;
@@ -97,6 +101,7 @@ void Activate(const Profile& p)
     ::g_reject_dead_branches = p.reject_dead_branches;
     ::g_reject_bare_envelopes = p.reject_bare_envelopes;
     ::g_reject_fake_multisig = p.reject_fake_multisig;
+    ::g_reject_bpub = p.reject_bpub;
     ::nBytesPerSigOp = p.bytes_per_sigop;
     ::nBytesPerSigOpStrict = p.bytes_per_sigop_strict;
 }
@@ -266,20 +271,21 @@ BOOST_AUTO_TEST_CASE(plumb_check)
     // (30), which Knots has no option for, so that reason is dropped below. Core 30's larger
     // datacarriersize cannot matter here: BIP110 caps OP_RETURN outputs at 83 bytes by consensus.
     profiles.push_back(MakeProfile("core", {{"-corepolicy", "1"}, {"-maxtxlegacysigops", "2500"}}, defaults));
-    // Stock Knots 29.4.2: none of Plumb's filters exist there, and -datacarriersize defaults to 83
-    // where Plumb's is 42.
-    profiles.push_back(MakeProfile("knots", {{"-rejectfakeoutputs", "0"}, {"-rejectdeadbranches", "0"}, {"-rejectbareenvelopes", "0"}, {"-rejectfakemultisig", "0"}, {"-rejecttokenmessages", "0"}, {"-datacarriersize", "83"}}, defaults));
+    // Stock Knots 29.4.3: it carries the dead-branch, bare-envelope, unproven-key and BPUB rules
+    // itself (knots#400, #319, #422, #463), so only Plumb's two own filters are off, and
+    // -datacarriersize defaults to 83 where Plumb's is 42.
+    profiles.push_back(MakeProfile("knots", {{"-rejectfakeoutputs", "0"}, {"-rejecttokenmessages", "0"}, {"-datacarriersize", "83"}}, defaults));
     profiles.push_back(MakeProfile("plumb", {}, defaults));
     // Plumb with Knots' -datacarriersize, to tell what the 42-byte default refuses on its own.
     const Profile plumb83{MakeProfile("plumb", {{"-datacarriersize", "83"}}, defaults)};
-    // Plumb with one data-counting filter off at a time, to measure what each adds to the
+    // Plumb with one data-counting rule off at a time, to measure what each adds to the
     // count. -rejecttokenmessages needs no measurement: its reasons name it.
     std::vector<Profile> plumb_without;
-    for (const char* option : {"-rejectfakeoutputs", "-rejectdeadbranches", "-rejectbareenvelopes", "-rejectfakemultisig"}) {
+    for (const char* option : {"-rejectfakeoutputs", "-rejectdeadbranches", "-rejectbareenvelopes", "-rejectfakemultisig", "-rejectbpub"}) {
         plumb_without.push_back(MakeProfile(option, {{option, "0"}}, defaults));
     }
     const Profile restore{"", {}, {}, defaults.weight_per_data_byte, defaults.script_size_limit, defaults.reject_dead_branches,
-                          defaults.reject_bare_envelopes, defaults.reject_fake_multisig, defaults.bytes_per_sigop, defaults.bytes_per_sigop_strict};
+                          defaults.reject_bare_envelopes, defaults.reject_fake_multisig, defaults.reject_bpub, defaults.bytes_per_sigop, defaults.bytes_per_sigop_strict};
 
     std::ifstream in{in_path};
     std::ofstream out{out_path};
@@ -350,9 +356,14 @@ BOOST_AUTO_TEST_CASE(plumb_check)
                 outs.push_back(uint64_t(n));
                 total += n;
             }
+            // The BPUB rule counts the witness scripts of a file's inputs for the whole transaction,
+            // outside the per-script counts (policy.cpp DatacarrierBytes), so it is its own item.
+            const size_t bpub{::g_reject_bpub ? BPUBBytes(tx) : 0};
+            total += bpub;
             BOOST_CHECK_EQUAL(total, dcb.first + dcb.second);
             row.pushKV("data_in", ins);
             row.pushKV("data_out", outs);
+            if (bpub) row.pushKV("data_bpub", uint64_t(bpub));
             // Bytes each filter is responsible for; a filter that changes nothing is left out.
             UniValue fc{UniValue::VOBJ};
             for (const auto& q : plumb_without) {
