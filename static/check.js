@@ -1,6 +1,6 @@
 // cesspool.lol: read the startup lines a Knots or Plumb node writes to debug.log and say which spam
 // filters it is using and what set each one. It runs in the browser; the pasted text goes nowhere.
-// The rules follow Knots 29.4.2: src/common/settings.cpp (GetSetting, MergeSettings), src/common/args.cpp
+// The rules follow Knots 29.4.3: src/common/settings.cpp (GetSetting, MergeSettings), src/common/args.cpp
 // (LogArgs) and the -corepolicy block in src/init.cpp.
 (function () {
   "use strict";
@@ -107,7 +107,7 @@
     return parseInt(m[3], 10) >= p.n;
   }
 
-  // spec: {options: [{name, label, kind, def, core, good, falseIs, max, over, min, under, std, before, plumbFrom}], plumb: [{name, label, std}],
+  // spec: {options: [{name, label, kind, def, core, good, falseIs, max, over, min, under, std, before, plumbFrom}], plumb: [{name, label, std, until}],
   // since, oldest}. std: acceptnonstdtxn=1 turns it off. before: [[version, default]] for Knots older than that version.
   function checkNode(text, spec) {
     var log = readLog(text);
@@ -125,13 +125,20 @@
     spec.options.forEach(function (o) {
       // A Plumb release can start an option somewhere else than Knots does (plumbFrom: from release n on its
       // Knots base, and on every later base, where the release number starts again at 1).
-      if (o.plumbFrom && plumbFrom(log.version, o.plumbFrom)) o = Object.assign({}, o, o.plumbFrom.set);
+      var fromPlumb = o.plumbFrom && plumbFrom(log.version, o.plumbFrom);
+      if (fromPlumb) o = Object.assign({}, o, o.plumbFrom.set);
       var r = resolve(log.args[o.name]), value, from, def = o.def;
-      (o.before || []).forEach(function (b) { if (log.version && !versionAtLeast(log.version, b[0])) def = b[1]; });
+      // before: the default on Knots older than that version, or null where the option did not exist yet.
+      // A Plumb release that plumbFrom matched keeps its own default: Plumb shipped rejectdeadbranches on
+      // 29.4.2, before Knots 29.4.3 took it in.
+      if (!fromPlumb) (o.before || []).forEach(function (b) { if (log.version && !versionAtLeast(log.version, b[0])) def = b[1]; });
+      // plumbRow: on Plumb before that base the node reports this as one of its own filters (a Plumb row below), so no row here
+      if (o.plumbRow && log.plumb[o.name] !== undefined && !plumbFrom(log.version, {base: o.plumbRow, n: 1})) return;
       if (r) { value = r.value; from = r.from; }
-      else if (corepolicy && o.core !== undefined) { value = o.core; from = "corepolicy"; }
+      else if (corepolicy && o.core !== undefined && def !== null) { value = o.core; from = "corepolicy"; }
       else { value = def; from = "default"; }
       var row = {name: o.name, label: res.notes.indexOf("old") >= 0 && o.oldLabel ? o.oldLabel : o.label, from: from, status: "on"};
+      if (value === null) { row.value = "-"; row.status = "absent"; res.rows.push(row); return; }
       if (o.kind === "bool") {
         var b = asBool(value);
         row.value = b ? "1" : "0";
@@ -150,6 +157,8 @@
     var plumbSeen = Object.keys(log.plumb).length > 0;
     if (plumbSeen) {
       spec.plumb.forEach(function (p) {
+        // until: from Plumb on that Knots base on, the rule is Knots' own and the node no longer reports it
+        if (p.until && plumbFrom(log.version, {base: p.until, n: 1})) return;
         var on = log.plumb[p.name];
         var row = {name: p.name, label: p.label, plumb: true, from: "plumb", value: on === undefined ? "?" : on ? "1" : "0",
                    status: on === undefined ? "missing" : on ? "on" : "off"};
@@ -206,9 +215,9 @@
     corepolicy: "corepolicy=1 is set. It turns off every filter below that nothing else sets.",
     acceptnonstdtxn: "acceptnonstdtxn=1 is set. It turns off the checks marked below: tokens, parasites, bare outputs, script sizes and Plumb's token messages. The data size limits still apply.",
     plumbmissing: "The version says Plumb, but no Plumb filter lines were pasted. Include them to check Plumb's filters.",
-    stock: "Stock Knots: Plumb's five extra filters are not in this build."
+    stock: "Stock Knots: Plumb's extra filters are not in this build."
   };
-  var STATUS = {on: "on", off: "OFF", looser: "looser", stricter: "stricter", capped: "capped at 83", missing: "not reported"};
+  var STATUS = {on: "on", off: "OFF", looser: "looser", stricter: "stricter", capped: "capped at 83", missing: "not reported", absent: "not in this version; Knots 29.4.3 adds it"};
 
   function render(out, res) {
     out.textContent = "";

@@ -624,14 +624,21 @@
     return ul;
   }
   // Plumb's own filters behind a refusal, most bytes first: those measured in fc, plus any a reason names.
+  // Knots 29.4.3 applies the other measured rules itself (cat.knots_rules), so they are not Plumb's own.
   function plumbOwn(cat, tx, dataRs) {
-    var fc = tx.fc || {}, own = Object.keys(fc), options = cat.plumb_options || [];
+    var fc = tx.fc || {}, options = cat.plumb_own || cat.plumb_options || [];
+    var own = Object.keys(fc).filter(function (o) { return options.indexOf(o) >= 0; });
     dataRs.forEach(function (r) {
       var rule = cat.rules && cat.rules[r];
       if (rule && rule[1] && options.indexOf(rule[1]) >= 0 && own.indexOf(rule[1]) < 0) own.push(rule[1]);
     });
     own.sort(function (a, b) { return (fc[b] || 0) - (fc[a] || 0); });
     return own;
+  }
+  // Knots' own data-counting rules behind a refusal, most bytes first, as the engine measured them.
+  function knotsMeasured(cat, tx) {
+    var fc = tx.fc || {};
+    return (cat.knots_rules || []).filter(function (o) { return fc[o]; }).sort(function (a, b) { return fc[b] - fc[a]; });
   }
   function text(s) { return document.createTextNode(s); }
   // For a transaction this software relays: the settings whose value would refuse it. The engine found
@@ -732,17 +739,30 @@
       return f;
     });
     // Two filters covering the same bytes: neither changes the count alone, together they do.
-    if (added > 0 && !Object.keys(fc).length) parts.push(document.createTextNode("its filters together count " + num(added) + " B that Knots does not"));
+    var ownMeasured = Object.keys(fc).some(function (o) { return (cat.plumb_own || []).indexOf(o) >= 0; });
+    if (added > 0 && !ownMeasured) parts.push(document.createTextNode("its filters together count " + num(added) + " B that Knots does not"));
     var box = el("div", { cls: "by" }), knotsRefuses = knots.some(function (r) { return DATA_REASON.test(r); });
+    // Knots' own rules, with the bytes each one counts where the engine measured them
+    var krules = function (b) {
+      var ks = knotsMeasured(cat, tx);
+      b.appendChild(document.createTextNode(ks.length ? "Knots' rules refuse it: " : "Knots' rules refuse it."));
+      ks.forEach(function (o, i) {
+        if (i) b.appendChild(document.createTextNode("; "));
+        b.appendChild(el("code", { text: o })); b.appendChild(document.createTextNode(" counts " + num(fc[o]) + " B"));
+        var s = sourceLink(cat, o); if (s) b.appendChild(s);
+      });
+      if (ks.length) b.appendChild(document.createTextNode("."));
+    };
     if (!parts.length) {
-      if (knotsRefuses) { box.textContent = "Same rules as Knots. None of Plumb's added filters is needed here."; also(box); return box; }
+      if (knotsRefuses) { krules(box); box.appendChild(document.createTextNode(" None of Plumb's own filters is needed here.")); also(box); return box; }
       box.appendChild(document.createTextNode("Knots relays it; the refusal comes from rules Knots does not have: "));
       dataRs.filter(function (r) { return knots.indexOf(r) < 0; }).forEach(function (r, i) { if (i) box.appendChild(document.createTextNode(", ")); box.appendChild(el("code", { text: r })); });
       box.appendChild(document.createTextNode("."));
       also(box);
       return box;
     }
-    box.appendChild(document.createTextNode(knotsRefuses ? "Knots' rules already refuse it. Plumb's own filters add: " : "Refused by Plumb's own filters: "));
+    if (knotsRefuses) { krules(box); box.appendChild(document.createTextNode(" Plumb's own filters add: ")); }
+    else box.appendChild(document.createTextNode("Refused by Plumb's own filters: "));
     parts.forEach(function (p, i) { if (i) box.appendChild(document.createTextNode("; ")); box.appendChild(p); });
     box.appendChild(document.createTextNode("."));
     also(box);

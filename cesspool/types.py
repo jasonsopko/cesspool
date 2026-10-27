@@ -7,6 +7,7 @@ a wrong entry here shows up as a contradiction on the page.
 
 KNOTS = "Knots default"
 PLUMB = "Plumb"
+KNOTS_SINCE = "29.4.3"  # the Knots release that took in knots#319, #400, #422 and #463; "knots_since" marks the kinds it made Knots defaults
 NONE = "No filter yet"
 ALLOWED = "Allowed"
 NOT_SPAM = "Not spam"
@@ -17,9 +18,9 @@ TYPES = {
         "name": "Fake multisig keys",
         "what": "Spends a multisig script with eight or more public keys that no signature needs. Only the signing keys are real; the rest are file bytes dressed as keys.",
         "how": "Each unused 33-byte key in the revealed witness script is payload. One reveal can carry hundreds of inputs.",
-        "filter": PLUMB, "option": "-rejectfakemultisig",
+        "filter": KNOTS, "knots_since": KNOTS_SINCE, "option": "-rejectfakemultisig",
         "prs": [("knots#422", "https://github.com/bitcoinknots/bitcoin/pull/422")],
-        "note": "Plumb counts each unsigned key past ten in a script as data. A reveal with ten or fewer unsigned keys in each script gets through.",
+        "note": "Knots 29.4.3 and Plumb count each unsigned key past ten in a script as data, and Knots 29.4.3 also refuses the BPUB file format outright (knots#463). A reveal with ten or fewer unsigned keys in each script gets through. Plumb keeps the switch; Knots has none.",
     },
     "p2wsh-run": {
         "name": "Dust P2WSH run",
@@ -88,21 +89,21 @@ TYPES = {
         "name": "Dead-branch payload",
         "what": "A tapscript with a branch that a constant makes unreachable, holding pushes that never run. The JXL-n-hide encoder uses it.",
         "how": "The node never executes the branch, so the pushes are payload riding in the witness at the witness discount.",
-        "filter": PLUMB, "option": "-rejectdeadbranches",
+        "filter": KNOTS, "knots_since": KNOTS_SINCE, "option": "-rejectdeadbranches",
         "prs": [("knots#400", "https://github.com/bitcoinknots/bitcoin/pull/400")],
     },
     "bare-inscription": {
         "name": "Inscription, bare envelope",
         "what": "An `ord` inscription whose pushes are dropped again with OP_2DROP instead of wrapped in OP_FALSE OP_IF.",
-        "how": "The shape inscriptions moved to for when OP_IF is not available. Knots counts only the last push before a drop, so the payload walks past it.",
-        "filter": PLUMB, "option": "-rejectbareenvelopes",
+        "how": "The shape inscriptions moved to for when OP_IF is not available. Knots before 29.4.3 counted only the last push before a drop, so the payload walked past it; 29.4.3 counts the whole run.",
+        "filter": KNOTS, "knots_since": KNOTS_SINCE, "option": "-rejectbareenvelopes",
         "prs": [("knots#319", "https://github.com/bitcoinknots/bitcoin/pull/319")],
     },
     "bare-envelope": {
         "name": "Bare data envelope",
         "what": "A run of data pushes in a script, dropped again with OP_DROP or OP_2DROP.",
         "how": "The same shape as a bare inscription without the `ord` tag. The pushes never affect the spend.",
-        "filter": PLUMB, "option": "-rejectbareenvelopes",
+        "filter": KNOTS, "knots_since": KNOTS_SINCE, "option": "-rejectbareenvelopes",
         "prs": [("knots#319", "https://github.com/bitcoinknots/bitcoin/pull/319")],
     },
     "envelope": {
@@ -207,7 +208,7 @@ TYPES = {
         "name": "Liquid-layout emergency spend",
         "what": "Spends the Liquid federation script by its emergency branch: the 11-of-15 check fails on purpose, and a 2-of-3 signs after 4,032 blocks.",
         "how": "Plumb's `-rejectfakemultisig` counts the federation keys the branch leaves unsigned. This is very likely Liquid's own recovery and not spam, but cesspool still counts it: every Liquid deposit tweaks the keys, so the layout cannot prove they are real, and a layout anyone can copy cannot be exempt.",
-        "filter": PLUMB, "option": "-rejectfakemultisig",
+        "filter": KNOTS, "knots_since": KNOTS_SINCE, "option": "-rejectfakemultisig",
         "prs": [("knots#422", "https://github.com/bitcoinknots/bitcoin/pull/422")],
     },
     "babylon": {
