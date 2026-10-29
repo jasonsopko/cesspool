@@ -17,6 +17,10 @@ and a TRUC parent's unconfirmed child must be TRUC). So the scan counts:
      top byte is 0x80, as BOLT 3 builds a commitment transaction; ln_anchor_pair those with two 330-sat P2WSH
      outputs; ln_run_hit those with three or more distinct P2WSH outputs sharing one value of 546 sat or less,
      which Plumb's -rejectfakeoutputs counts as data (policy.h DATA_OUTPUT_DUST_RUN, DATA_OUTPUT_RUN_MAX_VALUE).
+  ln_taproot_revoke: transactions with an input that spends LND's simple taproot channel revocation leaf
+     <32-byte key> OP_DROP <32-byte key> OP_CHECKSIG through the script path, as script.cpp
+     IsLnTaprootRevokeLeaf matches it (knots#487): Knots 29.4.3 refuses them as non-standard data, Plumb 9 counts
+     the 34 dropped bytes of each toward -datacarriersize.
 Prints the dict as JSON; with --rows also the sub-floor version 3 transactions and their children."""
 import gzip, json, os, sys
 from collections import Counter, defaultdict
@@ -24,6 +28,22 @@ from multiprocessing import Pool
 
 RAW = os.path.join(os.environ.get("CESSPOOL_HOME", os.path.expanduser("~/.cesspool")), "raw")
 P2A = "51024e73"
+
+
+def revoke_leaf(v):
+    """True when the input spends a taproot output through the 68-byte leaf under a tapscript control block,
+    past an annex if any."""
+    if v.get("prevout", {}).get("scriptPubKey", {}).get("type") != "witness_v1_taproot":
+        return False
+    w = v.get("txinwitness") or []
+    top = len(w)
+    if top >= 2 and w[-1].startswith("50"):
+        top -= 1
+    if top < 2:
+        return False
+    control, leaf = bytes.fromhex(w[top - 1]), bytes.fromhex(w[top - 2])
+    return (33 <= len(control) <= 33 + 128 * 32 and (len(control) - 33) % 32 == 0 and control[0] & 0xfe == 0xc0
+            and len(leaf) == 68 and leaf[0] == 32 and leaf[33] == 0x75 and leaf[34] == 32 and leaf[67] == 0xac)
 
 
 def one(h):
@@ -47,6 +67,7 @@ def one(h):
             c["v3_sub_floor_relayed"] += bool(good)
             rows.append({"height": h, "txid": tx["txid"], "fee": fee, "vsize": tx["vsize"],
                          "children": [(k["txid"], k["version"], round(float(k.get("fee", 0)) * 1e8), k["vsize"]) for k in kids]})
+        c["ln_taproot_revoke"] += any(revoke_leaf(v) for v in tx["vin"])
         if (tx["locktime"] >> 24) == 0x20 and all((v["sequence"] >> 24) == 0x80 for v in tx["vin"]):
             c["ln"] += 1
             runs = defaultdict(set)
@@ -69,7 +90,8 @@ def main():
         for c, rr in p.imap_unordered(one, range(lo, hi + 1), chunksize=8):
             total.update(c)
             rows.extend(rr)
-    keys = ["txs", "p2a_under_240", "v3_sub_floor", "v3_zero_fee", "v3_sub_floor_relayed", "ln", "ln_anchor_pair", "ln_run_hit"]
+    keys = ["txs", "p2a_under_240", "v3_sub_floor", "v3_zero_fee", "v3_sub_floor_relayed", "ln", "ln_anchor_pair", "ln_run_hit",
+            "ln_taproot_revoke"]
     out = {"lo": lo, "hi": hi} | {k: total.get(k, 0) for k in keys}
     if "--rows" in sys.argv:
         out["rows"] = sorted(rows, key=lambda r: r["height"])

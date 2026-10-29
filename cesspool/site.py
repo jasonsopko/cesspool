@@ -1,5 +1,5 @@
 """Render cesspool.lol as static files from the block records."""
-import collections, datetime, functools, gzip, hashlib, html, json, math, os, shutil, subprocess, tempfile, textwrap, time
+import collections, datetime, functools, gzip, hashlib, html, json, math, os, re, shutil, subprocess, tempfile, textwrap, time
 
 from . import address, classify, found, miner
 from .types import TYPES, info, KNOTS, PLUMB, NONE, ALLOWED, NOT_SPAM, KNOWN, DATACARRIER
@@ -15,8 +15,9 @@ SITE = "https://cesspool.lol"
 PLUMB_REPO = "https://github.com/plumb-node/plumb"
 PLUMB_RELEASE = "https://github.com/plumb-node/plumb/releases/latest"
 INSTALLER = "https://github.com/jasonsopko/knots-datum-node"
-PLUMB_VERSION = "plumb8 (v29.4.3.knots20260508.plumb8)"
-PLUMB_NAME = "Plumb 8"
+PLUMB_TAG = "v29.4.3.knots20260508.plumb9"
+PLUMB_NAME = "Plumb 9"
+PLUMB_VERSION = f"{PLUMB_NAME} ({PLUMB_TAG})"  # the release the verdicts come from, as a page names it
 KNOTS_NAME = "Knots 29.4.3"
 DATACARRIER_SIZE = {"knots": 83, "plumb": 42}  # each one's default -datacarriersize; Plumb went back to 42 in plumb7
 MAXSCRIPTSIZE_DEFAULT = 1650  # the Knots and Plumb default -maxscriptsize
@@ -484,7 +485,7 @@ def page(path, title, body, *, nav="", desc="", og=None, tip=None):
 <nav class="main">{navh}</nav><span class="spacer"></span>
 <form class="jump" role="search"><input placeholder="Height, txid, address, name" aria-label="Go to a block height or a transaction id, look up an address, or find the blocks of a pool or coinbase tag"></form></div></header>
 <main class="wrap">{body}</main>
-<footer><div class="wrap"><div>Verdicts from the policy code in Plumb {PLUMB_VERSION}, run on every transaction.<br>
+<footer><div class="wrap"><div>Verdicts from the policy code in {PLUMB_VERSION}, run on every transaction.<br>
 {foot_tip}Pool names follow <a href="https://reorg.watch">reorg.watch</a>.</div>
 <div>We never display what spam carries.<br><a href="/about/">How this works</a> · <a href="/privacy/">Privacy</a> · <a href="https://github.com/jasonsopko/cesspool">Source</a></div>
 <a class="discord" href="https://discord.gg/QxhQMdxrJ7"><img src="/static/beh-discord.png?v={ASSET_V}" width="28" height="28" alt=""><span>Bitcoin Education Hub on Discord: discuss Bitcoin openly, without being banned for your ideas.</span></a></div></footer>
@@ -492,7 +493,7 @@ def page(path, title, body, *, nav="", desc="", og=None, tip=None):
 '''
 
 
-ASSET_V = "35"
+ASSET_V = "36"
 
 
 def write(out, rel, text):
@@ -569,15 +570,32 @@ def rule_list(rs, dc, k):
 
 
 def plumb_own(s, data_rs):
-    """Plumb's own filters behind a refusal, most bytes first: those measured in fc, plus any a reason names."""
+    """Plumb's own filters behind a refusal, most bytes first: those measured in fc, plus any a reason names,
+    plus knots#470's recount when it counts bytes."""
     fc = s.get("fc") or {}
-    return sorted((set(fc) & PLUMB_OWN) | {RULES[r][1] for r in data_rs if r in RULES and RULES[r][1] in PLUMB_OWN}, key=lambda o: -fc.get(o, 0))
+    own = (set(fc) & PLUMB_OWN) | {RULES[r][1] for r in data_rs if r in RULES and RULES[r][1] in PLUMB_OWN}
+    if fc.get(RECOUNT):
+        own.add(RECOUNT)
+    return sorted(own, key=lambda o: -fc.get(o, 0))
+
+
+def own_name(o):
+    """How a refusal sentence names one of Plumb's own filters."""
+    if o == RECOUNT:
+        return f'recount from verified keys (<a href="{esc(RECOUNT_URL)}">{esc(RECOUNT)}</a>, under <code>-rejectfakemultisig</code>)'
+    return f"<code>{esc(o)}</code>"
+
+
+def knots_bytes(fc, o):
+    """The bytes Knots' rule o counts, as Plumb measured it: Plumb's -rejectfakemultisig count holds its recount
+    from verified keys too, which Knots does not count."""
+    return fc.get(o, 0) - (fc.get(RECOUNT, 0) if o == "-rejectfakemultisig" else 0)
 
 
 def knots_measured(s):
     """Knots' own data-counting rules behind a refusal, most bytes first, as the engine measured them."""
     fc = s.get("fc") or {}
-    return sorted((o for o in KNOTS_RULES if fc.get(o)), key=lambda o: -fc[o])
+    return sorted((o for o in KNOTS_RULES if knots_bytes(fc, o)), key=lambda o: -knots_bytes(fc, o))
 
 
 def feerate_conf(sat_per_kvb):
@@ -620,7 +638,7 @@ def refuse_with(k, name, s, counted):
         return f'<div class="by">Would refuse it with: {"; ".join(parts)}.</div>'
     # Name Plumb's filter only when Plumb refuses the transaction; fc alone measures bytes
     own = plumb_own(s, [r for r in s["v"]["plumb"] if classify.DATA_REASONS.match(r)]) if k == "knots" and s["v"]["plumb"] else []
-    does = f" {esc(PLUMB_NAME)}&#39;s {', '.join(f'<code>{esc(o)}</code>' for o in own)} {'do' if len(own) > 1 else 'does'}." if own else ""
+    does = f" {esc(PLUMB_NAME)}&#39;s {', '.join(own_name(o) for o in own)} {'do' if len(own) > 1 else 'does'}." if own else ""
     return (f'<div class="by">No <code>datacarriersize</code>, no <code>maxscriptsize</code> of {MIN_USEFUL_SCRIPT_LIMIT} or more, no '
             f'<code>bytespersigopstrict</code> up to {MAX_USEFUL_SIGOP_STRICT} and no '
             f'<code>dustrelayfee</code> up to {feerate_conf(MAX_DUST_RATE)} refuses it.{does}</div>')
@@ -642,13 +660,13 @@ def plumb_by(s, data_rs):
                     f'Knots&#39; default is {DATACARRIER_SIZE["knots"]}{relays}.</div>')
     added = sum(dc.get("plumb", [0, 0])) - sum(dc.get("knots", [0, 0]))
     own = plumb_own(s, data_rs)
-    parts = [f"<code>{esc(o)}</code>" + (f" counts {n(fc[o])} B" if fc.get(o) else "") + source_link(o) for o in own]
-    if added > 0 and not (set(fc) & PLUMB_OWN):
+    parts = [own_name(o) + (f" counts {n(fc[o])} B" if fc.get(o) else "") + (source_link(o) if o != RECOUNT else "") for o in own]
+    if added > 0 and not (set(fc) & (PLUMB_OWN | {RECOUNT})):
         # Two filters covering the same bytes: neither changes the count alone, together they do.
         parts.append(f"its filters together count {n(added)} B that Knots does not")
     knots_refuses = any(classify.DATA_REASONS.match(r) for r in knots_rs)
     # Knots' own rules, with the bytes each one counts, where the engine measured them
-    kparts = [f"<code>{esc(o)}</code> counts {n(fc[o])} B{source_link(o)}" for o in knots_measured(s)]
+    kparts = [f"<code>{esc(o)}</code> counts {n(knots_bytes(fc, o))} B{source_link(o)}" for o in knots_measured(s)]
     krules = f'Knots&#39; rules refuse it: {"; ".join(kparts)}.' if kparts else "Knots&#39; rules refuse it."
     also = f" It is also over {size42}; Knots&#39; is {DATACARRIER_SIZE['knots']}." if by42 else ""
     if parts:
@@ -985,6 +1003,7 @@ def tx_catalog():
              for t, i in TYPES.items()}
     return {"plumb": PLUMB_NAME, "verdicts": VERDICT_NAMES, "rules": RULES, "sources": {**KNOTS_SOURCE, **FILTER_SOURCE},
             "plumb_options": sorted(PLUMB_OPTIONS), "plumb_own": sorted(PLUMB_OWN), "knots_rules": list(KNOTS_RULES),
+            "recount": [RECOUNT, RECOUNT_URL],
             "knots_source": KNOTS_SOURCE, "dcsize": DATACARRIER_SIZE, "types": types,
             "limits": {"dcsize": DATACARRIER_SIZE, "mss": MAXSCRIPTSIZE_DEFAULT, "dust": DUSTRELAYFEE_DEFAULT,
                        "mss_floor": MIN_USEFUL_SCRIPT_LIMIT, "dust_max": MAX_DUST_RATE,
@@ -1081,6 +1100,11 @@ KNOTS_HAS_NO_SWITCH = {"-rejectbareenvelopes", "-rejectfakemultisig"}
 # applies the first four by default (two of them with no switch, which Plumb adds), Plumb alone the last.
 KNOTS_RULES = ("-rejectdeadbranches", "-rejectbareenvelopes", "-rejectfakemultisig", "-rejectbpub")
 PLUMB_OWN = {"-rejectfakeoutputs", "-rejecttokenmessages"}
+# The engine also measures knots#470's recount on its own (fc "knots#470": what Plumb counts from the keys a
+# signature verified against beyond the count from the script alone). Knots 29.4.3 has no recount, so those bytes
+# are Plumb's own, under its -rejectfakemultisig switch, and Plumb's -rejectfakemultisig count includes them.
+RECOUNT = "knots#470"
+RECOUNT_URL = "https://github.com/bitcoinknots/bitcoin/pull/470"
 KNOTS_SOURCE = {"-rejectdeadbranches": ("knots#400", "https://github.com/bitcoinknots/bitcoin/pull/400"),
                 "-rejectbareenvelopes": ("knots#319", "https://github.com/bitcoinknots/bitcoin/pull/319"),
                 "-rejectfakemultisig": ("knots#422", "https://github.com/bitcoinknots/bitcoin/pull/422"),
@@ -1101,7 +1125,7 @@ PLUMB_FILTERS = load_filters()
 FILTER_SOURCE = ({x["option"]: (x["source"], x["url"]) for x in PLUMB_FILTERS}
                  or {i["option"]: i["prs"][0] for i in TYPES.values() if i.get("filter") == PLUMB and i.get("prs")})
 PLUMB_OPTIONS = set(FILTER_SOURCE) | {"-" + x.split("=")[0] for x in SETTINGS_PLUMB}
-SETTINGS_GREP = 'grep -E "Bitcoin (Knots|Core) version|Using data directory|Plumb filter|arg: (\\[[a-z0-9]+\\] )?(corepolicy|reject|datacarrier|acceptnonstd|permitbare|maxscriptsize|bytespersigopstrict)"'
+SETTINGS_GREP = 'grep -E "Bitcoin (Knots|Core) version|Using data directory|Plumb filter|arg: (\\[[a-z0-9]+\\] )?(corepolicy|reject|datacarrier|acceptnonstd|permitbare|permitlnrevokeleaf|maxscriptsize|bytespersigopstrict)"'
 SETTINGS_CHECK = SETTINGS_GREP + " ~/.bitcoin/debug.log"
 UMBREL_LOG = "~/umbrel/app-data/bitcoin-knots/data/bitcoin/debug.log"
 LOWER_LIMITS = f"{PLUMB_REPO}/blob/29.x-plumb/plumb/FILTERS.md#lower-data-limits"
@@ -1162,9 +1186,13 @@ CONF_NAMES = {"knots": "Bitcoin " + KNOTS_NAME, "plumb": PLUMB_NAME}
 # the only way such a parent gets through package relay; ln: Lightning force closes (locktime's top byte 0x20,
 # every sequence's top byte 0x80), ln_anchor_pair those with two 330-sat P2WSH outputs, ln_run_hit those with
 # three or more distinct P2WSH outputs sharing one value of 546 sat or less, which -rejectfakeoutputs
-# refuses. The weight share of the P2WSH runs comes from AGGR_FACTS.
+# refuses; ln_taproot_revoke: those spending LND's simple taproot channel revocation leaf through the script path
+# (knots#487); ln_taproot_revoke_token of them carry a JSON token message that Plumb refuses as tokens-json
+# (counted in the plumb9 regrade's logs/attribution.tsv, from tools/attribute.py, reviews-1029/cesspool-plumb9).
+# The weight share of the P2WSH runs comes from AGGR_FACTS.
 LN_FACTS = {"lo": 961640, "hi": 978047, "txs": 3878328, "p2a_under_240": 0, "v3_sub_floor": 37, "v3_zero_fee": 37,
-            "v3_sub_floor_relayed": 0, "ln": 19448, "ln_anchor_pair": 6839, "ln_run_hit": 0}
+            "v3_sub_floor_relayed": 0, "ln": 19448, "ln_anchor_pair": 6839, "ln_run_hit": 0,
+            "ln_taproot_revoke": 223, "ln_taproot_revoke_token": 223}
 
 
 def conf_comment(*paras):
@@ -1390,9 +1418,23 @@ def lightning_conf(prog):
             "the node then relays everything that filter catches, among it the runs of small P2WSH outputs that "
             f"stage data for later reveals, {pct(a['run_w'] / a['sewage_w'], 0)} by weight of the sewage the "
             "recommended Knots file relays.")
-    apart = ("apart from the OP_RETURN close noted below" if prog == "knots" else
+    apart = ("apart from the OP_RETURN close and the LND penalty spend noted below" if prog == "knots" else
              "apart from the OP_RETURN close noted below and the one case noted above rejectfakeoutputs at the end "
              "of this file")
+    # knots#487: what each program does with the penalty spend of an LND simple taproot channel
+    leaf_bytes = 34
+    spent = (f"From block {l['lo']} to {l['hi']}, " + (plural(l["ln_taproot_revoke"], "mined transaction") + " spent"
+             if l["ln_taproot_revoke"] else "no mined transaction spent") + " a leaf of that form"
+             + (", every one of them carrying a JSON token message." if l["ln_taproot_revoke"] and l["ln_taproot_revoke_token"] == l["ln_taproot_revoke"] else "."))
+    if prog == "knots":
+        lnd = (f"With this file Knots {KNOTS_NAME.split()[-1]} refuses the penalty spend of an LND simple taproot "
+               f"channel: the channel's revocation leaf pushes a 32-byte key and drops it, and Knots counts those "
+               f"{leaf_bytes} bytes as non-standard data. Plumb relays it since plumb9 (knots#487). {spent}")
+    else:
+        lnd = (f"Plumb relays the penalty spend of an LND simple taproot channel, counting the {leaf_bytes} bytes its "
+               f"revocation leaf pushes and drops toward datacarriersize (knots#487; permitlnrevokeleaf=0 turns this "
+               f"off). One such input fits {DATACARRIER_SIZE['plumb']}; two in one transaction count {2 * leaf_bytes} "
+               f"and are refused. Knots {KNOTS_NAME.split()[-1]} refuses the spend. {spent}")
     if prog == "knots":
         own = ("Knots' spam filter settings are written out so that a corepolicy=1 set elsewhere can no longer reset "
                "them. The comments above some of the defaults say what they refuse that is not spam. Knots' Spam "
@@ -1448,6 +1490,7 @@ def lightning_conf(prog):
         f"OP_RETURN script longer than {DATACARRIER_SIZE['plumb']} bytes, which is a push of more than "
         f"{DATACARRIER_SIZE['plumb'] - 2}. The spec lets a side do that with a push of 6 to 80 bytes; raise the "
         f"value to {DATACARRIER_SIZE['knots']} if your node does.",
+        lnd,
         own,
         "If your bitcoin.conf already sets one of these options, or turns one off with a no line such as "
         "nodatacarrier=1, change or remove that line rather than adding a second one: with two lines, which "
@@ -1501,7 +1544,7 @@ def lightning_pane():
 
 def lightning_note():
     l = LN_FACTS
-    return f'''<p class="small" id="lightning" style="max-width:75ch"><b>The Lightning files are for a node that a Lightning node sends transactions through.</b> Everything a CLN or LND node broadcasts relays with the recommended files, apart from a mutual close that burns a tiny balance into an OP_RETURN over 42 bytes and, on Plumb, the one case at the end of this note: force closes of anchor channels with their 330-sat anchors, the fee bump that spends an anchor, HTLC-timeout spends, mutual closes. The commitment transaction of a zero-fee commitment channel does not: it is version 3, pays no fee itself beyond a trimmed remainder, and carries one pay-to-anchor output of at most 240 sat, with a child paying for both, and three Knots defaults refuse it. The Lightning files are the recommended files with those three changed, <code>subdustfeepenalty=0</code>, <code>mempooltruc=enforce</code> and <code>permitephemeral=anchor,-send,dust</code>, and the dust fee settings written out at their defaults. What the three lines let through: a version 3 transaction that pays less than the 1 sat/vB relay floor on its own, with at most one pay-to-anchor output under its dust limit, when it arrives with a version 3 child that pays the floor for both. Data in it costs what it costs anywhere else in the file. From block {l["lo"]} to {l["hi"]} nothing mined fits that description. LDK 0.2 and later can open these channels between LDK peers, eclair 0.14 has them as an option that is off by default, and LND 0.21 and CLN 26.06 show no sign of them. Do not raise <code>dustrelayfee</code> or turn on <code>dustdynamic</code> on such a node: anything above the default makes the 330-sat anchors dust, and every anchor force close is refused. Plumb only: <code>rejectfakeoutputs</code> refuses a commitment with three or more HTLC outputs of the same value between 354 and 546 sat; none of the {n(l["ln"])} force closes mined in those blocks carried three or more P2WSH outputs of one value of 546 sat or less. The comments above each changed setting say the rest.</p>'''
+    return f'''<p class="small" id="lightning" style="max-width:75ch"><b>The Lightning files are for a node that a Lightning node sends transactions through.</b> Everything a CLN or LND node broadcasts relays with the recommended files, apart from a mutual close that burns a tiny balance into an OP_RETURN over 42 bytes, on Knots the penalty spend of an LND simple taproot channel, and, on Plumb, the one case at the end of this note: force closes of anchor channels with their 330-sat anchors, the fee bump that spends an anchor, HTLC-timeout spends, mutual closes. The commitment transaction of a zero-fee commitment channel does not: it is version 3, pays no fee itself beyond a trimmed remainder, and carries one pay-to-anchor output of at most 240 sat, with a child paying for both, and three Knots defaults refuse it. The Lightning files are the recommended files with those three changed, <code>subdustfeepenalty=0</code>, <code>mempooltruc=enforce</code> and <code>permitephemeral=anchor,-send,dust</code>, and the dust fee settings written out at their defaults. What the three lines let through: a version 3 transaction that pays less than the 1 sat/vB relay floor on its own, with at most one pay-to-anchor output under its dust limit, when it arrives with a version 3 child that pays the floor for both. Data in it costs what it costs anywhere else in the file. From block {l["lo"]} to {l["hi"]} nothing mined fits that description. LDK 0.2 and later can open these channels between LDK peers, eclair 0.14 has them as an option that is off by default, and LND 0.21 and CLN 26.06 show no sign of them. Do not raise <code>dustrelayfee</code> or turn on <code>dustdynamic</code> on such a node: anything above the default makes the 330-sat anchors dust, and every anchor force close is refused. Plumb only: <code>rejectfakeoutputs</code> refuses a commitment with three or more HTLC outputs of the same value between 354 and 546 sat; none of the {n(l["ln"])} force closes mined in those blocks carried three or more P2WSH outputs of one value of 546 sat or less. Knots {KNOTS_NAME.split()[-1]} refuses the penalty spend of an LND simple taproot channel: its revocation leaf pushes a 32-byte key and drops it, and Knots counts those 34 bytes as non-standard data. Plumb relays it since plumb9 (knots#487), counting the 34 bytes toward <code>datacarriersize</code>, so one such input fits {DATACARRIER_SIZE["plumb"]}. In those blocks {"no" if not l["ln_taproot_revoke"] else n(l["ln_taproot_revoke"])} mined transaction{"" if l["ln_taproot_revoke"] == 1 else "s"} spent a leaf of that form{", every one of them carrying a JSON token message that Plumb refuses" if l["ln_taproot_revoke"] and l["ln_taproot_revoke_token"] == l["ln_taproot_revoke"] else ""}. The comments above each changed setting say the rest.</p>'''
 
 
 def settings_section():
@@ -1529,6 +1572,11 @@ def settings_section():
 # Knots' own.
 # std marks the checks acceptnonstdtxn=1 turns off (IsStandardTx, AreInputsStandard, IsWitnessStandard in
 # src/validation.cpp); the data byte limits in ValidateInputs/PreChecks run either way.
+# permitlnrevokeleaf is Plumb's switch over knots#487, from plumb9 on, default 1. It is not a filter, so it gets a
+# row only when a line sets it ("onlySet"; Knots and older Plumb ignore the unknown option and log no line for it).
+# At 1 the 34 bytes LND's revocation leaf drops count toward datacarriersize like OP_RETURN data, so it lets
+# nothing past the data limit; at 0 the node refuses the penalty spend of an LND simple taproot channel, as Knots
+# 29.4.3 does. That is no filter turned off, so the row says what 0 refuses ("lnd") and does not count as off.
 CHECK_SPEC = {
     "since": "v29.4.1",
     "oldest": "v29.4",
@@ -1552,6 +1600,8 @@ CHECK_SPEC = {
         {"name": "permitbaremultisig", "label": "bare multisig outputs", "kind": "bool", "def": False, "core": True, "good": False, "std": True},
         {"name": "maxscriptsize", "label": "largest script and witness, in bytes", "kind": "num", "def": 1650, "core": 4294967295, "max": 1650, "over": "looser", "std": True},
         {"name": "bytespersigopstrict", "label": "least weight for each signature check; 51 refuses most fake multisig", "kind": "num", "def": 20, "core": 0, "min": 20, "under": "looser"},
+        {"name": "permitlnrevokeleaf", "label": "the key LND's revocation leaf drops, counted toward datacarriersize", "kind": "bool", "def": True, "good": True,
+         "falseIs": "lnd", "onlySet": True},
     ],
     "plumb": [
         {"name": "rejectfakeoutputs", "label": "fake output hashes and keys"},
@@ -1918,18 +1968,44 @@ def guide_page(idx, tip):
     return page("/guide/", "Field Guide", body, nav="guide", desc="Every kind of Bitcoin spam since the fork, and which filter stops it.", og="/og/site.png", tip=tip)
 
 
+def plumb_release(tag):
+    """plumb4 for v29.4.2.knots20260508.plumb4; the tag itself when it has no Plumb number."""
+    m = re.search(r"\.(plumb\d+)$", tag or "")
+    return m.group(1) if m else (tag or "")
+
+
+# The release in which a filter's source replaced the pull request filters.json names as "previously"; the
+# manifest does not record it. plumbnode.org's filter table uses the same words.
+PREVIOUSLY_UNTIL = {"plumb#2": "plumb9"}
+
+
+def filter_sources(x):
+    """A filters.json entry's pull requests: the source, the one it replaced ("previously"), and the ones that
+    changed it since, with the Plumb release each came in ("amended_by"). The filter's own release is its
+    "since", in a column of its own."""
+    link = lambda src, url: f'<a href="{esc(url)}">{esc(src)}</a>'
+    out = link(x["source"], x["url"])
+    if x.get("previously"):
+        until = PREVIOUSLY_UNTIL.get(x["previously"])
+        out += f' (Plumb&#39;s own {link(x["previously"], x["previously_url"])}{" before " + esc(until) if until else ""})'
+    for a in x.get("amended_by", []):
+        out += f'; changed by {link(a["source"], a["url"])} in {esc(plumb_release(a.get("since")))}'
+    return out
+
+
 def plumb_page(idx, tip):
     allb = window_blocks(idx, None)
     tot = totals(allb)
     filters = PLUMB_FILTERS
-    frows = "".join(f'<tr><td><code>{esc(x["option"])}</code></td><td class="wrapc">{esc(x["summary"])}</td><td><a href="{esc(x["url"])}">{esc(x["source"])}</a></td></tr>' for x in filters)
+    frows = "".join(f'<tr><td><code>{esc(x["option"])}</code></td><td class="wrapc">{esc(x["summary"])}</td><td>{filter_sources(x)}</td>'
+                    f'<td>{esc(plumb_release(x.get("since")))}</td></tr>' for x in filters)
     body = f'''<div class="hero"><div class="kicker">The fix</div><h1>Plumb keeps it out of the block</h1>
 <p class="lede">Plumb is Bitcoin Knots plus every spam filter that has been reviewed and tested, on by default, in every release. It changes what a node relays and puts in its block templates. It does not change consensus.</p></div>
 <div class="tiles"><div class="tile"><div class="v">{size(tot["sd"])}</div><div class="l">of sewage payload mined since the fork</div></div>
 <div class="tile"><div class="v">{pct(tot["psw"] / tot["sw"] if tot["sw"] else 0)}</div><div class="l">of that block space a Plumb node refuses</div></div>
 <div class="tile"><div class="v">{pct(tot["ksw"] / tot["sw"] if tot["sw"] else 0)}</div><div class="l">refused by stock Knots</div></div>
 <div class="tile"><div class="v">{n(tot["sm"])}</div><div class="l">sewage transaction{"" if tot["sm"] == 1 else "s"} {PLUMB_NAME} misses</div><div class="s">{"a fake multisig reveal" if tot["sm"] == 1 else "fake multisig reveals"} small enough to stay under the limit</div></div></div>
-<h2>What it adds to Knots</h2><div class="tw"><table><tr><th>Option</th><th>What it counts as data</th><th>Source</th></tr>{frows}</table></div>
+<h2>What it adds to Knots</h2><div class="tw"><table><tr><th>Option</th><th>What it counts as data</th><th>Source</th><th>In Plumb since</th></tr>{frows}</table></div>
 <p class="small muted" style="margin-top:8px">It also starts <code>datacarriersize</code> at {DATACARRIER_SIZE["plumb"]} bytes where Knots starts at {DATACARRIER_SIZE["knots"]}, which refuses most swap memos, staking tags and text notes. Everything Knots already refuses stays refused: runestones, Counterparty, inscriptions, CAT-21, bare multisig.</p>
 <h2>Run it</h2><div class="grid2"><div class="panel"><h3>A node</h3><p class="muted">Build from the signed tag and replace <code>bitcoind</code>. Same config, same data directory, same RPC. Already on Knots or Plumb? <a href="/check/">Check your node</a>.</p>
 <p><a class="btn" href="{PLUMB_RELEASE}">Latest release</a><a class="btn ghost" href="{PLUMB_REPO}">Source</a></p></div>
@@ -2015,8 +2091,8 @@ def about_page(idx, tip):
 <p class="lede">Every block since the fork at height {FORK}, every transaction in it, run through the Knots and Plumb policy checks.</p></div>
 <div class="prose">
 <h2>Verdicts come from the shipped code</h2>
-<p>Each transaction, with the coins it spends, goes through the policy checks of Plumb {PLUMB_VERSION}: <code>IsStandardTx</code>, <code>AreInputsStandard</code>, the data-carrier count, <code>IsWitnessStandard</code> and the sigop limits, once with each software's default policy: stock Knots 29.4.3 (Plumb's two own filters off, and <code>datacarriersize</code> at Knots' {DATACARRIER_SIZE["knots"]}) and Plumb (<code>datacarriersize</code> at {DATACARRIER_SIZE["plumb"]}, its default since plumb7). Bitcoin Core is not compared: it does not accept block {FORK} or any block after it, so no Core node has these blocks. Nothing here reimplements a filter, so this page and a Plumb node cannot disagree about a transaction.</p>
-<p>Each refusal on a block or transaction page names the rule it comes from and the option behind it. Plumb's count is also taken with each of five data-counting rules turned off alone, so the bytes a rule is responsible for come from the code too (the sixth, <code>-rejecttokenmessages</code>, names itself in its reason), and a refusal that rests on Knots' own rules says so. So does one that rests on Plumb's {DATACARRIER_SIZE["plumb"]}-byte limit: the count is taken again with the limit at Knots' {DATACARRIER_SIZE["knots"]}.</p>
+<p>Each transaction, with the coins it spends, goes through the policy checks of {PLUMB_VERSION}: <code>IsStandardTx</code>, <code>AreInputsStandard</code>, the data-carrier count, <code>IsWitnessStandard</code> and the sigop limits, once with each software's default policy: stock Knots 29.4.3 (Plumb's two own filters off, <code>permitlnrevokeleaf=0</code>, and <code>datacarriersize</code> at Knots' {DATACARRIER_SIZE["knots"]}) and Plumb (<code>datacarriersize</code> at {DATACARRIER_SIZE["plumb"]}, its default since plumb7). For Plumb the engine also runs the policy script check, as the node does, and counts the multisig keys again, crediting only those a signature verified against (knots#470); Knots 29.4.3 has no such recount. Bitcoin Core is not compared: it does not accept block {FORK} or any block after it, so no Core node has these blocks. Nothing here reimplements a filter, so this page and a Plumb node cannot disagree about a transaction.</p>
+<p>Each refusal on a block or transaction page names the rule it comes from and the option behind it. Plumb's count is also taken with each of five data-counting rules turned off alone, and once with knots#470's recount from verified keys left out, so the bytes a rule is responsible for come from the code too (the sixth, <code>-rejecttokenmessages</code>, names itself in its reason), and a refusal that rests on Knots' own rules says so. So does one that rests on Plumb's {DATACARRIER_SIZE["plumb"]}-byte limit: the count is taken again with the limit at Knots' {DATACARRIER_SIZE["knots"]}.</p>
 <p>Where Knots or Plumb relays a transaction shown here, the engine also tries four settings one at a time and keeps the value that would refuse it: the largest <code>datacarriersize</code>; the largest <code>maxscriptsize</code> of {MIN_USEFUL_SCRIPT_LIMIT} or more, the size of the largest push a script may hold, since a limit below that starts refusing ordinary multisig witnesses (a 3-of-5 P2WSH witness is about 395 bytes); the smallest <code>bytespersigopstrict</code> up to {MAX_USEFUL_SIGOP_STRICT}, since above that it starts refusing segwit 2-of-15 spends (a 2-of-15 P2WSH input has about 55 weight units for each of its 15 signature checks; multisig with many keys and few signatures can be refused lower); and the smallest <code>dustrelayfee</code> up to {feerate_conf(MAX_DUST_RATE)} (100 sat/vB, where a P2TR output under 11,000 sat is already dust; higher rates were not tried). Each value comes from rerunning the same checks with only that setting changed. A setting that refuses the transaction at no value in its range is left out, and a verdict that offers none names the four that were tried.</p>
 <p>Not modeled: fee floors, mempool limits, replacement rules and address reuse. Those depend on the mempool at the time, not on what the transaction carries.</p>
 <h2>Grades</h2>

@@ -623,11 +623,12 @@
     });
     return ul;
   }
-  // Plumb's own filters behind a refusal, most bytes first: those measured in fc, plus any a reason names.
-  // Knots 29.4.3 applies the other measured rules itself (cat.knots_rules), so they are not Plumb's own.
+  // Plumb's own filters behind a refusal, most bytes first: those measured in fc, plus any a reason names,
+  // plus knots#470's recount (cat.recount) when it counts bytes. Knots 29.4.3 applies the other measured rules
+  // itself (cat.knots_rules), so they are not Plumb's own.
   function plumbOwn(cat, tx, dataRs) {
-    var fc = tx.fc || {}, options = cat.plumb_own || cat.plumb_options || [];
-    var own = Object.keys(fc).filter(function (o) { return options.indexOf(o) >= 0; });
+    var fc = tx.fc || {}, options = (cat.plumb_own || cat.plumb_options || []).concat(cat.recount ? [cat.recount[0]] : []);
+    var own = Object.keys(fc).filter(function (o) { return options.indexOf(o) >= 0 && fc[o]; });
     dataRs.forEach(function (r) {
       var rule = cat.rules && cat.rules[r];
       if (rule && rule[1] && options.indexOf(rule[1]) >= 0 && own.indexOf(rule[1]) < 0) own.push(rule[1]);
@@ -635,10 +636,28 @@
     own.sort(function (a, b) { return (fc[b] || 0) - (fc[a] || 0); });
     return own;
   }
+  // How a refusal sentence names one of Plumb's own filters, with its source link.
+  function ownName(cat, o) {
+    var f = document.createDocumentFragment();
+    if (cat.recount && o === cat.recount[0]) {
+      f.appendChild(text("recount from verified keys ("));
+      f.appendChild(el("a", { href: cat.recount[1], text: o }));
+      f.appendChild(text(", under ")); f.appendChild(el("code", { text: "-rejectfakemultisig" })); f.appendChild(text(")"));
+      return f;
+    }
+    f.appendChild(el("code", { text: o }));
+    return f;
+  }
+  // The bytes Knots' rule o counts, as Plumb measured it: Plumb's -rejectfakemultisig count holds its recount
+  // from verified keys too, which Knots does not count.
+  function knotsBytes(cat, fc, o) {
+    return (fc[o] || 0) - (cat.recount && o === "-rejectfakemultisig" ? fc[cat.recount[0]] || 0 : 0);
+  }
   // Knots' own data-counting rules behind a refusal, most bytes first, as the engine measured them.
   function knotsMeasured(cat, tx) {
     var fc = tx.fc || {};
-    return (cat.knots_rules || []).filter(function (o) { return fc[o]; }).sort(function (a, b) { return fc[b] - fc[a]; });
+    return (cat.knots_rules || []).filter(function (o) { return knotsBytes(cat, fc, o); })
+      .sort(function (a, b) { return knotsBytes(cat, fc, b) - knotsBytes(cat, fc, a); });
   }
   function text(s) { return document.createTextNode(s); }
   // For a transaction this software relays: the settings whose value would refuse it. The engine found
@@ -699,7 +718,7 @@
     box.appendChild(text(" up to " + conf(lim.dust_max) + " refuses it."));
     if (own.length) {
       box.appendChild(text(" " + cat.plumb + "'s "));
-      own.forEach(function (o, i) { if (i) box.appendChild(text(", ")); box.appendChild(el("code", { text: o })); });
+      own.forEach(function (o, i) { if (i) box.appendChild(text(", ")); box.appendChild(ownName(cat, o)); });
       box.appendChild(text(own.length > 1 ? " do." : " does."));
     }
     return box;
@@ -733,13 +752,13 @@
     var own = plumbOwn(cat, tx, dataRs);
     var parts = own.map(function (o) {
       var f = document.createDocumentFragment();
-      f.appendChild(el("code", { text: o }));
+      f.appendChild(ownName(cat, o));
       if (fc[o]) f.appendChild(document.createTextNode(" counts " + num(fc[o]) + " B"));
-      var s = sourceLink(cat, o); if (s) f.appendChild(s);
+      var s = cat.recount && o === cat.recount[0] ? null : sourceLink(cat, o); if (s) f.appendChild(s);
       return f;
     });
     // Two filters covering the same bytes: neither changes the count alone, together they do.
-    var ownMeasured = Object.keys(fc).some(function (o) { return (cat.plumb_own || []).indexOf(o) >= 0; });
+    var ownMeasured = Object.keys(fc).some(function (o) { return (cat.plumb_own || []).indexOf(o) >= 0 || (cat.recount && o === cat.recount[0]); });
     if (added > 0 && !ownMeasured) parts.push(document.createTextNode("its filters together count " + num(added) + " B that Knots does not"));
     var box = el("div", { cls: "by" }), knotsRefuses = knots.some(function (r) { return DATA_REASON.test(r); });
     // Knots' own rules, with the bytes each one counts where the engine measured them
@@ -748,7 +767,7 @@
       b.appendChild(document.createTextNode(ks.length ? "Knots' rules refuse it: " : "Knots' rules refuse it."));
       ks.forEach(function (o, i) {
         if (i) b.appendChild(document.createTextNode("; "));
-        b.appendChild(el("code", { text: o })); b.appendChild(document.createTextNode(" counts " + num(fc[o]) + " B"));
+        b.appendChild(el("code", { text: o })); b.appendChild(document.createTextNode(" counts " + num(knotsBytes(cat, fc, o)) + " B"));
         var s = sourceLink(cat, o); if (s) b.appendChild(s);
       });
       if (ks.length) b.appendChild(document.createTextNode("."));

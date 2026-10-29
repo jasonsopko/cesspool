@@ -1,7 +1,7 @@
 #!/bin/bash
 # Build the verdict engine into test_bitcoin from a Plumb tree at a release tag.
 #   plumb-check/build.sh <plumb worktree with a configured build/> 
-# The worktree must sit at the tag the site names (PLUMB_VERSION in site.py).
+# The worktree must sit at the tag the site names (PLUMB_TAG in site.py).
 # Installs $CESSPOOL_HOME/bin/test_bitcoin-plumb (default ~/.cesspool); process.py uses it.
 set -euo pipefail
 tree=${1:?plumb worktree}

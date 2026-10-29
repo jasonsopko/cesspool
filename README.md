@@ -8,15 +8,19 @@ out.
 
 - `plumb-check/plumb_check_tests.cpp` is built into `test_bitcoin` from a Plumb
   tree (`plumb-check/build.sh`). It runs the shipped policy code on each
-  transaction three ways, each with that software's defaults: Bitcoin Core 31 (`-corepolicy` plus Core 30's legacy-sigop limit and multiple OP_RETURN outputs), stock Knots 29.4.2
-  (Plumb's two own filters off and `-datacarriersize` at Knots' 83; since 29.4.3 Knots carries the dead-branch, bare-envelope, unproven-key and BPUB rules itself) and Plumb (42 since plumb7), and reports every reason each one
-  trips and the data bytes it counts, plus, for Plumb, where the bytes sit
+  transaction three ways, each with that software's defaults: Bitcoin Core 31 (`-corepolicy` plus Core 30's legacy-sigop limit and multiple OP_RETURN outputs), stock Knots 29.4.3
+  (Plumb's two own filters off, `-permitlnrevokeleaf=0` and `-datacarriersize` at Knots' 83; since 29.4.3 Knots carries the dead-branch, bare-envelope, unproven-key and BPUB rules itself) and Plumb (42 since plumb7), and reports every reason each one
+  trips and the data bytes it counts. Plumb's count includes the recount knots#470 adds after the policy
+  script check, which credits a key only when a signature verified against it; the engine runs the script
+  check the way the node does to get those keys, and stock Knots 29.4.3 has no such recount. For Plumb it
+  also reports where the bytes sit
   and how many each of five data-counting rules adds (the count with
-  that rule alone off), and, when Plumb's 42-byte limit changes its reasons, the
+  that rule alone off) and how many the recount adds (the count with it
+  left out), and, when Plumb's 42-byte limit changes its reasons, the
   reasons it gives at 83 (`p83`). Nothing reimplements a filter.
   The site shows the Knots and Plumb verdicts only: Bitcoin Core does not
   accept block 961640 or any block after it, so no Core node has these blocks.
-- `cesspool/classify.py` names the protocol and finds the shapes Plumb does
+- `cesspool/classify.py` names the protocol and finds the kinds Plumb does
   not count yet (fake multisig keys), so a miss shows as a miss.
 - `cesspool/miner.py` names the pool with reorg-watch's own rules.
 - `cesspool/site.py` renders static pages and share images.

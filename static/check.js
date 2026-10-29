@@ -134,6 +134,8 @@
       if (!fromPlumb) (o.before || []).forEach(function (b) { if (log.version && !versionAtLeast(log.version, b[0])) def = b[1]; });
       // plumbRow: on Plumb before that base the node reports this as one of its own filters (a Plumb row below), so no row here
       if (o.plumbRow && log.plumb[o.name] !== undefined && !plumbFrom(log.version, {base: o.plumbRow, n: 1})) return;
+      // onlySet: an option that is no filter, shown only where a line sets it
+      if (o.onlySet && !r) return;
       if (r) { value = r.value; from = r.from; }
       else if (corepolicy && o.core !== undefined && def !== null) { value = o.core; from = "corepolicy"; }
       else { value = def; from = "default"; }
@@ -217,7 +219,8 @@
     plumbmissing: "The version says Plumb, but no Plumb filter lines were pasted. Include them to check Plumb's filters.",
     stock: "Stock Knots: Plumb's extra filters are not in this build."
   };
-  var STATUS = {on: "on", off: "OFF", looser: "looser", stricter: "stricter", capped: "capped at 83", missing: "not reported", absent: "not in this version; Knots 29.4.3 adds it"};
+  var STATUS = {on: "on", off: "OFF", looser: "looser", stricter: "stricter", capped: "capped at 83", missing: "not reported", absent: "not in this version; Knots 29.4.3 adds it",
+    lnd: "refuses LND taproot channel penalties"};
 
   function render(out, res) {
     out.textContent = "";
