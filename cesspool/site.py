@@ -268,10 +268,15 @@ def past_kinds(b):
 @functools.lru_cache(maxsize=None)
 def pool_addresses():
     by = collections.defaultdict(set)
+    rw = miner.rw()  # outside the try, so a cache that Pools cannot parse still stops the build
     try:
         with open(miner.CACHE) as f:
-            for e in json.load(f):
-                by[e["name"]] |= set(e.get("addresses") or [])
+            # Through reorg-watch's pool_entries(), as Pools reads the list. set() on the raw field
+            # raised TypeError, stopping the build, for a list or an object as an address or a
+            # nonzero number or true as the field, and a number among string addresses broke the
+            # sort in build() for a pool with blocks on the site.
+            for name, addrs, _ in rw.pool_entries(json.load(f)):
+                by[name] |= set(addrs)
     except (OSError, ValueError):
         pass
     return by
