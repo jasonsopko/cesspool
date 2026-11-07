@@ -73,10 +73,11 @@ struct Profile {
     bool reject_fake_multisig;
     bool reject_bpub;
     bool permit_ln_revoke_leaf;
+    bool reject_fake_outputs;
     unsigned int bytes_per_sigop;
     unsigned int bytes_per_sigop_strict;
     // Whether the node carries knots#470 and recounts from the keys a signature verified against
-    // (Plumb). Stock Knots 29.4.3 and Core do not.
+    // (Plumb). Stock Knots 29.5 and Core do not.
     bool verified_key_credit;
 };
 
@@ -88,6 +89,7 @@ struct Globals {
     bool reject_fake_multisig{::g_reject_fake_multisig};
     bool reject_bpub{::g_reject_bpub};
     bool permit_ln_revoke_leaf{::g_permit_ln_revoke_leaf};
+    bool reject_fake_outputs{::g_reject_fake_outputs};
     unsigned int bytes_per_sigop{::nBytesPerSigOp};
     unsigned int bytes_per_sigop_strict{::nBytesPerSigOpStrict};
 };
@@ -101,7 +103,7 @@ Profile MakeProfile(const std::string& name, const Settings& set, const Globals&
     InitParameterInteraction(args);
     Profile p{name, set, kernel::MemPoolOptions{}, defaults.weight_per_data_byte, defaults.script_size_limit,
               defaults.reject_dead_branches, defaults.reject_bare_envelopes, defaults.reject_fake_multisig, defaults.reject_bpub,
-              defaults.permit_ln_revoke_leaf, defaults.bytes_per_sigop, defaults.bytes_per_sigop_strict, verified_key_credit};
+              defaults.permit_ln_revoke_leaf, defaults.reject_fake_outputs, defaults.bytes_per_sigop, defaults.bytes_per_sigop_strict, verified_key_credit};
     BOOST_REQUIRE(ApplyArgsManOptions(args, Params(), p.opts));
     if (auto parsed = args.GetFixedPointArg("-datacarriercost", 2)) {
         p.weight_per_data_byte = ((*parsed * WITNESS_SCALE_FACTOR) + 99) / 100;
@@ -112,6 +114,7 @@ Profile MakeProfile(const std::string& name, const Settings& set, const Globals&
     p.reject_fake_multisig = args.GetBoolArg("-rejectfakemultisig", p.reject_fake_multisig);
     p.reject_bpub = args.GetBoolArg("-rejectbpub", p.reject_bpub);
     p.permit_ln_revoke_leaf = args.GetBoolArg("-permitlnrevokeleaf", p.permit_ln_revoke_leaf);
+    p.reject_fake_outputs = args.GetBoolArg("-rejectfakeoutputs", p.reject_fake_outputs);
     p.bytes_per_sigop = args.GetIntArg("-bytespersigop", p.bytes_per_sigop);
     p.bytes_per_sigop_strict = args.GetIntArg("-bytespersigopstrict", p.bytes_per_sigop_strict);
     return p;
@@ -126,6 +129,7 @@ void Activate(const Profile& p)
     ::g_reject_fake_multisig = p.reject_fake_multisig;
     ::g_reject_bpub = p.reject_bpub;
     ::g_permit_ln_revoke_leaf = p.permit_ln_revoke_leaf;
+    ::g_reject_fake_outputs = p.reject_fake_outputs;
     ::nBytesPerSigOp = p.bytes_per_sigop;
     ::nBytesPerSigOpStrict = p.bytes_per_sigop_strict;
 }
@@ -148,11 +152,12 @@ void Collect(F check, std::vector<std::string>& reasons)
 }
 
 // Outputs whose hash or key is data, as MemPoolAccept::PreChecks finds them for the datacarrier
-// checks and the extra weight.
+// checks and the extra weight. -rejectfakeoutputs is a global since knots#389's 023fe91fff, as
+// PreChecks reads it, set from the profile in Activate.
 std::vector<size_t> DataOutputs(const CTransaction& tx, const CCoinsViewCache& view, const kernel::MemPoolOptions& o)
 {
     std::vector<size_t> data_outputs(tx.vout.size(), 0);
-    if (o.reject_fake_outputs && (o.datacarrier_fullcount || !o.accept_non_std_datacarrier || ::g_weight_per_data_byte > WITNESS_SCALE_FACTOR)) {
+    if (::g_reject_fake_outputs && (o.datacarrier_fullcount || !o.accept_non_std_datacarrier || ::g_weight_per_data_byte > WITNESS_SCALE_FACTOR)) {
         data_outputs = DataOutputBytes(tx, &view);
     }
     return data_outputs;
@@ -355,13 +360,13 @@ BOOST_AUTO_TEST_CASE(plumb_check)
     // (30), which Knots has no option for, so that reason is dropped below. Core 30's larger
     // datacarriersize cannot matter here: BIP110 caps OP_RETURN outputs at 83 bytes by consensus.
     // Core has no knots#487 either: -permitlnrevokeleaf=0 keeps the 34 bytes of LND's revocation
-    // leaf where 29.4.3 books them. -corepolicy skips the data carrier check, so no verdict moves.
+    // leaf where Knots 29.5 books them. -corepolicy skips the data carrier check, so no verdict moves.
     profiles.push_back(MakeProfile("core", {{"-corepolicy", "1"}, {"-maxtxlegacysigops", "2500"}, {"-permitlnrevokeleaf", "0"}}, defaults, false));
-    // Stock Knots 29.4.3: it carries the dead-branch, bare-envelope, unproven-key and BPUB rules
+    // Stock Knots 29.5: it carries the dead-branch, bare-envelope, unproven-key and BPUB rules
     // itself (knots#400, #319, #422, #463), so only Plumb's two own filters are off, and
     // -datacarriersize defaults to 83 where Plumb's is 42. It has none of knots#470, #487 and
     // #489: no recount from verified keys (the count is PreChecks' alone, which a null set of
-    // verified keys leaves as 29.4.3 has it), LND's revocation leaf refused as non-standard data
+    // verified keys leaves as Knots 29.5 has it), LND's revocation leaf refused as non-standard data
     // (-permitlnrevokeleaf=0), and -rejecttokens without the JSON and Omni checks
     // (-rejecttokenmessages=0).
     profiles.push_back(MakeProfile("knots", {{"-rejectfakeoutputs", "0"}, {"-rejecttokenmessages", "0"}, {"-permitlnrevokeleaf", "0"}, {"-datacarriersize", "83"}}, defaults, false));
@@ -376,12 +381,12 @@ BOOST_AUTO_TEST_CASE(plumb_check)
         plumb_without.push_back(MakeProfile(option, {{option, "0"}}, defaults, true));
     }
     // And knots#470's recount left out alone, -rejectfakemultisig still on: the bytes Plumb counts
-    // from the verified keys beyond what PreChecks counted, which Knots 29.4.3 never counts. The
+    // from the verified keys beyond what PreChecks counted, which Knots 29.5 never counts. The
     // node has no switch for the recount alone, so "fc" names it by its pull request.
     plumb_without.push_back(MakeProfile("knots#470", {}, defaults, false));
     const Profile restore{"", {}, {}, defaults.weight_per_data_byte, defaults.script_size_limit, defaults.reject_dead_branches,
                           defaults.reject_bare_envelopes, defaults.reject_fake_multisig, defaults.reject_bpub, defaults.permit_ln_revoke_leaf,
-                          defaults.bytes_per_sigop, defaults.bytes_per_sigop_strict, false};
+                          defaults.reject_fake_outputs, defaults.bytes_per_sigop, defaults.bytes_per_sigop_strict, false};
     // Signatures and scripts for ScriptRun, sized like the node's defaults.
     ValidationCache validation_cache{DEFAULT_SCRIPT_EXECUTION_CACHE_BYTES, DEFAULT_SIGNATURE_CACHE_BYTES};
 
