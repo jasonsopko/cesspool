@@ -20,7 +20,7 @@ TYPES = {
         "how": "Each unused 33-byte key in the revealed witness script is payload. One reveal can carry hundreds of inputs.",
         "filter": KNOTS, "knots_since": KNOTS_SINCE, "option": "-rejectfakemultisig",
         "prs": [("knots#422", "https://github.com/bitcoinknots/bitcoin/pull/422")],
-        "note": "Knots 29.4.3 and Plumb count each unsigned key past ten in a script as data, and Knots 29.4.3 also refuses the BPUB file format outright (knots#463). A reveal with ten or fewer unsigned keys in each script gets through. Plumb keeps the switch; Knots has none. Since plumb9 Plumb also counts a key in a witness script as signed only when a signature in the spend verified against it (knots#470), so a signature check that never runs, or fails on an empty signature, proves nothing; Knots 29.4.3 credits a key when a signature check sits beside it, up to the number of signatures the witness carries.",
+        "note": "Knots since 29.4.3 and Plumb count each unsigned key past ten in a script as data, and Knots also refuses the BPUB file format outright (knots#463). A reveal with ten or fewer unsigned keys in each script gets through. Plumb keeps the switch; Knots has none. Since plumb9 Plumb also counts a key in a witness script as signed only when a signature in the spend verified against it (knots#470), so a signature check that never runs, or fails on an empty signature, proves nothing; Knots 29.5 credits a key when a signature check sits beside it, up to the number of signatures the witness carries.",
     },
     "p2wsh-run": {
         "name": "Dust P2WSH run",

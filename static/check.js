@@ -1,6 +1,6 @@
 // cesspool.lol: read the startup lines a Knots or Plumb node writes to debug.log and say which spam
 // filters it is using and what set each one. It runs in the browser; the pasted text goes nowhere.
-// The rules follow Knots 29.4.3: src/common/settings.cpp (GetSetting, MergeSettings), src/common/args.cpp
+// The rules follow Knots 29.5: src/common/settings.cpp (GetSetting, MergeSettings), src/common/args.cpp
 // (LogArgs) and the -corepolicy block in src/init.cpp.
 (function () {
   "use strict";
@@ -209,11 +209,11 @@
     plumb: "Find the line that sets it to 0 the same way: bitcoin.conf, settings.json, bitcoin_rw.conf or the command line."
   };
   var NOTES = {
-    core: "Bitcoin Core does not accept block 961640 or any block after it. Run Knots 29.4.2 or Plumb.",
-    tooold: "This checker covers Knots 29.4 and later. Knots before 29.4.1 has no Counterparty check and does not accept block 961640 or any block after it: upgrade to Knots 29.4.2 or Plumb.",
-    old: "This is Knots 29.4. It does not accept block 961640 or any block after it (29.4.1 and later do), it has no Counterparty check, and its rejecttokens starts off. Upgrade to Knots 29.4.2 or Plumb; the table shows the rest of its settings.",
+    core: "Bitcoin Core does not accept block 961640 or any block after it. Run Knots 29.5 or Plumb.",
+    tooold: "This checker covers Knots 29.4 and later. Knots before 29.4.1 has no Counterparty check and does not accept block 961640 or any block after it: upgrade to Knots 29.5 or Plumb.",
+    old: "This is Knots 29.4. It does not accept block 961640 or any block after it (29.4.1 and later do), it has no Counterparty check, and its rejecttokens starts off. Upgrade to Knots 29.5 or Plumb; the table shows the rest of its settings.",
     restarts: "The text covers more than one start of the node; this reads the last one.",
-    noversion: "No version line found, so this assumes Knots 29.4.2 on mainnet. Include the version line for a sure answer.",
+    noversion: "No version line found, so this assumes Knots 29.5, on mainnet unless a data directory line names another network. Include the version line for a sure answer.",
     corepolicy: "corepolicy=1 is set. It turns off every filter below that nothing else sets.",
     acceptnonstdtxn: "acceptnonstdtxn=1 is set. It turns off the checks marked below: tokens, parasites, bare outputs, script sizes and Plumb's token messages. The data size limits still apply.",
     plumbmissing: "The version says Plumb, but no Plumb filter lines were pasted. Include them to check Plumb's filters.",

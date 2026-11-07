@@ -19,7 +19,7 @@ and a TRUC parent's unconfirmed child must be TRUC). So the scan counts:
      which Plumb's -rejectfakeoutputs counts as data (policy.h DATA_OUTPUT_DUST_RUN, DATA_OUTPUT_RUN_MAX_VALUE).
   ln_taproot_revoke: transactions with an input that spends LND's simple taproot channel revocation leaf
      <32-byte key> OP_DROP <32-byte key> OP_CHECKSIG through the script path, as script.cpp
-     IsLnTaprootRevokeLeaf matches it (knots#487): Knots 29.4.3 refuses them as non-standard data, Plumb 9 counts
+     IsLnTaprootRevokeLeaf matches it (knots#487): Knots 29.5 refuses them as non-standard data, Plumb 9 and 10 count
      the 34 dropped bytes of each toward -datacarriersize.
 Prints the dict as JSON; with --rows also the sub-floor version 3 transactions and their children."""
 import gzip, json, os, sys

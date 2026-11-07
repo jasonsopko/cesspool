@@ -624,7 +624,7 @@
     return ul;
   }
   // Plumb's own filters behind a refusal, most bytes first: those measured in fc, plus any a reason names,
-  // plus knots#470's recount (cat.recount) when it counts bytes. Knots 29.4.3 applies the other measured rules
+  // plus knots#470's recount (cat.recount) when it counts bytes. Knots 29.5 applies the other measured rules
   // itself (cat.knots_rules), so they are not Plumb's own.
   function plumbOwn(cat, tx, dataRs) {
     var fc = tx.fc || {}, options = (cat.plumb_own || cat.plumb_options || []).concat(cat.recount ? [cat.recount[0]] : []);

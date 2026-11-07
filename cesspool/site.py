@@ -15,10 +15,10 @@ SITE = "https://cesspool.lol"
 PLUMB_REPO = "https://github.com/plumb-node/plumb"
 PLUMB_RELEASE = "https://github.com/plumb-node/plumb/releases/latest"
 INSTALLER = "https://github.com/jasonsopko/knots-datum-node"
-PLUMB_TAG = "v29.4.3.knots20260508.plumb9"
-PLUMB_NAME = "Plumb 9"
+PLUMB_TAG = "v29.5.knots20260508.plumb10"
+PLUMB_NAME = "Plumb 10"
 PLUMB_VERSION = f"{PLUMB_NAME} ({PLUMB_TAG})"  # the release the verdicts come from, as a page names it
-KNOTS_NAME = "Knots 29.4.3"
+KNOTS_NAME = "Knots 29.5"
 DATACARRIER_SIZE = {"knots": 83, "plumb": 42}  # each one's default -datacarriersize; Plumb went back to 42 in plumb7
 MAXSCRIPTSIZE_DEFAULT = 1650  # the Knots and Plumb default -maxscriptsize
 DUSTRELAYFEE_DEFAULT = 3000  # the default -dustrelayfee, in sat/kvB
@@ -498,7 +498,7 @@ def page(path, title, body, *, nav="", desc="", og=None, tip=None):
 '''
 
 
-ASSET_V = "36"
+ASSET_V = "37"
 
 
 def write(out, rel, text):
@@ -1086,7 +1086,7 @@ def shame_page(idx, tip):
     return page("/shame/", "Hall of Shame", body, nav="shame", desc="Pools ranked by how much of their block space went to spam.", og="/og/shame.png", tip=tip)
 
 
-# The recommended filter settings for Knots 29.4.3, written out, and Plumb's four on top. Every value is
+# The recommended filter settings for Knots 29.5, written out, and Plumb's four on top. Every value is
 # the default except datacarriersize, datacarriercost and bytespersigopstrict (see conf_stricter).
 # rejectdeadbranches and rejectbpub came into Knots with 29.4.3 (knots#400, #463); the bare-envelope and
 # unproven-key rules came in too (knots#319, #422) but with no switch, so only Plumb's files name them. They cover the filters on Knots' Spam filtering tab
@@ -1099,14 +1099,14 @@ SETTINGS_KNOTS = ("corepolicy=0", "acceptnonstdtxn=0", "rejecttokens=1", "reject
                   "permitephemeral=anchor,-send,-dust", "maxscriptsize=1650", "maxtxlegacysigops=2500",
                   "bytespersigop=20", "bytespersigopstrict=51")
 SETTINGS_PLUMB = ("rejectfakeoutputs=1", "rejectbareenvelopes=1", "rejectfakemultisig=1", "rejecttokenmessages=1")
-# Plumb switches for rules Knots 29.4.3 applies with no switch of its own
+# Plumb switches for rules Knots applies with no switch of its own (since 29.4.3)
 KNOTS_HAS_NO_SWITCH = {"-rejectbareenvelopes", "-rejectfakemultisig"}
-# The data-counting rules the engine measures one at a time ("fc"), split by whose they are: Knots 29.4.3
+# The data-counting rules the engine measures one at a time ("fc"), split by whose they are: Knots 29.5
 # applies the first four by default (two of them with no switch, which Plumb adds), Plumb alone the last.
 KNOTS_RULES = ("-rejectdeadbranches", "-rejectbareenvelopes", "-rejectfakemultisig", "-rejectbpub")
 PLUMB_OWN = {"-rejectfakeoutputs", "-rejecttokenmessages"}
 # The engine also measures knots#470's recount on its own (fc "knots#470": what Plumb counts from the keys a
-# signature verified against beyond the count from the script alone). Knots 29.4.3 has no recount, so those bytes
+# signature verified against beyond the count from the script alone). Knots 29.5 has no recount, so those bytes
 # are Plumb's own, under its -rejectfakemultisig switch, and Plumb's -rejectfakemultisig count includes them.
 RECOUNT = "knots#470"
 RECOUNT_URL = "https://github.com/bitcoinknots/bitcoin/pull/470"
@@ -1149,7 +1149,7 @@ CONF_FACTS = {"lo": 961640, "hi": 976619, "txs": 3569710, "sewage": 109247, "kno
                        "babylon": 1158, "token-json": 859, "coredao": 83, "bip47": 11}}
 # The -bytespersigopstrict and -maxscriptsize numbers, same blocks, from tools/sigop_facts.py 961640 976619,
 # which counts every transaction, not only the ones the site shows. fake: sewage listed as fake multisig;
-# fake_knots of them Knots 29.4.3 refuses at the defaults (knots#422 and #463), fake_plumb Plumb; fake_value
+# fake_knots of them Knots 29.5 refuses at the defaults (knots#422 and #463), fake_plumb Plumb; fake_value
 # would be refused by bytespersigopstrict=51 on its own, fake_upto55 more at 52 to 55, fake_over only above
 # 55. other: what 51 refuses that is not sewage; nearest: the smallest value that refuses anything not sewage.
 # knots42_relays: the sewage Knots relays at datacarriersize=42. mss_*: what maxscriptsize=590 refuses that
@@ -1199,6 +1199,18 @@ LN_FACTS = {"lo": 961640, "hi": 978047, "txs": 3878328, "p2a_under_240": 0, "v3_
             "v3_sub_floor_relayed": 0, "ln": 19448, "ln_anchor_pair": 6839, "ln_run_hit": 0,
             "ln_taproot_revoke": 223, "ln_taproot_revoke_token": 223}
 
+# knots#389's vanity skip (1c75f9b382, in Plumb since plumb10): transactions whose grade it changed, from the
+# plumb10 regrade of blocks lo to hi against the plumb9 grade (compare-states.py, reviews-1107/cesspool-plumb10).
+VANITY_FACTS = {"lo": 961640, "hi": 980974, "changed": 0}
+
+
+def vanity_line():
+    v = VANITY_FACTS
+    if not v["changed"]:
+        return f"No transaction from block {v['lo']} to {v['hi']} grades differently for it."
+    return (f"From block {v['lo']} to {v['hi']}, {plural(v['changed'], 'transaction')} "
+            f"{'grades' if v['changed'] == 1 else 'grade'} differently for it.")
+
 
 def conf_comment(*paras):
     """Paragraphs as bitcoin.conf comment lines, 72 columns, a bare # between paragraphs."""
@@ -1211,7 +1223,7 @@ def conf_comment(*paras):
 def conf_stricter(prog):
     """The comment above each value that differs from the default, and above maxscriptsize, by option."""
     f, g, k = CONF_FACTS, SIGOP_FACTS, LEGIT_FACTS
-    fake_who = (f"Knots 29.4.3 refuses all {n(g['fake_knots'])} at the defaults, counting the keys no signature "
+    fake_who = (f"{KNOTS_NAME} refuses all {n(g['fake_knots'])} at the defaults, counting the keys no signature "
                 "uses (knots#422) and refusing the BPUB file format outright (knots#463)" if prog == "knots"
                 else f"rejectfakemultisig and Knots' own rules refuse all {n(g['fake_plumb'])} of them already")
     gain = f["gain"]
@@ -1322,7 +1334,7 @@ def aggressive_conf():
             "script: one for each key in segwit, four for each key in plain P2SH, 20 for any multisig over 16 keys. "
             "It refuses a transaction with fewer than this many weight units for each check. Fake multisig, one "
             "signature for 15 keys of which 14 are data, comes in at about 50. In the same blocks cesspool.lol "
-            f"lists {n(g['fake'])} fake multisig transactions, and Knots 29.4.3 refuses all of them at the "
+            f"lists {n(g['fake'])} fake multisig transactions, and {KNOTS_NAME} refuses all of them at the "
             f"defaults (knots#422, #463). On its own {g['value']} would refuse {n(g['fake_value'])} of them and "
             f"{a['value']} {n(a['fake_value'])}; beyond the recommended file {a['value']} refuses "
             f"{n(a['strict_sewage'])} sewage transactions and {n(a['strict_other'])} that are not. Nothing that is "
@@ -1563,7 +1575,7 @@ def settings_section():
 <p class="small" style="max-width:75ch">When <code>bitcoin.conf</code> sets an option more than once, a line under <code>[main]</code> is the one in use, even though it is listed last. Otherwise the first plain line is, except that a no line such as <code>nodatacarrier=1</code> cancels the lines above it. <code>~/.bitcoin</code> is the default data directory on Linux; use yours if it differs. A Plumb node also logs one <code>Plumb filter</code> line per filter. Plumb&#39;s filter guide measures what <a href="{LOWER_LIMITS}">lower data limits</a> refuse.</p>'''
 
 
-# What /check/ reads from a node's startup lines. Defaults and the -corepolicy values are Knots 29.4.3's
+# What /check/ reads from a node's startup lines. Defaults and the -corepolicy values are Knots 29.5's, the same as 29.4.3's
 # (src/policy/policy.h, src/init.cpp); what each filter refuses is from src/policy/policy.cpp. Knots 29.4
 # has the same defaults except rejecttokens, which is off, and refuses Runes and OLGA but not Counterparty.
 # Older Knots differ in more (no datacarriersize cap before 29.3.knots20260508), so the checker covers
@@ -1581,7 +1593,7 @@ def settings_section():
 # row only when a line sets it ("onlySet"; Knots and older Plumb ignore the unknown option and log no line for it).
 # At 1 the 34 bytes LND's revocation leaf drops count toward datacarriersize like OP_RETURN data, so it lets
 # nothing past the data limit; at 0 the node refuses the penalty spend of an LND simple taproot channel, as Knots
-# 29.4.3 does. That is no filter turned off, so the row says what 0 refuses ("lnd") and does not count as off.
+# 29.5 does. That is no filter turned off, so the row says what 0 refuses ("lnd") and does not count as off.
 CHECK_SPEC = {
     "since": "v29.4.1",
     "oldest": "v29.4",
@@ -1619,7 +1631,7 @@ CHECK_SPEC = {
 
 
 # Each platform's own names for the filter switches, with the recommended setting: the value in the
-# recommended bitcoin.conf, which is Knots 29.4.3's default except the data size and cost and bytes per
+# recommended bitcoin.conf, which is Knots 29.5's default except the data size and cost and bytes per
 # sigop strict. The apps have no switch yet for rejectdeadbranches or rejectbpub, new in 29.4.3 and on by default. Umbrel has no switch for the last (settings.meta.ts); its Advanced tab takes conf lines. Umbrel: Retropex/umbrel-bitcoin libs/settings/settings.meta.ts (Settings, Policy tab).
 # StartOS 0.3: Retropex/knots-startos scripts/services/getConfig.ts (Config, Mempool). StartOS 0.4:
 # startos/fileModels/bitcoin.conf.ts and actions/config/mempool.ts (Actions, Mempool Settings), where an
@@ -1657,9 +1669,9 @@ def fake_multisig_section():
     f, g = CONF_FACTS, SIGOP_FACTS
     mss_rest = g["mss_other"] - g["mss_babylon"] - g["mss_liquid"] - g["mss_rsk"]
     return f'''<h2 id="fake-multisig">Fake multisig, and why bytespersigopstrict is 51</h2>
-<p style="max-width:75ch">One kind of sewage got past every Knots data limit before 29.4.3: fake multisig, transactions that spend multisig coins whose extra keys carry data, nearly always 1-of-15 and most of them hundreds at once, <a href="/tx/{FAKE_MULTISIG_TX}/">like this one</a>. Each 1-of-15 script lists 15 public keys and needs one signature. One key signs. The other 14 carry data. From block {f["lo"]} to {f["hi"]} cesspool.lol lists {n(g["fake"])} of these. Knots before 29.4.3 relayed every one, even at <code>datacarriersize=42</code>; Knots 29.4.3 refuses all {n(g["fake_knots"])} at its defaults, counting the keys no signature uses (knots#422) and refusing the BPUB file format outright (knots#463). At <code>datacarriersize=42</code> it still relays {n(g["knots42_relays"])} sewage transactions in those blocks.</p>
+<p style="max-width:75ch">One kind of sewage got past every Knots data limit before 29.4.3: fake multisig, transactions that spend multisig coins whose extra keys carry data, nearly always 1-of-15 and most of them hundreds at once, <a href="/tx/{FAKE_MULTISIG_TX}/">like this one</a>. Each 1-of-15 script lists 15 public keys and needs one signature. One key signs. The other 14 carry data. From block {f["lo"]} to {f["hi"]} cesspool.lol lists {n(g["fake"])} of these. Knots before 29.4.3 relayed every one, even at <code>datacarriersize=42</code>; since 29.4.3 Knots refuses all {n(g["fake_knots"])} at its defaults, counting the keys no signature uses (knots#422) and refusing the BPUB file format outright (knots#463). At <code>datacarriersize=42</code> it still relays {n(g["knots42_relays"])} sewage transactions in those blocks.</p>
 <p style="max-width:75ch"><b>Why the older data limits missed it.</b> Knots before 29.4.3 counted data in OP_RETURN outputs and data a script pushes only to drop it or skip over it, but it read every key in a multisig script as a key. The fake keys are real points on the curve, so nothing in their format gives them away. What gives them away is that no signature ever uses them.</p>
-<p style="max-width:75ch"><b>How Knots 29.4.3 and Plumb refuse it.</b> The unproven-key rule (knots#422, in Knots since 29.4.3, Plumb&#39;s switch <code style="white-space:nowrap">-rejectfakemultisig</code>{source_link("-rejectfakemultisig")}) counts the keys in a multisig script that no signature in the spend uses. It lets 10 unused keys a script go and counts the rest as data. In the transaction above that is 4 keys in each of 411 inputs, 54,252 bytes, far over the data allowance. The BPUB rule (knots#463, <code>-rejectbpub</code>) refuses the file format most of these reveals use whatever the key count. Together they refuse all {n(g["fake_knots"])} of the {n(g["fake"])} in those blocks, on Knots and on Plumb.</p>
+<p style="max-width:75ch"><b>How Knots and Plumb refuse it.</b> The unproven-key rule (knots#422, in Knots since 29.4.3, Plumb&#39;s switch <code style="white-space:nowrap">-rejectfakemultisig</code>{source_link("-rejectfakemultisig")}) counts the keys in a multisig script that no signature in the spend uses. It lets 10 unused keys a script go and counts the rest as data. In the transaction above that is 4 keys in each of 411 inputs, 54,252 bytes, far over the data allowance. The BPUB rule (knots#463, <code>-rejectbpub</code>) refuses the file format most of these reveals use whatever the key count. Together they refuse all {n(g["fake_knots"])} of the {n(g["fake"])} in those blocks, on Knots and on Plumb.</p>
 <p style="max-width:75ch"><b>How bytespersigopstrict refuses it.</b> Knots counts signature checks in a multisig script: one for each key in segwit, four for each key in plain P2SH, and 20 for any multisig over 16 keys. <code>bytespersigopstrict</code> refuses a transaction with fewer weight units than its value for each check. The default is 20. In segwit each signature adds about 72 weight units, so a 2-of-3 P2WSH spend has about 139 weight units for each check and a segwit 2-of-15 about 55. A plain P2SH 15-of-15 has about 110. The fake 1-of-15 spends carry one signature for 15 keys and come in at about 50. At {g["value"]}, Knots refuses {n(g["fake_value"])} of the {n(g["fake"])} and nothing else from those blocks, and nothing that is not sewage is refused below {g["nearest"]}. The other {n(g["fake"] - g["fake_value"])} need a higher value: {n(g["fake_upto55"])} are refused at 52 to 55, and {n(g["fake_over"])} only above that. A value of 55 would add those {n(g["fake_upto55"])}, but it also refuses a segwit 2-of-16 spend of many coins, which 51 lets through.</p>
 <p style="max-width:75ch"><b>What else 51 can refuse.</b> Other multisig with many keys and few signatures can fall below 51 too. On the 29.4.2 release binary it refused a segwit 2-of-17 or 3-of-17 spend of 100 coins and a plain P2SH 2-of-15 spend of one coin to one output. Where the line falls depends on the keys, signatures, coins and outputs. In those blocks 51 refuses nothing but fake 1-of-15.</p>
 <p style="max-width:75ch"><b>Why not maxscriptsize.</b> Transaction pages also offer <code>maxscriptsize=589</code> or <code>590</code> for nearly all of these, since their largest witness is 590 or 591 bytes. Size does not tell a fake key from a real one, so that setting refuses every ordinary multisig spend bigger than the value as well. At {g["mss"]}, in the same blocks, it would have refused {n(g["mss_sewage"])} sewage transactions and {n(g["mss_other"])} that are not sewage: {n(g["mss_babylon"])} spends whose script matches Babylon staking, {n(g["mss_liquid"])} that match the Liquid federation, {n(g["mss_rsk"])} that match RSK&#39;s peg, and {n(mss_rest)} others, nearly all multisig, up to 15-of-15 spends of {n(g["largest"])} bytes. The default of 1,650 fits a 15-of-15 spend, and the files keep it.</p>
@@ -1671,10 +1683,10 @@ def check_page(tip):
     body = f'''<div class="hero"><div class="kicker">Check your node</div><h1>Is your node filtering?</h1>
 <p class="lede">Knots and Plumb refuse spam at their default settings. A setting changed anywhere, or one a node package ships with, can turn a filter off without saying so. Here is how to check.</p></div>
 <h2>Recommended settings</h2>
-<p style="max-width:75ch">The recommended settings are the ones in the <a href="#settings">bitcoin.conf files below</a>, with the data size at 42 bytes, the data cost at 2 and bytes per sigop strict at 51, all stricter than Knots&#39; defaults of 83, 1 and 20. Plumb&#39;s own default data size is 42 since plumb7. The last one is a second check against <a href="#fake-multisig">fake multisig</a>, which Knots 29.4.3 refuses by default. Here they are on each platform, under the names each one uses. Where a platform starts a switch somewhere else, it says so. A stricter value you chose on purpose, such as turning OP_RETURN data off altogether, is fine to keep.</p>
+<p style="max-width:75ch">The recommended settings are the ones in the <a href="#settings">bitcoin.conf files below</a>, with the data size at 42 bytes, the data cost at 2 and bytes per sigop strict at 51, all stricter than Knots&#39; defaults of 83, 1 and 20. Plumb&#39;s own default data size is 42 since plumb7. The last one is a second check against <a href="#fake-multisig">fake multisig</a>, which Knots refuses by default since 29.4.3. Here they are on each platform, under the names each one uses. Where a platform starts a switch somewhere else, it says so. A stricter value you chose on purpose, such as turning OP_RETURN data off altogether, is fine to keep.</p>
 <h3>Umbrel</h3>
 <p style="max-width:75ch">The Bitcoin Knots app in the Umbrel App Store is at version 1.2.13, which runs Knots 29.4. That Knots has no Counterparty check, does not accept block {FORK} or any block after it, and its <b>Reject tokens transactions</b> switch starts off. The app update with Knots 29.4.2, version 1.2.18, has been waiting on the App Store since 21 September (<a href="https://github.com/getumbrel/umbrel-apps/pull/6108">umbrel-apps#6108</a>).</p>
-<p style="max-width:75ch">Builds of the app that run Knots 29.4.1 or later, such as the Knots Companion app in the PaulsCode community store that runs Knots 29.4.2, have also started that switch off, although that Knots turns it on. They write <code>rejecttokens=0</code> for the node, so a default node there relays and mines Runes and Counterparty transactions.</p>
+<p style="max-width:75ch">Builds of the app that run Knots 29.4.1 or later started that switch off until October, although that Knots turns it on. The app&#39;s source turned it on in version 1.2.20 (4 October), and the Knots (BLAKE2b) Companion app in the PaulsCode community store, which runs Knots 29.4.3, followed on 17 October. The app writes every setting to its settings file each time it starts, so an install made before then keeps <code>rejecttokens=0</code> after an update, and a default node there relays and mines Runes and Counterparty transactions.</p>
 <p style="max-width:75ch">Open the app, go to Settings, choose the Policy tab, set these, and save. The app restarts the node with them.</p>
 {switch_list("umbrel")}
 <p style="max-width:75ch">The app has no switch for <code>bytespersigopstrict</code>. Under Settings, choose the Advanced tab, add the line <code>bytespersigopstrict=51</code> to <b>Custom bitcoin.conf overrides</b>, and save. The app restarts the node with it.</p>
@@ -2096,7 +2108,7 @@ def about_page(idx, tip):
 <p class="lede">Every block since the fork at height {FORK}, every transaction in it, run through the Knots and Plumb policy checks.</p></div>
 <div class="prose">
 <h2>Verdicts come from the shipped code</h2>
-<p>Each transaction, with the coins it spends, goes through the policy checks of {PLUMB_VERSION}: <code>IsStandardTx</code>, <code>AreInputsStandard</code>, the data-carrier count, <code>IsWitnessStandard</code> and the sigop limits, once with each software's default policy: stock Knots 29.4.3 (Plumb's two own filters off, <code>permitlnrevokeleaf=0</code>, and <code>datacarriersize</code> at Knots' {DATACARRIER_SIZE["knots"]}) and Plumb (<code>datacarriersize</code> at {DATACARRIER_SIZE["plumb"]}, its default since plumb7). For Plumb the engine also runs the policy script check, as the node does, and counts the multisig keys again, crediting only those a signature verified against (knots#470); Knots 29.4.3 has no such recount. Bitcoin Core is not compared: it does not accept block {FORK} or any block after it, so no Core node has these blocks. Nothing here reimplements a filter, so this page and a Plumb node cannot disagree about a transaction.</p>
+<p>Each transaction, with the coins it spends, goes through the policy checks of {PLUMB_VERSION}: <code>IsStandardTx</code>, <code>AreInputsStandard</code>, the data-carrier count, <code>IsWitnessStandard</code> and the sigop limits, once with each software's default policy: stock {KNOTS_NAME} (Plumb's two own filters off, <code>permitlnrevokeleaf=0</code>, and <code>datacarriersize</code> at Knots' {DATACARRIER_SIZE["knots"]}) and Plumb (<code>datacarriersize</code> at {DATACARRIER_SIZE["plumb"]}, its default since plumb7). For Plumb the engine also runs the policy script check, as the node does, and counts the multisig keys again, crediting only those a signature verified against (knots#470); {KNOTS_NAME} has no such recount. Bitcoin Core is not compared: it does not accept block {FORK} or any block after it, so no Core node has these blocks. Nothing here reimplements a filter, so this page and a Plumb node cannot disagree about a transaction.</p>
 <p>Each refusal on a block or transaction page names the rule it comes from and the option behind it. Plumb's count is also taken with each of five data-counting rules turned off alone, and once with knots#470's recount from verified keys left out, so the bytes a rule is responsible for come from the code too (the sixth, <code>-rejecttokenmessages</code>, names itself in its reason), and a refusal that rests on Knots' own rules says so. So does one that rests on Plumb's {DATACARRIER_SIZE["plumb"]}-byte limit: the count is taken again with the limit at Knots' {DATACARRIER_SIZE["knots"]}.</p>
 <p>Where Knots or Plumb relays a transaction shown here, the engine also tries four settings one at a time and keeps the value that would refuse it: the largest <code>datacarriersize</code>; the largest <code>maxscriptsize</code> of {MIN_USEFUL_SCRIPT_LIMIT} or more, the size of the largest push a script may hold, since a limit below that starts refusing ordinary multisig witnesses (a 3-of-5 P2WSH witness is about 395 bytes); the smallest <code>bytespersigopstrict</code> up to {MAX_USEFUL_SIGOP_STRICT}, since above that it starts refusing segwit 2-of-15 spends (a 2-of-15 P2WSH input has about 55 weight units for each of its 15 signature checks; multisig with many keys and few signatures can be refused lower); and the smallest <code>dustrelayfee</code> up to {feerate_conf(MAX_DUST_RATE)} (100 sat/vB, where a P2TR output under 11,000 sat is already dust; higher rates were not tried). Each value comes from rerunning the same checks with only that setting changed. A setting that refuses the transaction at no value in its range is left out, and a verdict that offers none names the four that were tried.</p>
 <p>Not modeled: fee floors, mempool limits, replacement rules and address reuse. Those depend on the mempool at the time, not on what the transaction carries.</p>
@@ -2115,7 +2127,7 @@ def about_page(idx, tip):
 <ul><li><a href="/guide/#ln-anchor-sweep">Sweeps</a> ({n(tn("ln-anchor-sweep", "p2a-sweep", "dust-sweep"))} since the fork): Lightning anchors, pay-to-anchor outputs and other dust spent into fees, with nothing but an OP_RETURN of {classify.SWEEP_PAD} bytes or less. Knots refuses a transaction whose only output is an OP_RETURN.</li>
 <li><a href="/guide/#powpeg-flyover">Rootstock PowPeg Flyover spends</a> ({n(tn("powpeg-flyover"))}): the federation moving a deposit whose script starts with a 32-byte value that it drops unused. Knots counts that push as data.</li></ul>
 <p>Each one is kept narrow. A sweep's OP_RETURN holds at most {classify.SWEEP_PAD} bytes, and a sweep whose inputs carry anything Plumb or cesspool counts stays sewage. A Flyover spend is recognized by the exact script every PowPeg spend since the fork reveals, so only the keys in that script can spend a match: 5 of its 9, or 3 of its 4 emergency keys after a long timelock.</p>
-<p>Plumb 6 also refused payments back to the vanity address one of the transaction's inputs spends from, reading the zeros in its hash as data. Plumb 7&#39;s <code>-rejectfakeoutputs</code> counts nothing in an output that pays the script of a coin the transaction spends: the spend proved the key or hash in it is real, and fitting chosen data into one would take at least 2<sup>128</sup> tries. Those payments now grade clean.</p>
+<p>Plumb 6 also refused payments back to the vanity address one of the transaction's inputs spends from, reading the zeros in its hash as data. Plumb 7&#39;s <code>-rejectfakeoutputs</code> counts nothing in an output that pays the script of a coin the transaction spends: the spend proved the key or hash in it is real, and fitting chosen data into one would take at least 2<sup>128</sup> tries. Those payments now grade clean. Plumb 10&#39;s <code>-rejectfakeoutputs</code> also skips the leading zero bytes of a hash or key, when there are seven or fewer, before it looks for repeated bytes, so a payment to an address whose hash or key starts with six or seven zero bytes is no longer refused. {vanity_line()}</p>
 <p>One kind stays sewage on purpose. A <a href="/guide/#liquid-emergency">Liquid-layout emergency spend</a> ({n(tn("liquid-emergency"))}) is very likely Liquid's own recovery, but every Liquid deposit tweaks the federation keys, so the layout cannot prove that the keys Plumb counts are real, and anyone could copy it.</p>
 <p>Protocols with defenders that do not pass have their case in the <a href="/guide/">field guide</a>, next to the reason they fail: inscriptions, Runes, JSON token messages, Stamps, Counterparty, Omni, BIP47 notifications, swap memos, and the tags Babylon, Core DAO and Stacks add. Babylon and Core DAO move real bitcoin to ordinary scripts, and that part passes; the tag beside it is a record for another chain.</p>
 <h2 id="known">How protocols are recognized</h2>
