@@ -1,4 +1,13 @@
-# cesspool.lol: static files rendered by tools/update.py, which checks the node every 2 seconds.
+# cesspool.lol: static files rendered once a minute by tools/update.py.
+# The API under /api/: a zone of its own (nginx.conf already has one named api), and a cache header by
+# status, so a 429 or a 405 is never kept by a cache.
+limit_req_zone $binary_remote_addr zone=cesspool_api:1m rate=30r/m;
+map $status $cesspool_api_cache {
+    200 "public, max-age=60";
+    206 "public, max-age=60";
+    304 "public, max-age=60";
+    default "no-store";
+}
 server {
     listen 80;
     listen [::]:80;
@@ -66,6 +75,29 @@ server {
         add_header Strict-Transport-Security "max-age=31536000; includeSubDomains" always;
         add_header X-Content-Type-Options nosniff always;
         add_header Content-Security-Policy "default-src 'none'" always;
+    }
+    # The read-only API (cesspool/api.py). The address limited is the visitor's, from CF-Connecting-IP
+    # above: 30 requests a minute each, and up to 60 more at once. No CORS header: a pool's server
+    # reads it, not its visitors' browsers.
+    location /api/ {
+        limit_req zone=cesspool_api burst=60 nodelay;
+        limit_req_status 429;
+        default_type application/json;
+        add_header Cache-Control $cesspool_api_cache always;
+        add_header Strict-Transport-Security "max-age=31536000; includeSubDomains" always;
+        add_header X-Content-Type-Options nosniff always;
+        add_header Content-Security-Policy "default-src 'none'" always;
+        try_files $uri @api404;
+    }
+    # A height not graded here: a JSON 404, not the HTML page.
+    location @api404 {
+        types { }
+        default_type application/json;
+        add_header Cache-Control "public, max-age=60" always;
+        add_header Strict-Transport-Security "max-age=31536000; includeSubDomains" always;
+        add_header X-Content-Type-Options nosniff always;
+        add_header Content-Security-Policy "default-src 'none'" always;
+        return 404 '{"error":"not found"}\n';
     }
     location /og/ {
         add_header Cache-Control "public, max-age=3600" always;
