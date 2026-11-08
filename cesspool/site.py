@@ -1649,7 +1649,7 @@ PLATFORM_SWITCHES = {
     "startos04": [("Reject Tokens", "unset or on", ""),
                   ("Reject Parasites", "unset or on", ""), ("Reject Dead Branches", "unset or on", ""), ("Reject BPUB", "unset or on", ""),
                   ("Relay OP_RETURN Transactions", "unset or on", ""),
-                  ("Max OP_RETURN Size", "42", "unset, Knots' default of 83 applies"), ("Datacarrier Cost", "2", "the package starts it at 1"),
+                  ("Max OP_RETURN Size", "42", "unset, Knots' default of 83 applies; Plumb's is 42"), ("Datacarrier Cost", "2", "the package starts it at 1"),
                   ("Accept Non-Standard Datacarrier", "unset or off", ""), ("Permit Bare Datacarrier", "unset or off", ""),
                   ("Permit Bare Pubkey", "unset or off", ""), ("Permit Bare Multisig", "unset or off", ""), ("Max Script Size", "unset or 1650", ""),
                   ("Bytes Per Sigop Strict", "51", "unset, Knots' default of 20 applies")],
