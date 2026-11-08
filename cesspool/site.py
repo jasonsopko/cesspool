@@ -1,7 +1,7 @@
 """Render cesspool.lol as static files from the block records."""
-import collections, datetime, functools, gzip, hashlib, html, json, math, os, re, shutil, subprocess, tempfile, textwrap, time
+import collections, datetime, functools, gzip, hashlib, html, json, math, os, re, shutil, subprocess, tempfile, textwrap, time, traceback
 
-from . import address, classify, found, miner
+from . import address, api, classify, found, miner
 from .types import TYPES, info, KNOTS, PLUMB, NONE, ALLOWED, NOT_SPAM, KNOWN, DATACARRIER
 
 HOME = os.environ.get("CESSPOOL_HOME", os.path.expanduser("~/.cesspool"))
@@ -9,6 +9,7 @@ BLOCKS = f"{HOME}/blocks"
 TXD = f"{HOME}/txd"
 INDEX = f"{HOME}/index.json"
 OG_DRAWN = f"{HOME}/og.json"   # sha256 of the SVG behind each share image; delete it to draw every card again
+API_PENDING = f"{HOME}/api-pending.json"  # the API thousands a build died in (api.py)
 SRC = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 FILTERS = os.environ.get("PLUMB_FILTERS", os.path.expanduser("~/src/plumb/plumb/filters.json"))
 SITE = "https://cesspool.lol"
@@ -92,6 +93,7 @@ def tm(t, ago=True):
 # ---------------------------------------------------------------- grading
 
 GRADE_VERSION = 2  # bump when grade() changes: load_index then regrades every stored summary
+GRADER_VERSION = f"{PLUMB_TAG}+g{GRADE_VERSION}"  # the API's grader_version: the release and the grade() behind every grade
 
 
 def grade(sn, share):
@@ -2419,6 +2421,12 @@ def build(out, heights=None, all_blocks=False, og=True, pages=False):
             pth = f"{out}/og/block/{h}.png"
             if not os.path.exists(pth) or h in changed:
                 render_png(og_svg("block", b=idx[h]), pth)
+    # The API after the block pages, so each block's url leads to its page. A failure in it goes to the cron
+    # log and the rest of the render goes on; the next build finishes what it left (see api.py).
+    try:
+        api.publish(out, idx, {k: label for k, label, _ in GRADES}, GRADER_VERSION, SITE, API_PENDING)
+    except Exception:
+        traceback.print_exc()
     write(out, "index.html", index_page(idx, tip))
     write(out, "blocks/index.html", blocks_page(idx, tip))
     write(out, "shame/index.html", shame_page(idx, tip))
@@ -2470,7 +2478,7 @@ def build(out, heights=None, all_blocks=False, og=True, pages=False):
         _, _, ranked, _, _ = shame_tables(idx, "7d", 7 * 86400, 10)
         render_png(og_svg("shame", ranked=ranked), f"{out}/og/shame.png")
     write(out, "feed.xml", feed(idx))
-    write(out, "robots.txt", "User-agent: *\nAllow: /\n")
+    write(out, "robots.txt", "User-agent: *\nDisallow: /api/\nAllow: /\n")
     write(out, "404.html", page("/404", "Not found", '<div class="hero"><h1>Nothing down here</h1><p class="lede">That page does not exist. <a href="/">Back to the surface</a>.</p></div>', tip=tip))
     save_og_drawn()
     # After every page that reloads itself, so a page that sees the new tip reloads into pages that already show it.
