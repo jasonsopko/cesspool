@@ -2143,6 +2143,14 @@ def about_page(idx, tip):
 <p>Pools are named from the coinbase tag and payout addresses against Kilombino's pools-v2 list, with the same rules as <a href="https://reorg.watch">reorg.watch</a>. {esc(DATUM_NOTE)} Miners and pools can find their own blocks by payout address, pool name or coinbase tag on <a href="/found/">Your Blocks</a>.</p>
 <h2>Data</h2><p>One Plumb node's REST interface, checked every 2 seconds. Blocks replaced in a reorg are reprocessed.
 The foul and raw-sewage blocks are also an <a href="/feed.xml">Atom feed</a>.</p>
+<h2 id="api">API</h2>
+<p>For pools and sites that show a block&#39;s grade beside it. Plain JSON, read only:</p>
+<ul><li><code>/api/v1/block/&lt;height&gt;.json</code>: one block.</li>
+<li><code>/api/v1/blocks/&lt;n&gt;.json</code>: the blocks of one thousand, sorted by height, with <code>from</code> and <code>to</code>. <code>blocks/975.json</code> holds 975000 to 975999. The first is <code>961.json</code>, from {FORK}. Read these to backfill, or to catch up from a height.</li>
+<li><code>/api/v1/tip.json</code>: the highest block graded here, as <code>height</code>, <code>hash</code> and <code>grader_version</code>.</li></ul>
+<p>A block has <code>height</code>, <code>hash</code>, <code>time</code> (the block&#39;s time), <code>grade</code>, <code>grade_label</code>, <code>sewage_share</code> (the share of the block&#39;s weight that is sewage, to 6 places), <code>sewage_tx</code> and <code>gray_tx</code> (how many sewage and gray water transactions), <code>weight</code>, <code>url</code> (its page here) and <code>grader_version</code>. The grade is <code>pristine</code>, <code>tainted</code>, <code>foul</code> or <code>raw</code>, as under Grades above, and <code>grade_label</code> is the name this site shows for it. A height not graded here gets a 404.</p>
+<p>A block near the tip can be replaced by a reorg, so key on the hash. Grades follow Plumb&#39;s rules, and the site can regrade. When <code>grader_version</code> changes, read the blocks files again; it is now <code>{GRADER_VERSION}</code>. If you cache, read them again about once a day as well.</p>
+<p>Please keep under 30 requests a minute, and credit cesspool.lol with a link to the block&#39;s page. <code>/d/</code> is internal to this site and changes without notice.</p>
 </div>'''
     return page("/about/", "About", body, nav="about", desc="How cesspool.lol grades blocks.", tip=tip)
 
