@@ -500,7 +500,7 @@ def page(path, title, body, *, nav="", desc="", og=None, tip=None):
 '''
 
 
-ASSET_V = "37"
+ASSET_V = "38"
 
 
 def write(out, rel, text):
@@ -1068,6 +1068,7 @@ def shame_pane(idx, key, label, seconds, min_blocks):
 <div class="tile"><div class="v">{n(tot["clean"])} <span class="muted" style="font-size:1rem">/ {n(tot["blocks"])}</span></div><div class="l">blocks with no sewage</div></div></div>
 <div class="podium">{"".join(pod) or '<div class="panel">No pool with enough blocks mined sewage in this window.</div>'}</div>
 <h3>Every pool that mined sewage <span class="muted small">(at least {min_blocks} blocks in the window)</span></h3>
+<p class="small muted" style="margin-bottom:8px">Each share is the weight of a pool&#39;s sewage divided by the weight of every block it mined in the window, pristine blocks included. <a href="/about/#pools">How pool grades work</a>.</p>
 {table if ranked else '<p class="muted">Nobody, in this window.</p>'}{sm}
 <div class="grid2 lead" style="margin-top:26px"><div><h3>Biggest dumps</h3><div class="tw"><table><tr><th>Block</th><th>Pool</th><th>Grade</th><th class="r">Share</th><th class="r">Txs</th><th class="r">Payload</th><th>Main kind</th></tr>{wb}</table></div></div>
 <div class="honor"><h3>Clean water roll</h3><p class="small muted" style="margin-bottom:8px">Pools with {min_blocks} or more blocks in the window and not one sewage transaction.</p>
@@ -1082,7 +1083,7 @@ def shame_page(idx, tip):
 <p class="lede">Pools ranked by how much of their block space went to spam. A pool lands here by choosing what goes into its blocks, and it gets off the list the same way.</p>
 <p class="small muted" style="margin-top:8px">Blocks holding transactions that Knots and Plumb refuse at their defaults are listed on <a href="/past-defaults/">Past the defaults</a>.</p></div>
 <div class="tabs" data-group="shame">{tabs}</div>{panes}
-<p class="small muted" style="margin-top:22px">Grades: A under 0.05% of block space is sewage, B under 0.25%, C under 1%, D under 4%, F above that.
+<p class="small muted" style="margin-top:22px">Grades: A under 0.05% of block space is sewage, B under 0.25%, C under 1%, D under 4%, F above that. <a href="/about/#pools">How pool grades work</a>.
 {DATUM_NOTE}</p>
 {plumb_cta("Every pool on this page can leave it with one binary swap.")}'''
     return page("/shame/", "Hall of Shame", body, nav="shame", desc="Pools ranked by how much of their block space went to spam.", og="/og/shame.png", tip=tip)
@@ -1865,6 +1866,17 @@ The gateway&#39;s node chooses the transactions, normally the miner&#39;s own, s
 <div class="tile"><div class="v">{btc(cur["sf"])}</div><div class="l">BTC in fees {"paid" if dtm else "taken"} for them</div><div class="s">{pct(cur["fee_share"])} of {"the fees in these blocks" if dtm else "its fee income"}</div></div>
 <div class="tile"><div class="v">{n(cur["pristine"])}</div><div class="l">pristine blocks</div><div class="s">{n(cur["nodata"])} with not one byte of data</div></div>
 <div class="tile"><div class="v">{n(len(pb))} <span class="muted" style="font-size:1rem">/ {n(len(allb))}</span></div><div class="l">blocks past the defaults</div><div class="s">since the fork, <a href="/past-defaults/">what this means</a></div></div></div>'''
+    window = "in the last 30 days" if p30 else "since the fork"
+    if cur["blocks"] == 1:
+        counted = f"the one block it mined {window}{', a pristine one' if cur['pristine'] else ''}"
+    elif cur["pristine"] == cur["blocks"]:
+        counted = f"all {n(cur['blocks'])} blocks it mined {window}, all of them pristine"
+    elif cur["pristine"]:
+        counted = f"all {n(cur['blocks'])} blocks it mined {window}, the {n(cur['pristine'])} pristine {'one' if cur['pristine'] == 1 else 'ones'} included"
+    else:
+        counted = f"all {n(cur['blocks'])} blocks it mined {window}, none of them pristine"
+    share_note = (f'<p class="small muted" style="margin-top:-2px">{pct(cur["share"], 2)} is the weight of its sewage divided by the weight of {counted}. '
+                  f'<a href="/about/#pools">How pool grades work</a>.</p>')
     worst = sorted([b for b in allb if b["sn"]], key=lambda b: -b["sw"])[:15]
     wrows = "".join(f'<tr><td><a href="/block/{b["h"]}/">{b["h"]}</a></td><td>{tm(b["t"], False)}</td><td>{stamp(b["grade"], True)}</td>'
                     f'<td class="r num">{pct(b["share"])}</td><td class="r num">{n(b["sn"])}</td><td class="r num">{size(b["sd"])}</td></tr>' for b in worst)
@@ -1933,6 +1945,7 @@ The gateway&#39;s node chooses the transactions, normally the miner&#39;s own, s
 {intro}<p style="margin-top:12px"><button class="copy" data-copy="{esc(name)}: grade {L} at cesspool.lol. {pct(cur["share"], 2)} of its block space is spam. {SITE}/pool/{miner.slug(name)}/">Copy share link</button></p></div>
 <div class="stampbox" style="text-align:center"><span class="letter gr-{L}">{L}</span><div class="small muted" style="margin-top:10px">{LETTER_TEXT[L]}</div></div></div>
 {tiles}
+{share_note}
 {gateways}
 <h2>Since the fork</h2>{daily_chart(allb)}
 <div class="strip">{"".join(cube_link(b) for b in recent)}</div>
@@ -2121,6 +2134,10 @@ def about_page(idx, tip):
 <li>{stamp("foul", True)} sewage from 1% to 10%.</li>
 <li>{stamp("raw", True)} sewage over 10%.</li></ul>
 <p>Sewage is any transaction a Plumb node refuses because it carries data, plus known spam shapes that get past Plumb's filters. Those are marked in red as Plumb misses, so the gaps are on the page. The refusals that pass the bar below are not sewage.</p>
+<h2 id="pools">Pool grades</h2>
+<p>A pool&#39;s grade comes from the share of its block space that is sewage: the weight of the sewage in its blocks divided by the weight of every block it mined, pristine blocks included. A pristine block adds its weight and no sewage. Take a pool with three blocks, two pristine blocks of 200 kWU each and one block of 600 kWU carrying 300 kWU of sewage. Its share is 300 / (200 + 200 + 600) = 30%.</p>
+<p>Blocks count by their weight, not one vote each, so the share says how much of what the pool put on the chain is sewage. One vote each would give the same pool (0% + 0% + 50%) / 3 = 16.7%, and would let a pool lower its number by mining empty blocks, which put nothing on the chain. Counted by weight, an empty block barely moves the share, since it weighs almost nothing.</p>
+<p>A is under 0.05%, B under 0.25%, C under 1%, D under 4%, F 4% or more. The Hall of Shame grades each window on its own. A pool&#39;s page grades its last 30 days, or the time since the fork when it has no block in the last 30 days. Your Blocks grades the blocks it finds the same way.</p>
 <h2 id="bar">Not everything refused is spam</h2>
 <p>A filter counts bytes. It cannot say why they are there, so cesspool holds every refusal to one bar. A byte passes when it is one of two things:</p>
 <ul><li><b>Script the spend needs.</b> Keys, signatures, hashes and timelocks that the locking script checks when the coins move, including the keys of a multisig branch the spend did not sign with, because the script still evaluates them.</li>

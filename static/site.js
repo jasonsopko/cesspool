@@ -396,6 +396,11 @@
       tiles.appendChild(el("div", { cls: "tile" }, el("div", { cls: "v", text: num(hs.length) }), el("div", { cls: "l", text: "blocks since the fork" }), el("div", { cls: "s", text: num(dirty) + " with sewage, " + num(pristine) + " pristine" })));
       if (e.kind === "addr") tiles.appendChild(el("div", { cls: "tile" }, el("div", { cls: "v", text: btc(sats) }), el("div", { cls: "l", text: "BTC paid to it in coinbases" })));
       head.appendChild(tiles);
+      var counted = hs.length === 1 ? "the one block" + (pristine ? ", a pristine one" : "")
+        : "all " + plural(hs.length, "block") + (pristine === hs.length ? ", all of them pristine"
+          : pristine ? ", the " + num(pristine) + " pristine " + (pristine === 1 ? "one" : "ones") + " included" : ", none of them pristine");
+      head.appendChild(el("p", { cls: "small muted" }, pctOf(share) + " is the weight of the sewage in these blocks divided by the weight of " + counted + ". ",
+        el("a", { href: "/about/#pools", text: "How pool grades work" }), "."));
       if (e.kind !== "pool") {
         var pt = el("table"), tr = el("tr", {}, el("th", { text: "Pool" }), el("th", { cls: "r", text: "Blocks" }));
         if (e.kind === "addr") { tr.appendChild(el("th", { cls: "r", text: "BTC" })); tr.appendChild(el("th", { text: "What a block here means" })); }
