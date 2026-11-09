@@ -244,6 +244,46 @@ def window_blocks(idx, seconds):
     return [idx[h] for h in hs if idx[h]["t"] > tip_t - seconds]
 
 
+def before_blocks(idx, seconds):
+    """The blocks of the window of the same length immediately before window_blocks(idx, seconds), timed from the
+    same tip. Since the fork has no window before it."""
+    hs = sorted(idx)
+    if not hs or seconds is None:
+        return []
+    tip_t = idx[hs[-1]]["t"]
+    return [idx[h] for h in hs if tip_t - 2 * seconds < idx[h]["t"] <= tip_t - seconds]
+
+
+TREND_BAND = 0.10  # shares closer than this fraction of the larger one read as about the same
+
+
+def trend(now, then):
+    """(words, CSS class) comparing a sewage share with the one before it."""
+    if abs(now - then) <= TREND_BAND * max(now, then):
+        return f"about the same as {pct(then, 2)}", "t-same"
+    if now < then:
+        return f"down from {pct(then, 2)}", "t-down"
+    return f"up from {pct(then, 2)}", "t-up"
+
+
+def before_line(name, now, before, min_blocks, then=""):
+    """A line under a table entry comparing pool `name`'s share `now` with its stats in the window before,
+    when it mined enough blocks there to be ranked. `then` names that window, for a line the table header
+    does not explain."""
+    q = before.get(name)
+    tail = f" {then}" if then else ""
+    if not q:
+        words, cls = f"no blocks{tail}", "faint"
+    elif q["blocks"] < min_blocks:
+        words, cls = f'only {plural(q["blocks"], "block")}{tail}', "faint"
+    elif not now and not q["sn"]:
+        words, cls = (f"clean {then} too" if then else "clean then too"), "t-same"
+    else:
+        words, cls = trend(now, q["share"])
+        words += tail
+    return f'<div class="trend {cls}">{words}</div>'
+
+
 def totals(blocks):
     t = {"blocks": len(blocks), "w": 0, "sw": 0, "sn": 0, "sf": 0, "sd": 0, "sm": 0, "fees": 0, "psw": 0, "ksw": 0,
          "clean": 0, "nodata": 0, "raw": 0, "ntx": 0}
@@ -1033,6 +1073,11 @@ def shame_tables(idx, key, seconds, min_blocks):
 def shame_pane(idx, key, label, seconds, min_blocks):
     blocks, ps, ranked, honor, small = shame_tables(idx, key, seconds, min_blocks)
     tot = totals(blocks)
+    # The window of the same length before this one, for the line under each pool that says which way it
+    # went. Since the fork has none.
+    earlier = before_blocks(idx, seconds)
+    before = pool_stats(earlier)
+    then = f"the {label} before"
     pod = []
     for i, p in enumerate(ranked[:3]):
         pod.append(f'''<div class="panel"><div class="place">{["Worst", "Second", "Third"][i]} · {label}</div>
@@ -1045,24 +1090,25 @@ def shame_pane(idx, key, label, seconds, min_blocks):
         worst = p["worst"]
         rows.append(f'''<tr class="{"rank1" if i == 0 else ""}"><td class="rank">{i + 1}</td><td>{pool_link(p["pool"])}</td>
 <td><span class="letter sm gr-{p["letter"]}">{p["letter"]}</span></td>
-<td>{barcell(p["share"], mx)}<span class="num">{pct(p["share"], 2)}</span></td>
+<td>{barcell(p["share"], mx)}<span class="num">{pct(p["share"], 2)}</span>{before_line(p["pool"], p["share"], before, min_blocks) if earlier else ""}</td>
 <td class="r num">{n(p["sn"])}</td><td class="r num">{n(p["dirty"])} / {n(p["blocks"])}</td>
 <td class="r num">{size(p["sd"])}</td><td class="r num">{btc(p["sf"])}</td>
 <td class="r num">{pct(p["fee_share"])}</td>
 <td>{f'<a href="/block/{worst["h"]}/">{worst["h"]}</a> <span class="faint">({pct(worst["share"])})</span>' if worst else ""}</td></tr>''')
-    table = f'''<div class="tw"><table><tr><th>#</th><th>Pool</th><th>Grade</th><th>Sewage share of block space</th><th class="r">Sewage txs</th>
+    table = f'''<div class="tw"><table><tr><th>#</th><th>Pool</th><th>Grade</th><th>Sewage share of block space{f'<div class="thsub">and the {label} before</div>' if earlier else ""}</th><th class="r">Sewage txs</th>
 <th class="r">Dirty blocks</th><th class="r">Payload</th><th class="r">Spam fees BTC</th><th class="r">Of fee income</th><th>Worst block</th></tr>{"".join(rows)}</table></div>'''
     worst_blocks = sorted([b for b in blocks if b["sn"]], key=lambda b: -b["sd"])[:10]
     wb = "".join(f'<tr><td><a href="/block/{b["h"]}/">{b["h"]}</a></td><td>{pool_link(who(b))}</td><td>{stamp(b["grade"], True)}</td>'
                  f'<td class="r num">{pct(b["share"])}</td><td class="r num">{n(b["sn"])}</td><td class="r num">{size(b["sd"])}</td>'
                  f'<td>{esc(info(b["top"][1])["name"]) if b["top"] else ""}</td></tr>' for b in worst_blocks)
-    hon = "".join(f'<tr><td>{pool_link(p["pool"])}</td><td class="r num">{n(p["blocks"])}</td></tr>' for p in honor)
+    hon = "".join(f'<tr><td>{pool_link(p["pool"])}{before_line(p["pool"], 0, before, min_blocks, then) if earlier else ""}</td>'
+                  f'<td class="r num">{n(p["blocks"])}</td></tr>' for p in honor)
     sm = ""
     if small:
         sm = ('<p class="small muted" style="margin-top:12px">Also mined sewage, with too few blocks to rank: ' +
               ", ".join(f'{pool_link(p["pool"])} ({n(p["sn"])} in {n(p["blocks"])} block{"s" if p["blocks"] != 1 else ""})' for p in small[:30]) + ".</p>")
     return f'''<div class="tabpane{" on" if key == "7d" else ""}" id="w-{key}" data-group="shame">
-<div class="tiles"><div class="tile"><div class="v g-raw">{pct(tot["share"], 2)}</div><div class="l">of all block space was sewage</div></div>
+<div class="tiles"><div class="tile"><div class="v g-raw">{pct(tot["share"], 2)}</div><div class="l">of all block space was sewage</div>{f'<div class="s">{pct(totals(earlier)["share"], 2)} the {label} before</div>' if earlier else ""}</div>
 <div class="tile"><div class="v">{n(tot["sn"])}</div><div class="l">sewage transactions mined</div></div>
 <div class="tile"><div class="v">{btc(tot["sf"])}</div><div class="l">BTC paid to miners to carry it</div></div>
 <div class="tile"><div class="v">{n(tot["clean"])} <span class="muted" style="font-size:1rem">/ {n(tot["blocks"])}</span></div><div class="l">blocks with no sewage</div></div></div>
@@ -1758,32 +1804,60 @@ def past_page(idx, tip):
                 desc=f"{n(len(pb))} blocks since the fork hold transactions that Knots and Plumb refuse at their defaults.", tip=tip)
 
 
-def daily_chart(blocks):
-    days = collections.OrderedDict()
-    for b in blocks:
-        d = b["t"] // 86400
-        e = days.setdefault(d, [0, 0])
+WEEK = 7 * 86400
+CHART_TOPS = (0.01, 0.02, 0.05, 0.1, 0.2, 0.5, 1.0)  # the chart's scale is the first of these that holds every share
+
+
+def weekly_chart(mine, everything, name):
+    """One column for each 7 days since the fork, the last ending at the tip's time, so the last column is
+    the Hall of Shame's 7-day window. The bar is the sewage share of the block space in `mine`, the line the
+    sewage share of every block in `everything`. A week with none of `mine` has no bar."""
+    if not mine or not everything:
+        return ""
+    tip_t = everything[-1]["t"]
+
+    def week(b):
+        # block times can run past the tip's; those count in the last 7 days, as in window_blocks
+        return max(0, (tip_t - b["t"]) // WEEK)
+
+    weeks = max(week(b) for b in everything) + 1
+    net = [[0, 0] for _ in range(weeks)]      # weight, sewage weight
+    own = [[0, 0, 0] for _ in range(weeks)]   # blocks, weight, sewage weight
+    for b in everything:
+        e = net[week(b)]
         e[0] += b["w"]
         e[1] += b["sw"]
-    if not days:
-        return ""
-    ks = list(days)
-    lo, hi = ks[0], ks[-1]
-    span = hi - lo + 1
-    mx = max(v[1] / v[0] for v in days.values() if v[0]) or 1
-    W, H = 1000, 70
-    bw = W / span
-    bars = []
-    for d, (w, sw) in days.items():
-        x = (d - lo) * bw
-        h = max(1.5, H * (sw / w) / mx) if sw else 0
-        if h:
-            bars.append(f'<rect x="{x:.1f}" y="{H - h:.1f}" width="{max(1, bw - 1):.1f}" height="{h:.1f}" fill="var(--sewage)"><title>{datetime.date.fromtimestamp(d * 86400)}: {pct(sw / w, 2)}</title></rect>')
-        else:
-            bars.append(f'<rect x="{x:.1f}" y="{H - 2}" width="{max(1, bw - 1):.1f}" height="2" fill="var(--water)" opacity=".6"/>')
-    return (f'<svg class="spark" viewBox="0 0 {W} {H}" preserveAspectRatio="none">{"".join(bars)}</svg>'
-            f'<div class="small faint" style="display:flex;justify-content:space-between"><span>{datetime.date.fromtimestamp(lo * 86400)}</span>'
-            f'<span>daily sewage share, peak {pct(mx, 1)}</span><span>{datetime.date.fromtimestamp(hi * 86400)}</span></div>')
+    for b in mine:
+        e = own[week(b)]
+        e[0] += 1
+        e[1] += b["w"]
+        e[2] += b["sw"]
+    hi = max([sw / w for _, w, sw in own if w] + [sw / w for w, sw in net if w] + [0])
+    top = next(x for x in CHART_TOPS if x >= hi)
+    cols = []
+    for i in range(weeks - 1, -1, -1):
+        end = tip_t - i * WEEK
+        blocks, w, sw = own[i]
+        nw, nsw = net[i]
+        ns = nsw / nw if nw else 0
+        day = datetime.datetime.fromtimestamp(end, datetime.timezone.utc)
+        span = f"From the fork to {utc(end)}" if i == weeks - 1 else f"7 days to {utc(end)}"
+        line = f'<div class="wk-net" style="bottom:{100 * ns / top:.1f}%"></div>' if nw else ""
+        if not blocks:
+            cols.append(f'<div class="wk none" title="{span}: no blocks from {esc(name)}. Every block: {pct(ns, 2)} sewage.">'
+                        f'<div class="wk-v"></div><div class="wk-plot">{line}</div><div class="wk-d">{day:%b} {day.day}</div></div>')
+            continue
+        share = sw / w if w else 0
+        bar = (f'<div class="wk-bar" style="height:{max(1.5, 100 * share / top):.1f}%"></div>' if sw
+               else '<div class="wk-bar clean"></div>')
+        cols.append(f'<div class="wk" title="{span}: {plural(blocks, "block")} from {esc(name)}, {pct(share, 2)} sewage. Every block: {pct(ns, 2)} sewage.">'
+                    f'<div class="wk-v">{pct(share, 0 if share >= 0.01 else 1)}</div><div class="wk-plot">{bar}{line}</div>'
+                    f'<div class="wk-d">{day:%b} {day.day}</div></div>')
+    return (f'<div class="tw"><div class="wk-chart" role="img" aria-label="Sewage share of {esc(name)}&#39;s block space, 7 days to a column, '
+            f'beside the share of every block mined, oldest first">{"".join(cols)}</div></div>'
+            f'<div class="small faint wk-key"><span><i class="wk-sw"></i>{esc(name)}&#39;s sewage share</span>'
+            f'<span><i class="wk-sw net"></i>every block mined</span><span>7 days to a column, the last ending at block {everything[-1]["h"]}. '
+            f'The scale runs to {pct(top, 0)}. An empty column had no blocks from {esc(name)}.</span></div>')
 
 
 def gateway_table(blocks, pool):
@@ -1860,8 +1934,18 @@ The gateway&#39;s node chooses the transactions, normally the miner&#39;s own, s
     pall = pool_stats(allb)[name]
     cur = p30 or pall
     L = cur["letter"]
+    # Which way it went: the last 30 days against the 30 before, when both hold enough blocks to rank.
+    vs = ""
+    m30 = next(m for k, _, _, m in WINDOWS if k == "30d")
+    b30 = pool_stats(before_blocks(idx, 30 * 86400)).get(name)
+    if p30 and b30 and p30["blocks"] >= m30 and b30["blocks"] >= m30:
+        if not p30["sn"] and not b30["sn"]:
+            vs = ", and the 30 days before"
+        else:
+            words, cls = trend(p30["share"], b30["share"])
+            vs = f', <span class="{cls}">{words}</span> the 30 days before'
     pb = sorted([b for b in allb if past(b)], key=lambda b: -b["h"])
-    tiles = f'''<div class="tiles"><div class="tile"><div class="v g-raw">{pct(cur["share"], 2)}</div><div class="l">of its block space is sewage</div><div class="s">{"last 30 days" if p30 else "since the fork"}</div></div>
+    tiles = f'''<div class="tiles"><div class="tile"><div class="v g-raw">{pct(cur["share"], 2)}</div><div class="l">of its block space is sewage</div><div class="s">{"last 30 days" if p30 else "since the fork"}{vs}</div></div>
 <div class="tile"><div class="v">{n(cur["sn"])}</div><div class="l">sewage transactions mined</div><div class="s">in {n(cur["dirty"])} of {n(cur["blocks"])} blocks</div></div>
 <div class="tile"><div class="v">{btc(cur["sf"])}</div><div class="l">BTC in fees {"paid" if dtm else "taken"} for them</div><div class="s">{pct(cur["fee_share"])} of {"the fees in these blocks" if dtm else "its fee income"}</div></div>
 <div class="tile"><div class="v">{n(cur["pristine"])}</div><div class="l">pristine blocks</div><div class="s">{n(cur["nodata"])} with not one byte of data</div></div>
@@ -1947,7 +2031,7 @@ The gateway&#39;s node chooses the transactions, normally the miner&#39;s own, s
 {tiles}
 {share_note}
 {gateways}
-<h2>Since the fork</h2>{daily_chart(allb)}
+<h2>Since the fork</h2>{weekly_chart(allb, everything, name)}
 <div class="strip">{"".join(cube_link(b) for b in recent)}</div>
 <div class="grid2"><div><h3>Worst blocks</h3><div class="tw"><table><tr><th>Block</th><th>Time</th><th>Grade</th><th class="r">Share</th><th class="r">Txs</th><th class="r">Payload</th></tr>{wrows or '<tr><td colspan="6" class="muted">None.</td></tr>'}</table></div></div>
 <div><h3>What it mined</h3><div class="tw"><table><tr><th>Kind</th><th class="r">Txs</th><th>Filter</th></tr>{trows or '<tr><td colspan="3" class="muted">Nothing.</td></tr>'}</table></div></div></div>
@@ -2138,6 +2222,7 @@ def about_page(idx, tip):
 <p>A pool&#39;s grade comes from the share of its block space that is sewage: the weight of the sewage in its blocks divided by the weight of every block it mined, pristine blocks included. A pristine block adds its weight and no sewage. Take a pool with three blocks, two pristine blocks of 200 kWU each and one block of 600 kWU carrying 300 kWU of sewage. Its share is 300 / (200 + 200 + 600) = 30%.</p>
 <p>Blocks count by their weight, not one vote each, so the share says how much of what the pool put on the chain is sewage. One vote each would give the same pool (0% + 0% + 50%) / 3 = 16.7%, and would let a pool lower its number by mining empty blocks, which put nothing on the chain. Counted by weight, an empty block barely moves the share, since it weighs almost nothing.</p>
 <p>A is under 0.05%, B under 0.25%, C under 1%, D under 4%, F 4% or more. The Hall of Shame grades each window on its own. A pool&#39;s page grades its last 30 days, or the time since the fork when it has no block in the last 30 days. Your Blocks grades the blocks it finds the same way.</p>
+<p>Except since the fork, the Hall of Shame puts under each pool&#39;s share its share in the window of the same length before, when it mined enough blocks there to be ranked. A change within a tenth of the larger of the two reads as about the same. When the last 30 days and the 30 before each hold 20 or more of a pool&#39;s blocks, its page says which way it went. Its chart shows the pool&#39;s share week by week beside the share of every block mined that week.</p>
 <h2 id="bar">Not everything refused is spam</h2>
 <p>A filter counts bytes. It cannot say why they are there, so cesspool holds every refusal to one bar. A byte passes when it is one of two things:</p>
 <ul><li><b>Script the spend needs.</b> Keys, signatures, hashes and timelocks that the locking script checks when the coins move, including the keys of a multisig branch the spend did not sign with, because the script still evaluates them.</li>

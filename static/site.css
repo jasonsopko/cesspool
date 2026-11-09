@@ -239,7 +239,24 @@ table.meas td { padding: 7px 9px; font-size: .84rem; }
 .chip.a { color: var(--gray); }
 .chip.ok { color: var(--ok); border-color: color-mix(in srgb, var(--ok) 50%, var(--line)); }
 
+/* the old daily chart: no page uses it now, but a rollback's pages do, and Cloudflare may hand them this file under ?v=37 */
 .spark { display: block; width: 100%; height: 70px; }
+.wk-chart { display: flex; gap: 4px; padding: 12px 12px 8px; min-width: min-content; }
+.wk { flex: 1 0 40px; display: flex; flex-direction: column; text-align: center; }
+.wk-v { font-family: "Plex Mono", monospace; font-size: .72rem; color: var(--muted); height: 1.3em; white-space: nowrap; }
+.wk-plot { position: relative; height: 96px; border-bottom: 1px solid var(--line); }
+.wk-bar { position: absolute; left: 18%; right: 18%; bottom: 0; background: var(--sewage); border-radius: 2px 2px 0 0; }
+.wk-bar.clean { height: 2px; background: var(--water); opacity: .7; }
+.wk-net { position: absolute; left: 0; right: 0; height: 0; border-top: 2px solid var(--muted); }
+.wk-d { font-size: .7rem; color: var(--faint); margin-top: 4px; white-space: nowrap; }
+.wk-key { display: flex; flex-wrap: wrap; gap: 4px 16px; margin: 6px 0 14px; }
+.wk-sw { display: inline-block; width: 12px; height: 10px; margin-right: 6px; vertical-align: -1px; background: var(--sewage); border-radius: 2px; }
+.wk-sw.net { height: 0; border-top: 2px solid var(--muted); background: none; border-radius: 0; vertical-align: 3px; }
+.trend { font-size: .78rem; margin-top: 3px; }
+th .thsub { font-size: .72rem; text-transform: none; letter-spacing: 0; color: var(--faint); margin-top: 2px; }
+.t-up { color: var(--miss); }
+.t-down { color: var(--ok); }
+.t-same { color: var(--muted); }
 
 footer { border-top: 1px solid var(--line); margin-top: 60px; padding: 26px 0 40px; color: var(--faint); font-size: .84rem; }
 footer a { color: var(--muted); }
