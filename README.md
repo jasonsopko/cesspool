@@ -63,3 +63,10 @@ Rebuild everything after a classifier change:
     tools/update.py --out /var/www/cesspool.lol --all
 
 Setup on node1: `deploy/setup.sh`.
+
+## License
+
+MIT, see `LICENSE`. The pool naming loads `reorg-watch.py` from
+[reorg-watch](https://github.com/jasonsopko/reorg-watch), also MIT.
+`static/beh-discord.png` is the Bitcoin Education Hub's Discord server icon;
+it is not mine and the license does not cover it.
