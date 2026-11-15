@@ -206,17 +206,20 @@ public:
 };
 
 // The datacarrier bytes the node on the active profile ends with. MemPoolAccept::PreChecks counts
-// from the scripts alone. With knots#470, which a Plumb profile carries, PolicyScriptChecks counts
-// again once the scripts have run, with -rejectfakemultisig on and -datacarrierfullcount, crediting
-// a key only when a signature verified against it, and that count is never the lower one.
-// keys_used is the sets the count was taken with, or nullptr.
+// from the scripts alone and keeps each input's count. With knots#470, which a Plumb profile
+// carries, PolicyScriptChecks counts again once the scripts have run, with -rejectfakemultisig on,
+// -datacarrierfullcount and a witness in the transaction, crediting a key only when a signature
+// verified against it, and that count is never the lower one. Like the node, the recount reuses the
+// inputs' kept counts and redoes only the unproven-key part. keys_used is the sets the count was
+// taken with, or nullptr.
 std::pair<size_t, size_t> Count(const Profile& p, const CTransaction& tx, const CCoinsViewCache& view, const std::vector<size_t>& data_outputs, ScriptRun& scripts, const std::vector<VerifiedKeys>*& keys_used)
 {
     keys_used = nullptr;
-    const auto dcb{DatacarrierBytes(tx, view, data_outputs)};
-    if (!p.verified_key_credit || !::g_reject_fake_multisig || !p.opts.datacarrier_fullcount) return dcb;
+    std::vector<DatacarrierInputCache> input_cache;
+    const auto dcb{DatacarrierBytes(tx, view, data_outputs, /*verified_keys=*/nullptr, &input_cache)};
+    if (!p.verified_key_credit || !::g_reject_fake_multisig || !p.opts.datacarrier_fullcount || !tx.HasWitness()) return dcb;
     keys_used = scripts.Keys();
-    return keys_used ? DatacarrierBytes(tx, view, data_outputs, keys_used) : dcb;
+    return keys_used ? DatacarrierBytes(tx, view, data_outputs, keys_used, &input_cache) : dcb;
 }
 
 // The datacarrier part of MemPoolAccept::PreChecks, same conditions, with the count PolicyScriptChecks
@@ -440,8 +443,9 @@ BOOST_AUTO_TEST_CASE(plumb_check)
             verdicts.pushKV(p.name, v);
 
             if (p.name != "plumb") continue;
-            // Where the plumb profile finds the data, same calls as DatacarrierBytes, with the
-            // verified keys its count was taken with.
+            // Where the plumb profile finds the data, same calls as DatacarrierBytes makes without its
+            // per-input cache, with the verified keys its count was taken with. The total is checked
+            // below against Count's, so the node's cached recount must equal the uncached one.
             const auto data_outputs{DataOutputBytes(tx, &view)};
             const std::vector<VerifiedKeys>* keys;
             Count(p, tx, view, data_outputs, scripts, keys);
@@ -455,13 +459,13 @@ BOOST_AUTO_TEST_CASE(plumb_check)
                 const bool dead_branches{::g_reject_dead_branches && GetSerializeSize(txin.scriptWitness.stack) <= ::g_script_size_policy_limit};
                 // It recounts from the verified keys only an input whose script came from the witness
                 const VerifiedKeys* input_keys{(keys && wpb == 1) ? &(*keys)[n] : nullptr};
-                const auto d = script.DatacarrierBytes(0, &txin.scriptWitness, dead_branches, input_keys, ::g_reject_bare_envelopes, ::g_reject_fake_multisig, ::g_permit_ln_revoke_leaf);
+                const auto d = script.DatacarrierBytes(0, &txin.scriptWitness, dead_branches, input_keys, /*reached_normal_return=*/nullptr, ::g_reject_bare_envelopes, ::g_reject_fake_multisig, ::g_permit_ln_revoke_leaf);
                 ins.push_back(uint64_t(d.first + d.second));
                 total += d.first + d.second;
             }
             UniValue outs{UniValue::VARR};
             for (size_t o{0}; o < tx.vout.size(); ++o) {
-                const auto d = tx.vout[o].scriptPubKey.DatacarrierBytes(tx.vout.size() - o, nullptr, false, nullptr, ::g_reject_bare_envelopes, ::g_reject_fake_multisig);
+                const auto d = tx.vout[o].scriptPubKey.DatacarrierBytes(tx.vout.size() - o, nullptr, false, nullptr, /*reached_normal_return=*/nullptr, ::g_reject_bare_envelopes, ::g_reject_fake_multisig);
                 const size_t n{d.first + std::max(d.second, data_outputs[o])};
                 outs.push_back(uint64_t(n));
                 total += n;
@@ -504,6 +508,9 @@ BOOST_AUTO_TEST_CASE(plumb_check)
             if (!fix.empty()) row.pushKV("fix", fix);
         }
         Activate(restore);
+        // The node runs the policy script check on every transaction, but the recount takes its keys
+        // only with a witness. Run it for the rest too, so "script_error" covers every transaction.
+        scripts.Keys();
         if (!scripts.Error().empty()) row.pushKV("script_error", scripts.Error());
         row.pushKV("v", verdicts);
         out << row.write() << "\n";
