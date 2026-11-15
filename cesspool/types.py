@@ -39,7 +39,7 @@ TYPES = {
     "olga-acme": {
         "name": "ACME in P2WSH",
         "what": "The OLGA framing with the tag changed to `ACME`: a length prefix, then the payload in consecutive P2WSH output hashes.",
-        "how": "Four changed bytes walk past Knots' `stamp:` check, so stock Knots relays it. Plumb's output filter counts the outputs: three or more P2WSH outputs sharing one dust value, or a hash that reads as data, mark the whole run.",
+        "how": "Four changed bytes walk past Knots' `stamp:` check, so stock Knots relays it. Plumb's output filter counts the outputs: three or more distinct P2WSH outputs sharing one value of 353 sats or less, or a hash that reads as data along with other outputs of its type and value.",
         "filter": PLUMB, "option": "-rejectfakeoutputs",
         "prs": [("knots#389", "https://github.com/bitcoinknots/bitcoin/pull/389")],
     },
@@ -278,7 +278,7 @@ TYPES = {
 
 # What a protocol's defenders say, and why it still fails the bar on /about/#bar. Shown in the field guide.
 CASES = {
-    "fake-multisig": "Nobody defends this one in public. The inputs were checked, in blocks 961640 to 976951: 319,602 of 319,604 hold 1,000 sats or less, and 319,478 were funded by dust P2WSH runs. No wallet keeps coins that way.",
+    "fake-multisig": "Nobody defends this one in public. The inputs were checked, in blocks 961640 to 976951: 319,602 of 319,604 hold 1,000 sats or less, and 319,478 were funded by runs of three or more distinct P2WSH outputs sharing one value of 546 sats or less. No wallet keeps coins that way.",
     "inscription": "Its defenders say it pays its fees and uses witness space the way segwit allows. It fails the bar because the envelope never runs: it is storage.",
     "bare-inscription": "Its defenders say it pays its fees and uses witness space the way segwit allows. It fails the bar because the pushes are dropped unused: it is storage.",
     "envelope": "Its defenders say it pays its fees and uses witness space the way segwit allows. It fails the bar because the envelope never runs: it is storage.",

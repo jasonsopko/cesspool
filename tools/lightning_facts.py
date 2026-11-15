@@ -15,11 +15,12 @@ and a TRUC parent's unconfirmed child must be TRUC). So the scan counts:
      parent plus child, the only way such a parent gets through package relay. The rest a miner took directly.
   ln: Lightning force closes, a transaction whose locktime's top byte is 0x20 and every input's sequence's
      top byte is 0x80, as BOLT 3 builds a commitment transaction; ln_anchor_pair those with two 330-sat P2WSH
-     outputs; ln_run_hit those with three or more distinct P2WSH outputs sharing one value of 546 sat or less,
-     which Plumb's -rejectfakeoutputs counts as data (policy.h DATA_OUTPUT_DUST_RUN, DATA_OUTPUT_RUN_MAX_VALUE).
+     outputs; ln_run_hit those with three or more distinct P2WSH outputs sharing one value of RUN_MAX_VALUE sat
+     or less, which Plumb's -rejectfakeoutputs counts as data (policy.h DATA_OUTPUT_DUST_RUN,
+     DATA_OUTPUT_RUN_MAX_VALUE: 353 since plumb11, 546 before).
   ln_taproot_revoke: transactions with an input that spends LND's simple taproot channel revocation leaf
      <32-byte key> OP_DROP <32-byte key> OP_CHECKSIG through the script path, as script.cpp
-     IsLnTaprootRevokeLeaf matches it (knots#487): Knots 29.5 refuses them as non-standard data, Plumb 9 and 10 count
+     IsLnTaprootRevokeLeaf matches it (knots#487): Knots 29.5 refuses them as non-standard data, Plumb since plumb9 counts
      the 34 dropped bytes of each toward -datacarriersize.
 Prints the dict as JSON; with --rows also the sub-floor version 3 transactions and their children."""
 import gzip, json, os, sys
@@ -28,6 +29,7 @@ from multiprocessing import Pool
 
 RAW = os.path.join(os.environ.get("CESSPOOL_HOME", os.path.expanduser("~/.cesspool")), "raw")
 P2A = "51024e73"
+RUN_MAX_VALUE = 353  # policy.h DATA_OUTPUT_RUN_MAX_VALUE since plumb11
 
 
 def revoke_leaf(v):
@@ -75,7 +77,7 @@ def one(h):
             for o in tx["vout"]:
                 spk = o["scriptPubKey"]
                 val = round(o["value"] * 1e8)
-                if spk["type"] == "witness_v0_scripthash" and val <= 546:
+                if spk["type"] == "witness_v0_scripthash" and val <= RUN_MAX_VALUE:
                     runs[val].add(spk["hex"])
                     n330 += val == 330
             c["ln_anchor_pair"] += n330 >= 2

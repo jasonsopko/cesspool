@@ -16,8 +16,8 @@ SITE = "https://cesspool.lol"
 PLUMB_REPO = "https://github.com/plumb-node/plumb"
 PLUMB_RELEASE = "https://github.com/plumb-node/plumb/releases/latest"
 INSTALLER = "https://github.com/jasonsopko/knots-datum-node"
-PLUMB_TAG = "v29.5.knots20260508.plumb10"
-PLUMB_NAME = "Plumb 10"
+PLUMB_TAG = "v29.5.knots20260508.plumb11"
+PLUMB_NAME = "Plumb 11"
 PLUMB_VERSION = f"{PLUMB_NAME} ({PLUMB_TAG})"  # the release the verdicts come from, as a page names it
 KNOTS_NAME = "Knots 29.5"
 DATACARRIER_SIZE = {"knots": 83, "plumb": 42}  # each one's default -datacarriersize; Plumb went back to 42 in plumb7
@@ -27,6 +27,7 @@ MIN_USEFUL_SCRIPT_LIMIT = 520  # plumb-check offers no -maxscriptsize below this
 BYTESPERSIGOPSTRICT_DEFAULT = 20  # the Knots and Plumb default -bytespersigopstrict
 MAX_USEFUL_SIGOP_STRICT = 55  # plumb-check offers no -bytespersigopstrict above this
 MAX_DUST_RATE = 100000  # plumb-check searches -dustrelayfee up to this, in sat/kvB
+RUN_MAX_VALUE = 353  # knots#389's DATA_OUTPUT_RUN_MAX_VALUE since plumb11, 546 before: three or more P2WSH outputs of one value up to this count as data
 FORK = 961640
 
 GRADES = [  # key, label, css
@@ -1192,8 +1193,8 @@ SETTINGS_LINK = '<a href="/check/">Settings that keep them out</a>'
 # more; "gain" is the sewage 42 adds for Knots, by the record's primary type (no transaction that is not
 # sewage is added). plumb_only42: the sewage Plumb refuses only for being over 42, its p83 empty, counted
 # on the block records. Fixed, so the files read the same every block.
-CONF_FACTS = {"lo": 961640, "hi": 976619, "txs": 3569710, "sewage": 109247, "knots_sewage": 25786,
-              "knots42_sewage": 107654, "plumb_sewage": 109247, "plumb_only42": 80988,
+CONF_FACTS = {"lo": 961640, "hi": 976619, "txs": 3569710, "sewage": 108535, "knots_sewage": 25786,
+              "knots42_sewage": 107654, "plumb_sewage": 108535, "plumb_only42": 80988,
               "gain": {"swap-memo": 41780, "opreturn-text": 19791, "opreturn-data": 16728, "stacks": 1458,
                        "babylon": 1158, "token-json": 859, "coredao": 83, "bip47": 11}}
 # The -bytespersigopstrict and -maxscriptsize numbers, same blocks, from tools/sigop_facts.py 961640 976619,
@@ -1205,7 +1206,7 @@ CONF_FACTS = {"lo": 961640, "hi": 976619, "txs": 3569710, "sewage": 109247, "kno
 # Knots relays, the rest by the script they match; largest: the biggest script or witness among the
 # transactions not listed as sewage.
 SIGOP_FACTS = {"value": 51, "fake": 700, "fake_knots": 700, "fake_plumb": 700, "fake_value": 675, "fake_upto55": 21, "fake_over": 4,
-               "other": 0, "nearest": 56, "knots42_relays": 1593,
+               "other": 0, "nearest": 56, "knots42_relays": 881,
                "mss": 590, "mss_sewage": 0, "mss_other": 552, "mss_babylon": 386, "mss_liquid": 44, "mss_rsk": 22,
                "largest": 1609}
 # What the defaults refuse that cesspool.lol does not count as sewage, same blocks, counted on the block
@@ -1218,17 +1219,19 @@ LEGIT_FACTS = {"sweeps": 279, "flyover": 5, "liquid": 1}
 # recommended Knots file relays: no filter refuses it and it pays Knots' minimum relay fee on the vsize Knots
 # gives it at datacarriercost=2. sewage: the sewage that file relays, sewage_w its weight; left: what this file
 # still relays; dust_sewage: what 0.00005 refuses of it, strict_sewage what 55 refuses beyond that; run: the
-# p2wsh-run transactions, all of them in those blocks and all relayed by that file, run_w their weight, run_546
-# those with 546-sat P2WSH outputs, run_median such outputs to a transaction; other: what that file relays that
-# is not sewage; dust_other: what 0.00005 refuses of that, ln of them Lightning force closes out of the ln_all
-# that file relays (dust_other_kinds in the tool's output names the outputs that make the rest dust); fees: what
+# p2wsh-run transactions, all of them in those blocks and all relayed by that file; other: what that file relays
+# that is not sewage; dust_other: what 0.00005 refuses of that, ln of them Lightning force closes out of the ln_all
+# that file relays, cap of them the transactions the plumb11 regrade moved from sewage to clean (CAP_FACTS; runs
+# of P2WSH outputs at 482 to 546 sat, every one relayed by that file and refused at 0.00005, tools/aggr-changed.py
+# in reviews-1114/cesspool-plumb11), cap_reveal of those with an output a fake multisig reveal spent by block
+# CAP_FACTS hi (dust_other_kinds in the tool's output names the outputs that make the rest dust); fees: what
 # everything this file refuses beyond that file paid, in sats. fake_value: the fake multisig refused at 55, from
 # tools/sigop_facts.py 961640 976619 55, which also finds the one Liquid-layout spend (liquid, under Knots' fee
 # floor at 0.6 sat/vB) and nothing else. dust_exact: the lowest rate that makes a 546-sat P2WSH output dust;
 # p2wsh to p2pkh: the dust threshold at 0.00005.
-AGGR_FACTS = {"dust": "0.00005", "dust_exact": "0.00004964", "value": 55, "sewage": 1205, "left": 1,
-              "dust_sewage": 1204, "strict_sewage": 0, "run": 713, "run_546": 711, "run_median": 256,
-              "run_w": 30932788, "sewage_w": 32076980, "other": 3355612, "dust_other": 69174, "ln": 16043,
+AGGR_FACTS = {"dust": "0.00005", "dust_exact": "0.00004964", "value": 55, "sewage": 493, "left": 1,
+              "dust_sewage": 492, "strict_sewage": 0, "run": 1, "cap": 712, "cap_reveal": 709,
+              "other": 3356324, "dust_other": 69886, "ln": 16043,
               "ln_all": 19197, "fees": 72198518, "fake_value": 696, "liquid": 0, "strict_other": 0,
               "p2wsh": 550, "p2tr": 550, "p2wpkh": 490, "p2sh": 900, "p2pkh": 910}
 CONF_NAMES = {"knots": "Bitcoin " + KNOTS_NAME, "plumb": PLUMB_NAME}
@@ -1239,11 +1242,10 @@ CONF_NAMES = {"knots": "Bitcoin " + KNOTS_NAME, "plumb": PLUMB_NAME}
 # nothing, v3_sub_floor_relayed those with a version 3 child in the same block paying 1 sat/vB for the pair,
 # the only way such a parent gets through package relay; ln: Lightning force closes (locktime's top byte 0x20,
 # every sequence's top byte 0x80), ln_anchor_pair those with two 330-sat P2WSH outputs, ln_run_hit those with
-# three or more distinct P2WSH outputs sharing one value of 546 sat or less, which -rejectfakeoutputs
-# refuses; ln_taproot_revoke: those spending LND's simple taproot channel revocation leaf through the script path
+# three or more distinct P2WSH outputs sharing one value of RUN_MAX_VALUE sat or less, which -rejectfakeoutputs
+# refuses (546 before plumb11; 0 at either value); ln_taproot_revoke: those spending LND's simple taproot channel revocation leaf through the script path
 # (knots#487); ln_taproot_revoke_token of them carry a JSON token message that Plumb refuses as tokens-json
 # (counted in the plumb9 regrade's logs/attribution.tsv, from tools/attribute.py, reviews-1029/cesspool-plumb9).
-# The weight share of the P2WSH runs comes from AGGR_FACTS.
 LN_FACTS = {"lo": 961640, "hi": 978047, "txs": 3878328, "p2a_under_240": 0, "v3_sub_floor": 37, "v3_zero_fee": 37,
             "v3_sub_floor_relayed": 0, "ln": 19448, "ln_anchor_pair": 6839, "ln_run_hit": 0,
             "ln_taproot_revoke": 223, "ln_taproot_revoke_token": 223}
@@ -1251,6 +1253,29 @@ LN_FACTS = {"lo": 961640, "hi": 978047, "txs": 3878328, "p2a_under_240": 0, "v3_
 # knots#389's vanity skip (1c75f9b382, in Plumb since plumb10): transactions whose grade it changed, from the
 # plumb10 regrade of blocks lo to hi against the plumb9 grade (compare-states.py, reviews-1107/cesspool-plumb10).
 VANITY_FACTS = {"lo": 961640, "hi": 980974, "changed": 0}
+
+
+# knots#389's run cap (ea9c2ddc54, in Plumb since plumb11: DATA_OUTPUT_RUN_MAX_VALUE 546 -> 353): transactions whose
+# grade it changed, from the plumb11 regrade of blocks lo to hi against the plumb10 grade (compare-states.py and
+# tools/cap-attribute.py, reviews-1114/cesspool-plumb11); sewage_to_clean of them were sewage and grade clean now,
+# reveal of those have an output a fake multisig reveal spent by block hi (tools/reveal-check.py).
+CAP_FACTS = {"lo": 961640, "hi": 982017, "changed": 4018, "sewage_to_clean": 4018, "reveal": 3985}
+
+
+def cap_line():
+    c = CAP_FACTS
+    if not c["changed"]:
+        return f"No transaction from block {c['lo']} to {c['hi']} grades differently for it."
+    line = (f"From block {c['lo']} to {c['hi']}, {plural(c['changed'], 'transaction')} "
+            f"{'grades' if c['changed'] == 1 else 'grade'} differently for it")
+    if c["sewage_to_clean"] == c["changed"]:
+        line += (", all of them sewage before and clean now." if c["changed"] > 1 else ", sewage before and clean now.")
+    else:
+        line += f", {n(c['sewage_to_clean'])} of them sewage before and clean now."
+    if c["reveal"]:
+        line += (f" {n(c['reveal'])} of them have outputs a fake multisig reveal spent by block {c['hi']}; the data they set up "
+                 "is counted in those reveals, which stay sewage.")
+    return line
 
 
 def vanity_line():
@@ -1400,16 +1425,16 @@ def aggressive_conf():
             "that creates dust, an output worth less than the fee to spend it at this rate: at "
             f"{a['dust']}, an output under {a['p2wsh']} sats to a P2WSH or taproot address, under {a['p2wpkh']} "
             f"to P2WPKH, under {a['p2sh']} to P2SH and under {a['p2pkh']} to a legacy address. In the same "
-            f"blocks, {n(a['run'])} transactions set up runs of P2WSH outputs for data that lands on chain when "
-            "the outputs are spent, mostly as fake multisig keys. They are "
-            f"{pct(a['run_w'] / a['sewage_w'], 0)} of the block weight of the sewage the recommended file "
-            f"relays. {n(a['run_546'])} of them pay 546 sats to such outputs, a median of {a['run_median']} to a "
-            f"transaction, and a 546-sat P2WSH output is dust from {a['dust_exact']} up. This value refuses "
-            f"{n(a['dust_sewage'])} of the {n(a['sewage'])} sewage transactions the recommended file relays, "
-            f"all {n(a['run'])} of those among them. It also refuses {n(a['dust_other'])} that are not sewage: "
-            f"{n(a['ln'])} Lightning force closes and {n(a['dust_other'] - a['ln'])} others that create small "
-            "outputs, most often 546 sats to a taproot address or 294 to a P2WPKH one. A wallet that sends "
-            "through this node has a payment or change output that small refused the same way."),
+            f"blocks this value refuses {n(a['dust_sewage'])} of the {n(a['sewage'])} sewage transactions the "
+            f"recommended file relays. It also refuses {n(a['dust_other'])} that are not sewage. {n(a['ln'])} are "
+            f"Lightning force closes. {n(a['cap'])} set up runs of three or more distinct P2WSH outputs of one value from 482 "
+            "to 546 sats, "
+            f"and fake multisig reveals spent outputs of {n(a['cap_reveal'])} of them by block {CAP_FACTS['hi']}: "
+            f"cesspool.lol listed them as sewage until Plumb 11, which counts such a run as data only at "
+            f"{RUN_MAX_VALUE} sats or less. A 546-sat P2WSH output is dust from {a['dust_exact']} up. The other "
+            f"{n(a['dust_other'] - a['ln'] - a['cap'])} create small outputs, most often 546 sats to a taproot "
+            "address or 294 to a P2WPKH one. A wallet that sends through this node has a payment or change output "
+            "that small refused the same way."),
     }
     lines = [f"# Aggressive bitcoin.conf for {CONF_NAMES['knots']}",
              "# Not the recommended file: it refuses ordinary transactions too.", f"# {SITE}/check/#aggressive", "#"]
@@ -1452,7 +1477,7 @@ def lightning_conf(prog):
     """The Lightning file for "knots" or "plumb", served at /check/<prog>-lightning.conf: the recommended file
     with the three settings a zero-fee commitment channel needs, the dust fee settings written out at their
     defaults, and what the change lets through, from LN_FACTS."""
-    a, l = AGGR_FACTS, LN_FACTS
+    l = LN_FACTS
     name = "Knots" if prog == "knots" else "Plumb"
     comments = conf_stricter(prog) | {
         "subdustfeepenalty": conf_comment(
@@ -1475,18 +1500,14 @@ def lightning_conf(prog):
             "The defaults, written out. Anything above 0.00003 makes 330-sat anchors dust; see the note at the top."),
     }
     if prog == "plumb":
+        # Plumb's own text since plumb11 (plumb db292944b3): knots#389 stops the dust run at 353 sat
         comments["rejectfakeoutputs"] = conf_comment(
-            "Three or more P2WSH outputs in one transaction sharing one value of 546 sat or less count as data, "
-            "which refuses a force close whose commitment carries three or more HTLC outputs of the same value "
-            f"between 354 sat, the floor channels trim HTLCs under, and 546. None of the {n(l['ln'])} force closes "
-            f"mined from block {l['lo']} to {l['hi']} carried three or more P2WSH outputs of one value of 546 sat or "
-            "less. Set rejectfakeoutputs=0 to remove the case; "
-            "the node then relays everything that filter catches, among it the runs of small P2WSH outputs that "
-            f"stage data for later reveals, {pct(a['run_w'] / a['sewage_w'], 0)} by weight of the sewage the "
-            "recommended Knots file relays.")
+            f"Three or more P2WSH outputs in one transaction sharing one value of {RUN_MAX_VALUE} sat or less count "
+            f"as data. A Lightning commitment never has three: BOLT 2 allows no channel dust limit below "
+            f"{RUN_MAX_VALUE + 1} sat and BOLT 3 trims balance and HTLC outputs below it, so under "
+            f"{RUN_MAX_VALUE + 1} a commitment has no P2WSH output but its 330-sat anchors, two at most.")
     apart = ("apart from the OP_RETURN close and the LND penalty spend noted below" if prog == "knots" else
-             "apart from the OP_RETURN close noted below and the one case noted above rejectfakeoutputs at the end "
-             "of this file")
+             "apart from the OP_RETURN close noted below")
     # knots#487: what each program does with the penalty spend of an LND simple taproot channel
     leaf_bytes = 34
     spent = (f"From block {l['lo']} to {l['hi']}, " + (plural(l["ln_taproot_revoke"], "mined transaction") + " spent"
@@ -1593,7 +1614,7 @@ def conf_pane(key, on):
 
 def aggressive_note():
     f, a = CONF_FACTS, AGGR_FACTS
-    return f'''<p class="small" id="aggressive" style="max-width:75ch"><b>The aggressive Knots file is not the recommendation.</b> It is the recommended Knots file with <code>dustrelayfee={a["dust"]}</code> and <code>bytespersigopstrict={a["value"]}</code>, for operators who will refuse some ordinary transactions to refuse more spam. From block {f["lo"]} to {f["hi"]} cesspool.lol lists {n(f["sewage"])} transactions as sewage. Knots relays {n(a["sewage"])} of them with the recommended file and {n(a["left"])} with this one, which also refuses {n(a["dust_other"])} more that are not sewage, {n(a["ln"])} of them Lightning force closes. Do not use it on a node that a Lightning node sends transactions through: the Lightning node cannot force close an anchor channel, and a force close that misses its deadline can lose the payments in flight. Plumb with its own recommended file refuses {n(f["plumb_sewage"])} of the {n(f["sewage"])} without raising either value.</p>'''
+    return f'''<p class="small" id="aggressive" style="max-width:75ch"><b>The aggressive Knots file is not the recommendation.</b> It is the recommended Knots file with <code>dustrelayfee={a["dust"]}</code> and <code>bytespersigopstrict={a["value"]}</code>, for operators who will refuse some ordinary transactions to refuse more spam. From block {f["lo"]} to {f["hi"]} cesspool.lol lists {n(f["sewage"])} transactions as sewage. Knots relays {n(a["sewage"])} of them with the recommended file and {n(a["left"])} with this one, which also refuses {n(a["dust_other"])} more that are not sewage, {n(a["ln"])} of them Lightning force closes and {n(a["cap"])} that set up runs of three or more distinct P2WSH outputs of one value from 482 to 546 sats, which cesspool.lol listed as sewage until Plumb 11. Do not use it on a node that a Lightning node sends transactions through: the Lightning node cannot force close an anchor channel, and a force close that misses its deadline can lose the payments in flight. Plumb with its own recommended file refuses {n(f["plumb_sewage"])} of the {n(f["sewage"])} without raising either value.</p>'''
 
 
 def lightning_pane():
@@ -1610,7 +1631,7 @@ def lightning_pane():
 
 def lightning_note():
     l = LN_FACTS
-    return f'''<p class="small" id="lightning" style="max-width:75ch"><b>The Lightning files are for a node that a Lightning node sends transactions through.</b> Everything a CLN or LND node broadcasts relays with the recommended files, apart from a mutual close that burns a tiny balance into an OP_RETURN over 42 bytes, on Knots the penalty spend of an LND simple taproot channel, and, on Plumb, the one case at the end of this note: force closes of anchor channels with their 330-sat anchors, the fee bump that spends an anchor, HTLC-timeout spends, mutual closes. The commitment transaction of a zero-fee commitment channel does not: it is version 3, pays no fee itself beyond a trimmed remainder, and carries one pay-to-anchor output of at most 240 sat, with a child paying for both, and three Knots defaults refuse it. The Lightning files are the recommended files with those three changed, <code>subdustfeepenalty=0</code>, <code>mempooltruc=enforce</code> and <code>permitephemeral=anchor,-send,dust</code>, and the dust fee settings written out at their defaults. What the three lines let through: a version 3 transaction that pays less than the 1 sat/vB relay floor on its own, with at most one pay-to-anchor output under its dust limit, when it arrives with a version 3 child that pays the floor for both. Data in it costs what it costs anywhere else in the file. From block {l["lo"]} to {l["hi"]} nothing mined fits that description. LDK 0.2 and later can open these channels between LDK peers, eclair 0.14 has them as an option that is off by default, and LND 0.21 and CLN 26.06 show no sign of them. Do not raise <code>dustrelayfee</code> or turn on <code>dustdynamic</code> on such a node: anything above the default makes the 330-sat anchors dust, and every anchor force close is refused. Plumb only: <code>rejectfakeoutputs</code> refuses a commitment with three or more HTLC outputs of the same value between 354 and 546 sat; none of the {n(l["ln"])} force closes mined in those blocks carried three or more P2WSH outputs of one value of 546 sat or less. Knots {KNOTS_NAME.split()[-1]} refuses the penalty spend of an LND simple taproot channel: its revocation leaf pushes a 32-byte key and drops it, and Knots counts those 34 bytes as non-standard data. Plumb relays it since plumb9 (knots#487), counting the 34 bytes toward <code>datacarriersize</code>, so one such input fits {DATACARRIER_SIZE["plumb"]}. In those blocks {"no" if not l["ln_taproot_revoke"] else n(l["ln_taproot_revoke"])} mined transaction{"" if l["ln_taproot_revoke"] == 1 else "s"} spent a leaf of that form{", every one of them carrying a JSON token message that Plumb refuses" if l["ln_taproot_revoke"] and l["ln_taproot_revoke_token"] == l["ln_taproot_revoke"] else ""}. The comments above each changed setting say the rest.</p>'''
+    return f'''<p class="small" id="lightning" style="max-width:75ch"><b>The Lightning files are for a node that a Lightning node sends transactions through.</b> Everything a CLN or LND node broadcasts relays with the recommended files, apart from a mutual close that burns a tiny balance into an OP_RETURN over 42 bytes and, on Knots, the penalty spend of an LND simple taproot channel: force closes of anchor channels with their 330-sat anchors, the fee bump that spends an anchor, HTLC-timeout spends, mutual closes. The commitment transaction of a zero-fee commitment channel does not: it is version 3, pays no fee itself beyond a trimmed remainder, and carries one pay-to-anchor output of at most 240 sat, with a child paying for both, and three Knots defaults refuse it. The Lightning files are the recommended files with those three changed, <code>subdustfeepenalty=0</code>, <code>mempooltruc=enforce</code> and <code>permitephemeral=anchor,-send,dust</code>, and the dust fee settings written out at their defaults. What the three lines let through: a version 3 transaction that pays less than the 1 sat/vB relay floor on its own, with at most one pay-to-anchor output under its dust limit, when it arrives with a version 3 child that pays the floor for both. Data in it costs what it costs anywhere else in the file. From block {l["lo"]} to {l["hi"]} nothing mined fits that description. LDK 0.2 and later can open these channels between LDK peers, eclair 0.14 has them as an option that is off by default, and LND 0.21 and CLN 26.06 show no sign of them. Do not raise <code>dustrelayfee</code> or turn on <code>dustdynamic</code> on such a node: anything above the default makes the 330-sat anchors dust, and every anchor force close is refused. Plumb&#39;s <code>rejectfakeoutputs</code> counts three or more distinct P2WSH outputs sharing one value of {RUN_MAX_VALUE} sat or less as data. A commitment never has three: BOLT 2 allows no channel dust limit below {RUN_MAX_VALUE + 1} sat and BOLT 3 trims balance and HTLC outputs below it, so under {RUN_MAX_VALUE + 1} a commitment has no P2WSH output but its 330-sat anchors, two at most. Knots {KNOTS_NAME.split()[-1]} refuses the penalty spend of an LND simple taproot channel: its revocation leaf pushes a 32-byte key and drops it, and Knots counts those 34 bytes as non-standard data. Plumb relays it since plumb9 (knots#487), counting the 34 bytes toward <code>datacarriersize</code>, so one such input fits {DATACARRIER_SIZE["plumb"]}. In those blocks {"no" if not l["ln_taproot_revoke"] else n(l["ln_taproot_revoke"])} mined transaction{"" if l["ln_taproot_revoke"] == 1 else "s"} spent a leaf of that form{", every one of them carrying a JSON token message that Plumb refuses" if l["ln_taproot_revoke"] and l["ln_taproot_revoke_token"] == l["ln_taproot_revoke"] else ""}. The comments above each changed setting say the rest.</p>'''
 
 
 def settings_section():
@@ -2233,6 +2254,7 @@ def about_page(idx, tip):
 <li><a href="/guide/#powpeg-flyover">Rootstock PowPeg Flyover spends</a> ({n(tn("powpeg-flyover"))}): the federation moving a deposit whose script starts with a 32-byte value that it drops unused. Knots counts that push as data.</li></ul>
 <p>Each one is kept narrow. A sweep's OP_RETURN holds at most {classify.SWEEP_PAD} bytes, and a sweep whose inputs carry anything Plumb or cesspool counts stays sewage. A Flyover spend is recognized by the exact script every PowPeg spend since the fork reveals, so only the keys in that script can spend a match: 5 of its 9, or 3 of its 4 emergency keys after a long timelock.</p>
 <p>Plumb 6 also refused payments back to the vanity address one of the transaction's inputs spends from, reading the zeros in its hash as data. Plumb 7&#39;s <code>-rejectfakeoutputs</code> counts nothing in an output that pays the script of a coin the transaction spends: the spend proved the key or hash in it is real, and fitting chosen data into one would take at least 2<sup>128</sup> tries. Those payments now grade clean. Plumb 10&#39;s <code>-rejectfakeoutputs</code> also skips the leading zero bytes of a hash or key, when there are seven or fewer, before it looks for repeated bytes, so a payment to an address whose hash or key starts with six or seven zero bytes is no longer refused. {vanity_line()}</p>
+<p>Plumb 11&#39;s <code>-rejectfakeoutputs</code> counts three or more distinct P2WSH outputs sharing one value as data only at {RUN_MAX_VALUE} sat or less, down from 546. Plumb 10 counted them up to 546 sat, which could refuse a Lightning force close whose commitment carried three HTLC outputs of one amount from 354 to 546 sat; below {RUN_MAX_VALUE + 1} sat, the smallest dust limit BOLT 2 allows a channel, a commitment has no P2WSH output but its 330-sat anchors, two at most. {cap_line()}</p>
 <p>One kind stays sewage on purpose. A <a href="/guide/#liquid-emergency">Liquid-layout emergency spend</a> ({n(tn("liquid-emergency"))}) is very likely Liquid's own recovery, but every Liquid deposit tweaks the federation keys, so the layout cannot prove that the keys Plumb counts are real, and anyone could copy it.</p>
 <p>Protocols with defenders that do not pass have their case in the <a href="/guide/">field guide</a>, next to the reason they fail: inscriptions, Runes, JSON token messages, Stamps, Counterparty, Omni, BIP47 notifications, swap memos, and the tags Babylon, Core DAO and Stacks add. Babylon and Core DAO move real bitcoin to ordinary scripts, and that part passes; the tag beside it is a record for another chain.</p>
 <h2 id="known">How protocols are recognized</h2>
