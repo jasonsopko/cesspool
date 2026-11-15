@@ -540,7 +540,7 @@ def page(path, title, body, *, nav="", desc="", og=None, tip=None):
 '''
 
 
-ASSET_V = "38"
+ASSET_V = "39"
 
 
 def write(out, rel, text):
@@ -2072,7 +2072,7 @@ def guide_page(idx, tip):
         secs.append(f'''<section class="panel" id="{t}" style="margin:14px 0"><div class="ftype"><div>
 <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap"><h3 style="margin:0">{esc(i["name"])}</h3>{status_chip(t)}{prs}</div>
 <p style="margin-top:10px">{prose(i["what"])}</p><p class="muted">{prose(i["how"])}</p>{note}{case}
-<p class="small muted">Seen {plural(s["n"], "time")} in {plural(s["blocks"], "block")}, {"its payload counted where the outputs are spent" if i.get("staged") else size(s["data"]) + " of payload"}. First at <a href="/block/{s["first"]}/">{s["first"]}</a>, latest at <a href="/block/{s["last"]}/">{s["last"]}</a>.</p></div>
+<p class="small muted">Seen {plural(s["n"], "time")} in {plural(s["blocks"], "block")}, {"with any data a spend of the outputs reveals counted in the spending transaction" if i.get("staged") else size(s["data"]) + " of payload"}. First at <a href="/block/{s["first"]}/">{s["first"]}</a>, latest at <a href="/block/{s["last"]}/">{s["last"]}</a>.</p></div>
 <div><div class="small muted" style="margin-bottom:4px">Refused, measured on every instance</div><div class="tw"><table class="meas">{"".join(measured)}</table></div></div></div></section>''')
     body = f'''<div class="hero"><div class="kicker">Field guide</div><h1>Every shape we have caught</h1>
 <p class="lede">Each kind of spam on the chain since the fork: what it is, how it hides the bytes, and which filter stops it. The refusal rates come from running each policy's code on every instance, so where the label and the measurement disagree, the measurement wins.</p>

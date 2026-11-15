@@ -164,6 +164,38 @@ def olga_tag(tx):
     return None
 
 
+# Plumb's dust run (knots#389, policy.h): DATA_OUTPUT_DUST_RUN or more distinct P2WSH programs sharing one value
+# of at most DATA_OUTPUT_RUN_MAX_VALUE count as data. 353 since plumb11, 546 before.
+P2WSH_RUN_MIN, P2WSH_RUN_MAX_VALUE = 3, 353
+
+
+def p2wsh_programs(tx):
+    """(value in sats, program) for each P2WSH output, in output order."""
+    return [(round(o["value"] * 1e8), bytes.fromhex(o["scriptPubKey"]["hex"])[2:]) for o in tx["vout"]
+            if o["scriptPubKey"].get("type") == "witness_v0_scripthash"]
+
+
+def untagged_olga(tx):
+    """True when the P2WSH hashes, concatenated in output order, are OLGA framing with no tag: a 2-byte
+    big-endian length first, the bytes it covers ending inside the last P2WSH output, and every byte after
+    them to the end of that output zero, at least one. Random hashes match about once in 16.7 million
+    transactions: the length lands in the 31 places that leave 1 to 31 bytes after it with chance 31 in 65,536,
+    and k given bytes are all zero with chance 256 to the minus k."""
+    data = b"".join(p for _, p in p2wsh_programs(tx))
+    if len(data) < 32:
+        return False
+    end = 2 + int.from_bytes(data[:2], "big")
+    return len(data) - 32 < end < len(data) and not any(data[end:])
+
+
+def in_p2wsh_run(tx, vout):
+    """True when vout is one of three or more distinct P2WSH programs sharing its value, at 353 sats or less."""
+    value = round(vout["value"] * 1e8)
+    if value > P2WSH_RUN_MAX_VALUE:
+        return False
+    return len({p for v, p in p2wsh_programs(tx) if v == value}) >= P2WSH_RUN_MIN
+
+
 def fake_output(tx, idx, vout):
     """Name an output whose hash or key plumb-check counted as data."""
     spk = vout["scriptPubKey"]
@@ -176,7 +208,13 @@ def fake_output(tx, idx, vout):
             return "olga", "OLGA payload in P2WSH hashes (Stamps framing)"
         if tag == b"ACME":
             return "olga-acme", "ACME payload in P2WSH hashes (OLGA framing, changed tag)"
-        return "p2wsh-run", "Run of dust P2WSH outputs set up for a script reveal"
+        if untagged_olga(tx):
+            return "olga-untagged", "Payload in P2WSH hashes (OLGA framing, no tag)"
+        # Only a real run stands for scripts a later spend may reveal; anything else Plumb counts in a
+        # P2WSH hash is data in the hash itself.
+        if in_p2wsh_run(tx, vout):
+            return "p2wsh-run", "Run of dust P2WSH outputs set up for a script reveal"
+        return "p2wsh-data", "Data inside P2WSH hashes"
     if t == "witness_v0_keyhash":
         if printable(prog):
             return "swap-memo-hash", "Swap memo continued as text inside P2WPKH hashes"
@@ -444,8 +482,8 @@ def classify(tx, verdict):
     if "bare-multisig" in plumb_reasons:
         add("bare-multisig", "Bare multisig outputs holding data keys")
 
-    # A run's outputs commit to scripts that a later transaction reveals; the payload is
-    # counted there, so the policy code's bytes for the run itself are not payload.
+    # A run's outputs commit to scripts, and a spend of them may reveal data, which is counted in the
+    # spending transaction; the policy code's bytes for the run itself are not payload.
     data_bytes = v["plumb"]["data"] + v["plumb"]["data_nonstd"] - run_bytes
     fm_inputs, fm_bytes, fm_per_input = fake_multisig(tx)
     missed = False

@@ -903,7 +903,7 @@
         if (more) what.push(el("p", {}, el("b", { text: "Also found: " + more.name + ". " }), prose(more.what)));
       });
       if (info.staged) what.push(el("p", {}, "Counted as data: ", el("b", { text: num(tx.i.concat(tx.o).reduce(function (a, r) { return a + (r.d || 0); }, 0)) + " bytes" }), " of a " + num(tx.s) + "-byte transaction, in the rows marked below. ",
-        "The payload itself comes when those outputs are spent. This page shows sizes, never the bytes."));
+        "If a spend of those outputs reveals data, cesspool counts it in the spending transaction. This page shows sizes, never the bytes."));
       else what.push(el("p", {}, "Payload: ", el("b", { text: num(tx.dt || 0) + " bytes" }), " of a " + num(tx.s) + "-byte transaction. ",
         "The rows marked below are where it sits. This page shows sizes, never the bytes."));
       if (info.option && info.option.indexOf("-datacarriersize") === 0) {
