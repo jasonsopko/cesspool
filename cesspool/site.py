@@ -714,7 +714,9 @@ def plumb_by(s, data_rs):
         parts.append(f"its filters together count {n(added)} B that Knots does not")
     knots_refuses = any(classify.DATA_REASONS.match(r) for r in knots_rs)
     # Knots' own rules, with the bytes each one counts, where the engine measured them
-    kparts = [f"<code>{esc(o)}</code> counts {n(knots_bytes(fc, o))} B{source_link(o)}" for o in knots_measured(s)]
+    # a rule Knots applies with no switch goes by its name: the switch is Plumb's
+    kparts = [(KNOTS_RULE_NAMES[o] if o in KNOTS_HAS_NO_SWITCH else f"<code>{esc(o)}</code>") + f" counts {n(knots_bytes(fc, o))} B{source_link(o)}"
+              for o in knots_measured(s)]
     krules = f'Knots&#39; rules refuse it: {"; ".join(kparts)}.' if kparts else "Knots&#39; rules refuse it."
     also = f" It is also over {size42}; Knots&#39; is {DATACARRIER_SIZE['knots']}." if by42 else ""
     if parts:
@@ -1066,11 +1068,11 @@ def drop_from_tx_index(out, heights):
 
 def tx_catalog():
     """What the transaction page needs to name and explain a finding."""
-    types = {t: {k: i[k] for k in ("name", "what", "how", "filter", "option", "line", "note", "staged", "case") if k in i} | {"prs": i.get("prs", [])}
-             for t, i in TYPES.items()}
+    types = {t: {k: i[k] for k in ("name", "what", "how", "filter", "option", "knots_since", "line", "note", "staged", "case") if k in i}
+             | {"prs": i.get("prs", [])} for t, i in TYPES.items()}
     return {"plumb": PLUMB_NAME, "verdicts": VERDICT_NAMES, "rules": RULES, "sources": {**KNOTS_SOURCE, **FILTER_SOURCE},
             "plumb_options": sorted(PLUMB_OPTIONS), "plumb_own": sorted(PLUMB_OWN), "knots_rules": list(KNOTS_RULES),
-            "recount": [RECOUNT, RECOUNT_URL],
+            "knots_no_switch": sorted(KNOTS_HAS_NO_SWITCH), "knots_rule_names": KNOTS_RULE_NAMES, "recount": [RECOUNT, RECOUNT_URL],
             "knots_source": KNOTS_SOURCE, "dcsize": DATACARRIER_SIZE, "types": types,
             "limits": {"dcsize": DATACARRIER_SIZE, "mss": MAXSCRIPTSIZE_DEFAULT, "dust": DUSTRELAYFEE_DEFAULT,
                        "mss_floor": MIN_USEFUL_SCRIPT_LIMIT, "dust_max": MAX_DUST_RATE,
@@ -1170,6 +1172,8 @@ SETTINGS_KNOTS = ("corepolicy=0", "acceptnonstdtxn=0", "rejecttokens=1", "reject
 SETTINGS_PLUMB = ("rejectfakeoutputs=1", "rejectbareenvelopes=1", "rejectfakemultisig=1", "rejecttokenmessages=1", "rejectunverifiedwitness=1")
 # Plumb switches for rules Knots applies with no switch of its own (since 29.4.3)
 KNOTS_HAS_NO_SWITCH = {"-rejectbareenvelopes", "-rejectfakemultisig"}
+# What a page calls those rules where it means Knots' (the names /check/ and plumbnode.org use)
+KNOTS_RULE_NAMES = {"-rejectfakemultisig": "the unproven-key rule", "-rejectbareenvelopes": "the bare-envelope rule"}
 # The data-counting rules the engine measures one at a time ("fc"), split by whose they are: Knots 29.5
 # applies the first four by default (two of them with no switch, which Plumb adds), Plumb alone the rest:
 # -rejectfakeoutputs and, since plumb12, -rejectunverifiedwitness, both measured, and -rejecttokenmessages,

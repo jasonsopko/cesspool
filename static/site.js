@@ -665,10 +665,14 @@
       .sort(function (a, b) { return knotsBytes(cat, fc, b) - knotsBytes(cat, fc, a); });
   }
   function text(s) { return document.createTextNode(s); }
+  // Whether a transaction's record has Knots counting data in it (site.py knots_counts).
+  function knotsCounts(tx) {
+    var dc = tx.dc && tx.dc.knots;
+    return !!(dc && dc[0] + dc[1] > 0);
+  }
   // Whether a transaction's record has Knots counting data in it or giving a reason (site.py knots_acts).
   function knotsActs(tx) {
-    var dc = tx.dc && tx.dc.knots;
-    return !!((tx.x && tx.x.knots && tx.x.knots.length) || (dc && dc[0] + dc[1] > 0));
+    return !!((tx.x && tx.x.knots && tx.x.knots.length) || knotsCounts(tx));
   }
   // For a transaction this software relays: the settings whose value would refuse it. The engine found
   // each value by rerunning the policy checks with that one setting changed (tx.fx); a setting no value
@@ -777,7 +781,9 @@
       b.appendChild(document.createTextNode(ks.length ? "Knots' rules refuse it: " : "Knots' rules refuse it."));
       ks.forEach(function (o, i) {
         if (i) b.appendChild(document.createTextNode("; "));
-        b.appendChild(el("code", { text: o })); b.appendChild(document.createTextNode(" counts " + num(knotsBytes(cat, fc, o)) + " B"));
+        // a rule Knots applies with no switch goes by its name: the switch is Plumb's (site.py plumb_by)
+        var nm = (cat.knots_no_switch || []).indexOf(o) >= 0 && (cat.knots_rule_names || {})[o];
+        b.appendChild(nm ? document.createTextNode(nm) : el("code", { text: o })); b.appendChild(document.createTextNode(" counts " + num(knotsBytes(cat, fc, o)) + " B"));
         var s = sourceLink(cat, o); if (s) b.appendChild(s);
       });
       if (ks.length) b.appendChild(document.createTextNode("."));
@@ -920,6 +926,19 @@
       } else if (info.line) {
         // a type that names its own filters (the padded fake multisig), shown as site.py shows it: not on a miss
         if (!tx.m) what.push(el("p", { cls: "small" }, prose(info.line)));
+      } else if (info.option && info.filter === cat.filters.knots && info.knots_since && (cat.knots_no_switch || []).indexOf(info.option) >= 0) {
+        // a rule Knots took in with no switch, the option Plumb's: the block page's line (site.py filter_line), shown
+        // only where this transaction's record has Knots counting data in it
+        if (knotsCounts(tx)) {
+          var nl = el("p", { cls: "small" }, "Knots counts it as data by default since " + info.knots_since);
+          if ((info.prs || []).length) {
+            nl.appendChild(text(" ("));
+            info.prs.forEach(function (p, i) { if (i) nl.appendChild(text(" ")); nl.appendChild(el("a", { href: p[1], text: p[0] })); });
+            nl.appendChild(text(")"));
+          }
+          nl.appendChild(text("; Plumb keeps a switch, ")); nl.appendChild(el("code", { text: info.option })); nl.appendChild(text("."));
+          what.push(nl);
+        }
       } else if (info.option && (info.filter === cat.filters.plumb || (info.filter === cat.filters.knots && knotsActs(tx)))) {
         // a rule Knots ships, named only where this transaction's record has Knots counting data or refusing it
         var line = el("p", { cls: "small" }, (info.filter === cat.filters.plumb ? "Plumb ships " : "Knots ships "), el("code", { text: info.option }));
