@@ -474,9 +474,15 @@ def classify(tx, verdict):
             add(t, label)
             if t == "p2wsh-run":
                 run_bytes += n
+    # The part of an input's count that is witness items no verified signature check used
+    # (-rejectunverifiedwitness, data_uw) is named apart from what its script holds.
+    uw = verdict.get("data_uw", [])
     for i, n in enumerate(verdict.get("data_in", [])):
-        if n:
+        items = uw[i] if i < len(uw) else 0
+        if n - items:
             add(*data_input(tx["vin"][i]))
+        if items and data_reasons:
+            add("witness-items", "Witness items no verified signature check used")
     if any(r.startswith("parasite-cat21") for r in plumb_reasons):
         add("cat21", "CAT-21 mint (nLockTime 21)")
     if "bare-multisig" in plumb_reasons:
@@ -485,6 +491,11 @@ def classify(tx, verdict):
     # A run's outputs commit to scripts, and a spend of them may reveal data, which is counted in the
     # spending transaction; the policy code's bytes for the run itself are not payload.
     data_bytes = v["plumb"]["data"] + v["plumb"]["data_nonstd"] - run_bytes
+    if not data_reasons:
+        # Witness items no signature verified can be a hash preimage or a key the script checks by hash,
+        # which pass the bar, and nothing here tells those from bytes a script drops. A transaction
+        # Plumb relays is not gray water for them alone.
+        data_bytes -= sum(uw)
     fm_inputs, fm_bytes, fm_per_input = fake_multisig(tx)
     missed = False
     if fm_inputs:

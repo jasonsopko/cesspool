@@ -935,7 +935,11 @@
       title = kn ? kn.name : sh[0]; st = [stamp("Normal", "var(--ok)")];
       what.push(el("p", { text: kn ? kn.what : sh[1] }));
       var anyRefusal = tx.x && ["knots", "plumb"].some(function (k) { return tx.x[k].length; });
-      what.push(el("p", {}, el("b", { text: "Not spam. " }), anyRefusal
+      // bytes -rejectunverifiedwitness counts in a transaction Plumb relays: not listed for those alone (classify.py)
+      var uwb = (tx.fc || {})["-rejectunverifiedwitness"] || 0;
+      what.push(el("p", {}, el("b", { text: "Not spam. " }), uwb
+        ? plumb + " counts " + num(uwb) + " B of witness items no verified signature check used, inside its data allowance. Such an item can be a hash preimage or a key the script checks by hash, which pass the bar, so cesspool does not list a transaction for them alone." + (anyRefusal ? " One of the policies below refuses it for a reason that is not a data rule." : "")
+        : anyRefusal
         ? "No input or output carries data that the policy code counts. One of the policies below refuses it for a reason that is not a data rule."
         : "No input or output carries data that Knots or " + plumb + " counts, and both relay it."));
     }

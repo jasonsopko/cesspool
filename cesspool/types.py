@@ -138,6 +138,13 @@ TYPES = {
         "how": "Unnamed shape. If you know what it is, open an issue.",
         "filter": KNOTS,
     },
+    "witness-items": {
+        "name": "Unverified witness items",
+        "what": "Data handed to a P2WSH, P2SH-P2WSH or tapscript spend as witness items that the script drops, or passes to a signature check that never runs.",
+        "how": "After the script check Plumb counts the bytes of every item that matches no signature that verified and no key one verified against, past 42 an input. Knots counts nothing in them. cesspool lists these items only in a transaction Plumb refuses, since one it relays can carry a hash preimage or a key the script checks by hash, which pass the bar.",
+        "filter": PLUMB, "option": "-rejectunverifiedwitness",
+        "prs": [("plumb#8", "https://github.com/plumb-node/plumb/pull/8")],
+    },
     "runes": {
         "name": "Runestone",
         "what": "A Runes token message: OP_RETURN OP_13 followed by the encoded etch, mint or transfer.",

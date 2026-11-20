@@ -541,7 +541,7 @@ def page(path, title, body, *, nav="", desc="", og=None, tip=None):
 '''
 
 
-ASSET_V = "39"
+ASSET_V = "40"
 
 
 def write(out, rel, text):
