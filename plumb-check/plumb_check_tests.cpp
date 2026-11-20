@@ -5,11 +5,14 @@
 // (prevouts in input order). Writes PLUMB_CHECK_OUT: one JSON object per line
 // with, for each of the core, knots and plumb profiles, every policy reason
 // the transaction trips and the data bytes it counts, plus, under the plumb
-// profile, the per-input and per-output data byte counts, the bytes the BPUB
+// profile, the per-input and per-output data byte counts ("data_uw": the part
+// of each input's count that is witness items no verified signature check
+// used, there when any is), the bytes the BPUB
 // rule adds for the whole transaction ("data_bpub") and the bytes each
 // data-counting rule is responsible for ("fc": the count with that rule
 // alone turned off, taken from the full count; "knots#470" for the recount
-// from verified keys). For a transaction the knots
+// from verified keys, "-rejectunverifiedwitness" for the witness items no
+// verified signature check used, which that recount finds). For a transaction the knots
 // or plumb profile relays while the other side sees data in it, "fix" says
 // what a node on that profile could set to refuse it (see Fix below). When
 // Plumb's 42-byte -datacarriersize default changes its reasons, "p83" holds
@@ -33,6 +36,7 @@
 #include <script/interpreter.h>
 #include <script/script.h>
 #include <script/sigcache.h>
+#include <span.h>
 #include <sync.h>
 #include <test/util/setup_common.h>
 #include <tinyformat.h>
@@ -74,6 +78,7 @@ struct Profile {
     bool reject_bpub;
     bool permit_ln_revoke_leaf;
     bool reject_fake_outputs;
+    bool reject_unverified_witness;
     unsigned int bytes_per_sigop;
     unsigned int bytes_per_sigop_strict;
     // Whether the node carries knots#470 and recounts from the keys a signature verified against
@@ -90,6 +95,7 @@ struct Globals {
     bool reject_bpub{::g_reject_bpub};
     bool permit_ln_revoke_leaf{::g_permit_ln_revoke_leaf};
     bool reject_fake_outputs{::g_reject_fake_outputs};
+    bool reject_unverified_witness{::g_reject_unverified_witness};
     unsigned int bytes_per_sigop{::nBytesPerSigOp};
     unsigned int bytes_per_sigop_strict{::nBytesPerSigOpStrict};
 };
@@ -103,7 +109,8 @@ Profile MakeProfile(const std::string& name, const Settings& set, const Globals&
     InitParameterInteraction(args);
     Profile p{name, set, kernel::MemPoolOptions{}, defaults.weight_per_data_byte, defaults.script_size_limit,
               defaults.reject_dead_branches, defaults.reject_bare_envelopes, defaults.reject_fake_multisig, defaults.reject_bpub,
-              defaults.permit_ln_revoke_leaf, defaults.reject_fake_outputs, defaults.bytes_per_sigop, defaults.bytes_per_sigop_strict, verified_key_credit};
+              defaults.permit_ln_revoke_leaf, defaults.reject_fake_outputs, defaults.reject_unverified_witness, defaults.bytes_per_sigop,
+              defaults.bytes_per_sigop_strict, verified_key_credit};
     BOOST_REQUIRE(ApplyArgsManOptions(args, Params(), p.opts));
     if (auto parsed = args.GetFixedPointArg("-datacarriercost", 2)) {
         p.weight_per_data_byte = ((*parsed * WITNESS_SCALE_FACTOR) + 99) / 100;
@@ -115,6 +122,7 @@ Profile MakeProfile(const std::string& name, const Settings& set, const Globals&
     p.reject_bpub = args.GetBoolArg("-rejectbpub", p.reject_bpub);
     p.permit_ln_revoke_leaf = args.GetBoolArg("-permitlnrevokeleaf", p.permit_ln_revoke_leaf);
     p.reject_fake_outputs = args.GetBoolArg("-rejectfakeoutputs", p.reject_fake_outputs);
+    p.reject_unverified_witness = args.GetBoolArg("-rejectunverifiedwitness", p.reject_unverified_witness);
     p.bytes_per_sigop = args.GetIntArg("-bytespersigop", p.bytes_per_sigop);
     p.bytes_per_sigop_strict = args.GetIntArg("-bytespersigopstrict", p.bytes_per_sigop_strict);
     return p;
@@ -130,6 +138,7 @@ void Activate(const Profile& p)
     ::g_reject_bpub = p.reject_bpub;
     ::g_permit_ln_revoke_leaf = p.permit_ln_revoke_leaf;
     ::g_reject_fake_outputs = p.reject_fake_outputs;
+    ::g_reject_unverified_witness = p.reject_unverified_witness;
     ::nBytesPerSigOp = p.bytes_per_sigop;
     ::nBytesPerSigOpStrict = p.bytes_per_sigop_strict;
 }
@@ -217,9 +226,29 @@ std::pair<size_t, size_t> Count(const Profile& p, const CTransaction& tx, const 
     keys_used = nullptr;
     std::vector<DatacarrierInputCache> input_cache;
     const auto dcb{DatacarrierBytes(tx, view, data_outputs, /*verified_keys=*/nullptr, &input_cache)};
-    if (!p.verified_key_credit || !::g_reject_fake_multisig || !p.opts.datacarrier_fullcount || !tx.HasWitness()) return dcb;
+    if (!p.verified_key_credit || (!::g_reject_fake_multisig && !::g_reject_unverified_witness) || !p.opts.datacarrier_fullcount || !tx.HasWitness()) return dcb;
     keys_used = scripts.Keys();
     return keys_used ? DatacarrierBytes(tx, view, data_outputs, keys_used, &input_cache) : dcb;
+}
+
+// policy.cpp's UnverifiedWitnessBytes (-rejectunverifiedwitness), which is file-local, for the per-input
+// breakdown: the bytes of an input's witness items, not its script, a tapscript's control block or an
+// annex, that match no verified signature or key, past UNVERIFIED_WITNESS_ALLOWANCE. The breakdown's
+// total is checked against the node's own count, so a difference from policy.cpp fails the run.
+size_t UnverifiedItems(const CTxIn& txin, const CTxOut& utxo, const VerifiedKeys& verified)
+{
+    int version;
+    std::vector<unsigned char> program;
+    const bool taproot{utxo.scriptPubKey.IsWitnessProgram(version, program) && version == 1};
+    Span stack{txin.scriptWitness.stack};
+    if (taproot && stack.size() >= 2 && !stack.back().empty() && stack.back()[0] == ANNEX_TAG) SpanPopBack(stack);
+    const size_t trailing{taproot ? 2U : 1U};
+    if (stack.size() < trailing) return 0;
+    size_t unverified{0};
+    for (size_t i{0}; i + trailing < stack.size(); ++i) {
+        if (!verified.count(stack[i])) unverified += stack[i].size();
+    }
+    return unverified > UNVERIFIED_WITNESS_ALLOWANCE ? unverified - UNVERIFIED_WITNESS_ALLOWANCE : 0;
 }
 
 // The datacarrier part of MemPoolAccept::PreChecks, same conditions, with the count PolicyScriptChecks
@@ -366,13 +395,13 @@ BOOST_AUTO_TEST_CASE(plumb_check)
     // leaf where Knots 29.5 books them. -corepolicy skips the data carrier check, so no verdict moves.
     profiles.push_back(MakeProfile("core", {{"-corepolicy", "1"}, {"-maxtxlegacysigops", "2500"}, {"-permitlnrevokeleaf", "0"}}, defaults, false));
     // Stock Knots 29.5: it carries the dead-branch, bare-envelope, unproven-key and BPUB rules
-    // itself (knots#400, #319, #422, #463), so only Plumb's two own filters are off, and
+    // itself (knots#400, #319, #422, #463), so only Plumb's three own filters are off, and
     // -datacarriersize defaults to 83 where Plumb's is 42. It has none of knots#470, #487 and
     // #489: no recount from verified keys (the count is PreChecks' alone, which a null set of
     // verified keys leaves as Knots 29.5 has it), LND's revocation leaf refused as non-standard data
     // (-permitlnrevokeleaf=0), and -rejecttokens without the JSON and Omni checks
     // (-rejecttokenmessages=0).
-    profiles.push_back(MakeProfile("knots", {{"-rejectfakeoutputs", "0"}, {"-rejecttokenmessages", "0"}, {"-permitlnrevokeleaf", "0"}, {"-datacarriersize", "83"}}, defaults, false));
+    profiles.push_back(MakeProfile("knots", {{"-rejectfakeoutputs", "0"}, {"-rejecttokenmessages", "0"}, {"-rejectunverifiedwitness", "0"}, {"-permitlnrevokeleaf", "0"}, {"-datacarriersize", "83"}}, defaults, false));
     profiles.push_back(MakeProfile("plumb", {}, defaults, true));
     // Plumb with Knots' -datacarriersize, to tell what the 42-byte default refuses on its own.
     const Profile plumb83{MakeProfile("plumb", {{"-datacarriersize", "83"}}, defaults, true)};
@@ -380,7 +409,7 @@ BOOST_AUTO_TEST_CASE(plumb_check)
     // count. -rejecttokenmessages needs no measurement: its reasons name it. -permitlnrevokeleaf
     // moves the leaf's bytes between the two members and changes no count.
     std::vector<Profile> plumb_without;
-    for (const char* option : {"-rejectfakeoutputs", "-rejectdeadbranches", "-rejectbareenvelopes", "-rejectfakemultisig", "-rejectbpub"}) {
+    for (const char* option : {"-rejectfakeoutputs", "-rejectdeadbranches", "-rejectbareenvelopes", "-rejectfakemultisig", "-rejectbpub", "-rejectunverifiedwitness"}) {
         plumb_without.push_back(MakeProfile(option, {{option, "0"}}, defaults, true));
     }
     // And knots#470's recount left out alone, -rejectfakemultisig still on: the bytes Plumb counts
@@ -389,7 +418,7 @@ BOOST_AUTO_TEST_CASE(plumb_check)
     plumb_without.push_back(MakeProfile("knots#470", {}, defaults, false));
     const Profile restore{"", {}, {}, defaults.weight_per_data_byte, defaults.script_size_limit, defaults.reject_dead_branches,
                           defaults.reject_bare_envelopes, defaults.reject_fake_multisig, defaults.reject_bpub, defaults.permit_ln_revoke_leaf,
-                          defaults.reject_fake_outputs, defaults.bytes_per_sigop, defaults.bytes_per_sigop_strict, false};
+                          defaults.reject_fake_outputs, defaults.reject_unverified_witness, defaults.bytes_per_sigop, defaults.bytes_per_sigop_strict, false};
     // Signatures and scripts for ScriptRun, sized like the node's defaults.
     ValidationCache validation_cache{DEFAULT_SCRIPT_EXECUTION_CACHE_BYTES, DEFAULT_SIGNATURE_CACHE_BYTES};
 
@@ -449,8 +478,8 @@ BOOST_AUTO_TEST_CASE(plumb_check)
             const auto data_outputs{DataOutputBytes(tx, &view)};
             const std::vector<VerifiedKeys>* keys;
             Count(p, tx, view, data_outputs, scripts, keys);
-            UniValue ins{UniValue::VARR};
-            size_t total{0};
+            UniValue ins{UniValue::VARR}, uw{UniValue::VARR};
+            size_t total{0}, uw_total{0};
             for (size_t n{0}; n < tx.vin.size(); ++n) {
                 const CTxIn& txin{tx.vin[n]};
                 const CTxOut& utxo = view.AccessCoin(txin.prevout).out;
@@ -459,9 +488,14 @@ BOOST_AUTO_TEST_CASE(plumb_check)
                 const bool dead_branches{::g_reject_dead_branches && GetSerializeSize(txin.scriptWitness.stack) <= ::g_script_size_policy_limit};
                 // It recounts from the verified keys only an input whose script came from the witness
                 const VerifiedKeys* input_keys{(keys && wpb == 1) ? &(*keys)[n] : nullptr};
-                const auto d = script.DatacarrierBytes(0, &txin.scriptWitness, dead_branches, input_keys, /*reached_normal_return=*/nullptr, ::g_reject_bare_envelopes, ::g_reject_fake_multisig, ::g_permit_ln_revoke_leaf);
-                ins.push_back(uint64_t(d.first + d.second));
-                total += d.first + d.second;
+                bool normal{false};
+                const auto d = script.DatacarrierBytes(0, &txin.scriptWitness, dead_branches, input_keys, &normal, ::g_reject_bare_envelopes, ::g_reject_fake_multisig, ::g_permit_ln_revoke_leaf);
+                // And, as policy.cpp adds them after the script's count, the witness items no verified signature used
+                const size_t items{input_keys && normal && ::g_reject_unverified_witness ? UnverifiedItems(txin, utxo, *input_keys) : 0};
+                ins.push_back(uint64_t(d.first + d.second + items));
+                uw.push_back(uint64_t(items));
+                total += d.first + d.second + items;
+                uw_total += items;
             }
             UniValue outs{UniValue::VARR};
             for (size_t o{0}; o < tx.vout.size(); ++o) {
@@ -476,17 +510,24 @@ BOOST_AUTO_TEST_CASE(plumb_check)
             total += bpub;
             BOOST_CHECK_EQUAL(total, dcb.first + dcb.second);
             row.pushKV("data_in", ins);
+            if (uw_total) row.pushKV("data_uw", uw);
             row.pushKV("data_out", outs);
             if (bpub) row.pushKV("data_bpub", uint64_t(bpub));
             // Bytes each filter is responsible for; a filter that changes nothing is left out.
             UniValue fc{UniValue::VOBJ};
+            std::map<std::string, size_t> without_of;
             for (const auto& q : plumb_without) {
                 Activate(q);
                 std::vector<std::string> unused;
                 std::pair<size_t, size_t> without;
                 const std::vector<VerifiedKeys>* unused_keys;
                 DatacarrierReasons(q, tx, view, scripts, unused, without, unused_keys);
-                const int64_t diff{int64_t(total) - int64_t(without.first + without.second)};
+                without_of[q.name] = without.first + without.second;
+                // Leaving the recount out also leaves out the witness items it finds, so knots#470's own
+                // bytes are measured from the count with -rejectunverifiedwitness off, which keeps the
+                // recount and drops only those items. The two keys then never hold the same bytes.
+                const size_t from{q.name == "knots#470" ? without_of.at("-rejectunverifiedwitness") : total};
+                const int64_t diff{int64_t(from) - int64_t(without.first + without.second)};
                 if (diff) fc.pushKV(q.name, diff);
             }
             row.pushKV("fc", fc);
