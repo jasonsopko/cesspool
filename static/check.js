@@ -107,7 +107,7 @@
     return parseInt(m[3], 10) >= p.n;
   }
 
-  // spec: {options: [{name, label, kind, def, core, good, falseIs, max, over, min, under, std, before, plumbFrom}], plumb: [{name, label, std, until}],
+  // spec: {options: [{name, label, kind, def, core, good, falseIs, max, over, min, under, std, before, plumbFrom}], plumb: [{name, label, std, until, from}],
   // since, oldest}. std: acceptnonstdtxn=1 turns it off. before: [[version, default]] for Knots older than that version.
   function checkNode(text, spec) {
     var log = readLog(text);
@@ -161,6 +161,8 @@
       spec.plumb.forEach(function (p) {
         // until: from Plumb on that Knots base on, the rule is Knots' own and the node no longer reports it
         if (p.until && plumbFrom(log.version, {base: p.until, n: 1})) return;
+        // from: a filter Plumb has only from that release on; an older Plumb that does not report it gets no row
+        if (p.from && log.plumb[p.name] === undefined && !plumbFrom(log.version, p.from)) return;
         var on = log.plumb[p.name];
         var row = {name: p.name, label: p.label, plumb: true, from: "plumb", value: on === undefined ? "?" : on ? "1" : "0",
                    status: on === undefined ? "missing" : on ? "on" : "off"};
