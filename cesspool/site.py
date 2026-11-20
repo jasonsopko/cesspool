@@ -752,6 +752,9 @@ def verdict_html(s):
 
 def filter_line(t):
     i = info(t)
+    if i.get("line"):
+        # a type that names its own filters (the padded fake multisig)
+        return prose(i["line"])
     if i.get("option") == DATACARRIER:
         return (f'{PLUMB_NAME}&#39;s default <code>datacarriersize={DATACARRIER_SIZE["plumb"]}</code> refuses this kind once it counts '
                 f'more than {DATACARRIER_SIZE["plumb"]} bytes; Knots&#39; default is {DATACARRIER_SIZE["knots"]}.')
@@ -790,7 +793,7 @@ def dissection(s, paid_to, rate_ctx):
     others = "".join(f'<span class="chip">{esc(l)}</span>' for l in s["labels"][1:])
     note = ""
     if s["missed"]:
-        note = f'<div class="note"><b>{PLUMB_NAME} relays this.</b> {prose(i.get("note", ""))} {filter_line(t)}</div>'
+        note = f'<div class="note"><b>{PLUMB_NAME} relays this.</b> {prose(i.get("note", ""))} {"" if i.get("line") else filter_line(t)}</div>'
     return f'''<section class="{cls}" id="tx-{s["txid"][:16]}">
 <div class="hd">{tier_stamp}<h3>{esc(i["name"])}</h3><span class="muted small">{esc(s["labels"][0]) if s["labels"] else ""}</span></div>
 <div class="txid"><a href="/tx/{s["txid"]}">{s["txid"]}</a></div>
@@ -1047,7 +1050,7 @@ def drop_from_tx_index(out, heights):
 
 def tx_catalog():
     """What the transaction page needs to name and explain a finding."""
-    types = {t: {k: i[k] for k in ("name", "what", "how", "filter", "option", "note", "staged", "case") if k in i} | {"prs": i.get("prs", [])}
+    types = {t: {k: i[k] for k in ("name", "what", "how", "filter", "option", "line", "note", "staged", "case") if k in i} | {"prs": i.get("prs", [])}
              for t, i in TYPES.items()}
     return {"plumb": PLUMB_NAME, "verdicts": VERDICT_NAMES, "rules": RULES, "sources": {**KNOTS_SOURCE, **FILTER_SOURCE},
             "plumb_options": sorted(PLUMB_OPTIONS), "plumb_own": sorted(PLUMB_OWN), "knots_rules": list(KNOTS_RULES),

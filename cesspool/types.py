@@ -22,6 +22,14 @@ TYPES = {
         "prs": [("knots#422", "https://github.com/bitcoinknots/bitcoin/pull/422")],
         "note": "Knots since 29.4.3 and Plumb count each unsigned key past ten in a script as data, and Knots also refuses the BPUB file format outright (knots#463). A reveal with ten or fewer unsigned keys in each script gets through. Plumb keeps the switch; Knots has none. Since plumb9 Plumb also counts a key in a witness script as signed only when a signature in the spend verified against it (knots#470), so a signature check that never runs, or fails on an empty signature, proves nothing; Knots 29.5 credits a key when a signature check sits beside it, up to the number of signatures the witness carries. Since plumb12 Plumb also counts the witness items a reveal hands to such checks, past 42 bytes an input (plumb#8).",
     },
+    "fake-multisig-padded": {
+        "name": "Padded fake multisig",
+        "what": "Spends a multisig script with eight or more public keys that no signature needs, followed by `OP_TOALTSTACK OP_SIZE 64 OP_EQUAL OP_NOTIF`, signature checks, `OP_ENDIF` and drops. A 64-byte item on top of the stack skips the checks, and the drops remove the items the witness left.",
+        "how": "Knots 29.5's fake multisig rule (knots#422) counts a key as proven for each signature its OP_CHECKMULTISIG asks for and for each OP_CHECKSIG in the script, whether it runs or not, up to the number of witness items of 64 to 73 bytes, and lets ten more go, so the checks and items here can stand in for signatures. Plumb counts the keys no verified signature proves, past 10 an input (knots#470, `-rejectfakemultisig`), and since Plumb 12 the witness items no verified signature check used, past 42 an input (`-rejectunverifiedwitness`).",
+        "filter": PLUMB, "option": "-rejectfakemultisig",
+        "line": "Plumb counts unproven keys under `-rejectfakemultisig` (knots#470) and, since plumb12, dropped items under `-rejectunverifiedwitness` (plumb#8); the verdict says which refused it.",
+        "prs": [("knots#470", "https://github.com/bitcoinknots/bitcoin/pull/470"), ("plumb#8", "https://github.com/plumb-node/plumb/pull/8")],
+    },
     "p2wsh-run": {
         "name": "Dust P2WSH run",
         "what": "A run of three or more distinct P2WSH outputs sharing one value of 353 sats or less, which Plumb counts as data, in a transaction without OLGA framing, tagged or not.",

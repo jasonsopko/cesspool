@@ -12,6 +12,7 @@ OP_0, OP_PUSHDATA1, OP_PUSHDATA2, OP_PUSHDATA4 = 0x00, 0x4C, 0x4D, 0x4E
 OP_1, OP_16, OP_IF, OP_RETURN, OP_13 = 0x51, 0x60, 0x63, 0x6A, 0x5D
 OP_CHECKMULTISIG, OP_CHECKSIG = 0xAE, 0xAC
 OP_RESERVED, OP_DROP, OP_2DROP = 0x50, 0x75, 0x6D
+OP_NOTIF, OP_ENDIF, OP_TOALTSTACK, OP_FROMALTSTACK, OP_EQUAL, OP_SIZE = 0x64, 0x68, 0x6B, 0x6C, 0x87, 0x82
 
 SECP_P = 2**256 - 2**32 - 977
 
@@ -98,7 +99,11 @@ def rc4(key, data):
 
 def multisig(script_hex):
     """(m, n) for a plain m-of-n CHECKMULTISIG script, else None."""
-    o = ops(script_hex)
+    return multisig_ops(ops(script_hex))
+
+
+def multisig_ops(o):
+    """multisig() on a script already split into (opcode, data) pairs."""
     if len(o) < 4 or o[-1][0] != OP_CHECKMULTISIG:
         return None
     m, n = o[0][0], o[-2][0]
@@ -279,6 +284,42 @@ def data_input(vin):
         if kind == "tapscript":
             return "dead-branch", "Data in a script branch that can never run"
     return "witness-data", "Data in an input's witness or script"
+
+
+def padded_multisig(script_hex):
+    """(m, n) for a multisig padded with signature checks behind a size guard: a plain m-of-n OP_CHECKMULTISIG over
+    33-byte keys, then OP_TOALTSTACK OP_SIZE <64> OP_EQUAL OP_NOTIF, one or more OP_CHECKSIG, OP_ENDIF, one or more
+    OP_2DROP or OP_DROP and OP_FROMALTSTACK last. A 64-byte item on top skips the OP_NOTIF branch and the drops remove
+    the items: the padded fake-key reveals since block 981910. None for any other script."""
+    o = ops(script_hex)
+    i = next((k for k, (op, _) in enumerate(o) if op == OP_CHECKMULTISIG), None)
+    ms = multisig_ops(o[:i + 1]) if i is not None else None
+    if ms and any(len(d) != 33 for _, d in o[1:i - 1]):
+        # Knots counts a 65-byte push in a witness script as data, not a key, and gives such a multisig no credit
+        ms = None
+    tail = [op for op, _ in o[i + 1:]] if ms else []
+    if tail[:2] != [OP_TOALTSTACK, OP_SIZE] or len(tail) < 9 or o[i + 3][1] != b"\x40" or tail[3:5] != [OP_EQUAL, OP_NOTIF]:
+        return None
+    k = 5
+    while k < len(tail) and tail[k] == OP_CHECKSIG:
+        k += 1
+    if k == 5 or k >= len(tail) or tail[k] != OP_ENDIF:
+        return None
+    j = k + 1
+    while j < len(tail) and tail[j] in (OP_2DROP, OP_DROP):
+        j += 1
+    return ms if j > k + 1 and j == len(tail) - 1 and tail[j] == OP_FROMALTSTACK else None
+
+
+def padded_fake_multisig(tx):
+    """fake_multisig() for P2WSH inputs whose script padded_multisig() reads: those with eight or more keys no
+    signature needs."""
+    per_input = []
+    for vin in tx["vin"]:
+        kind, script = witness_script(vin)
+        ms = padded_multisig(script) if kind == "p2wsh" else None
+        per_input.append((ms[1] - ms[0]) * 33 if ms and ms[1] - ms[0] >= 8 else 0)
+    return sum(1 for b in per_input if b), sum(per_input), per_input
 
 
 def sorted_keys(script_hex):
@@ -477,9 +518,11 @@ def classify(tx, verdict):
     # The part of an input's count that is witness items no verified signature check used
     # (-rejectunverifiedwitness, data_uw) is named apart from what its script holds.
     uw = verdict.get("data_uw", [])
+    pm_inputs, pm_bytes, pm_per_input = padded_fake_multisig(tx)
     for i, n in enumerate(verdict.get("data_in", [])):
         items = uw[i] if i < len(uw) else 0
-        if n - items:
+        # an input padded_fake_multisig() names is not unnamed witness data
+        if n - items and not pm_per_input[i]:
             add(*data_input(tx["vin"][i]))
         if items and data_reasons:
             add("witness-items", "Witness items no verified signature check used")
@@ -500,19 +543,25 @@ def classify(tx, verdict):
     missed = False
     if fm_inputs:
         add("fake-multisig", f"Fake multisig keys in {fm_inputs} input{'s' if fm_inputs != 1 else ''}")
+    if pm_inputs:
+        # The same finding behind an OP_SIZE 64 guard, a type of its own: Knots' rule credits its checks as signatures
+        add("fake-multisig-padded", f"Padded fake multisig keys in {pm_inputs} input{'s' if pm_inputs != 1 else ''}")
+    if fm_inputs or pm_inputs:
+        fm_per_input = [a + b for a, b in zip(fm_per_input, pm_per_input)]
         # Plumb counts only the keys past its allowance; the payload is every unused key
-        data_bytes = max(data_bytes, fm_bytes)
+        data_bytes = max(data_bytes, fm_bytes + pm_bytes)
         if not data_reasons:
             missed = True
 
-    if "fake-multisig" in types:
-        # The witness-data label for the same inputs is the generic name; the fake keys are the finding.
-        k = types.index("fake-multisig")
-        types.insert(0, types.pop(k))
-        labels.insert(0, labels.pop(k))
+    for t in ("fake-multisig-padded", "fake-multisig"):
+        if t in types:
+            # The witness-data label for the same inputs is the generic name; the fake keys are the finding.
+            k = types.index(t)
+            types.insert(0, types.pop(k))
+            labels.insert(0, labels.pop(k))
 
     # Fake multisig keys Plumb tolerates are cesspool's own finding; no exemption may clear them.
-    ex = None if missed or fm_inputs else exemption(tx, verdict, data_reasons)
+    ex = None if missed or fm_inputs or pm_inputs else exemption(tx, verdict, data_reasons)
     if ex:
         # Everything Plumb refused it for is padding, a commitment or a payment: name the protocol, not the bytes.
         types, labels, data_bytes = [ex[0]], [ex[1]], ex[2]

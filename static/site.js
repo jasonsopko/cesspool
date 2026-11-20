@@ -912,6 +912,9 @@
           var dcs = cat.dcsize || {};
           what.push(el("p", { cls: "small" }, plumb + "'s default ", el("code", { text: "datacarriersize=" + dcs.plumb }), " refuses this kind once it counts more than " + dcs.plumb + " bytes; Knots' default is " + dcs.knots + "."));
         }
+      } else if (info.line) {
+        // a type that names its own filters (the padded fake multisig), shown as site.py shows it: not on a miss
+        if (!tx.m) what.push(el("p", { cls: "small" }, prose(info.line)));
       } else if (info.option && (info.filter === cat.filters.plumb || info.filter === cat.filters.knots)) {
         var line = el("p", { cls: "small" }, (info.filter === cat.filters.plumb ? "Plumb ships " : "Knots ships "), el("code", { text: info.option }));
         (info.prs || []).forEach(function (p) { line.appendChild(document.createTextNode(" ")); line.appendChild(el("a", { href: p[1], text: p[0] })); });
