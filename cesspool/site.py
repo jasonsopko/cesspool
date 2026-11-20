@@ -27,7 +27,7 @@ MIN_USEFUL_SCRIPT_LIMIT = 520  # plumb-check offers no -maxscriptsize below this
 BYTESPERSIGOPSTRICT_DEFAULT = 20  # the Knots and Plumb default -bytespersigopstrict
 MAX_USEFUL_SIGOP_STRICT = 55  # plumb-check offers no -bytespersigopstrict above this
 MAX_DUST_RATE = 100000  # plumb-check searches -dustrelayfee up to this, in sat/kvB
-RUN_MAX_VALUE = 353  # knots#389's DATA_OUTPUT_RUN_MAX_VALUE since plumb11, 546 before: three or more P2WSH outputs of one value up to this count as data
+RUN_MAX_VALUE = 353  # knots#389's DATA_OUTPUT_RUN_MAX_VALUE since plumb11, 546 before: P2WSH outputs at one value up to this count as data when they pay three or more different scripts
 FORK = 961640
 
 GRADES = [  # key, label, css
@@ -1562,10 +1562,12 @@ def lightning_conf(prog):
             "The defaults, written out. Anything above 0.00003 makes 330-sat anchors dust; see the note at the top."),
     }
     if prog == "plumb":
-        # Plumb's own text since plumb11 (plumb db292944b3): knots#389 stops the dust run at 353 sat
+        # The Lightning sentence is Plumb's own since plumb11 (plumb db292944b3): knots#389 stops the dust run at
+        # 353 sat, and it counts different scripts at each value (policy.cpp's run_programs), not outputs
         comments["rejectfakeoutputs"] = conf_comment(
-            f"Three or more P2WSH outputs in one transaction sharing one value of {RUN_MAX_VALUE} sat or less count "
-            f"as data. A Lightning commitment never has three: BOLT 2 allows no channel dust limit below "
+            f"P2WSH outputs at one value of {RUN_MAX_VALUE} sat or less count as data when they pay three or more "
+            f"different scripts in one transaction. A Lightning commitment never has three: BOLT 2 allows no channel "
+            f"dust limit below "
             f"{RUN_MAX_VALUE + 1} sat and BOLT 3 trims balance and HTLC outputs below it, so under "
             f"{RUN_MAX_VALUE + 1} a commitment has no P2WSH output but its 330-sat anchors, two at most.")
     apart = ("apart from the OP_RETURN close and the LND penalty spend noted below" if prog == "knots" else
