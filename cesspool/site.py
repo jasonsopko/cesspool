@@ -750,7 +750,19 @@ def verdict_html(s):
     return f'<div class="verd">{"".join(cells)}</div>'
 
 
-def filter_line(t):
+def knots_counts(s):
+    """Whether this transaction's record has Knots counting data in it."""
+    return sum((s.get("dc") or {}).get("knots", [0, 0])) > 0
+
+
+def knots_acts(s):
+    """Whether this transaction's record has Knots counting data in it or giving a reason."""
+    return bool(s["v"]["knots"]) or knots_counts(s)
+
+
+def filter_line(t, s=None):
+    """The type's filter line. Given the transaction's record, a line saying Knots counts it as data shows only where
+    Knots counts data in it, and a line naming a rule Knots ships only where Knots counts data or gives a reason."""
     i = info(t)
     if i.get("line"):
         # a type that names its own filters (the padded fake multisig)
@@ -762,8 +774,12 @@ def filter_line(t):
         prs = " ".join(f'<a href="{u}">{esc(l)}</a>' for l, u in i.get("prs", []))
         if i.get("knots_since") and i["option"] in KNOTS_HAS_NO_SWITCH:
             # Knots took the rule in without a switch; the option is Plumb's
+            if s is not None and not knots_counts(s):
+                return ""
             return (f'Knots counts it as data by default since {i["knots_since"]}{" (" + prs + ")" if prs else ""}; '
                     f'Plumb keeps a switch, <code>{esc(i["option"])}</code>.')
+        if i["filter"] == KNOTS and s is not None and not knots_acts(s):
+            return ""
         if i.get("knots_since"):
             return f'Knots ships <code>{esc(i["option"])}</code> since {i["knots_since"]}{" (" + prs + ")" if prs else ""}.'
         who = "Plumb ships" if i["filter"] == PLUMB else "Knots ships"
@@ -771,7 +787,7 @@ def filter_line(t):
     if i["filter"] == NOT_SPAM:
         return f'Refused under <code>{esc(i["option"])}</code>, but <a href="/about/#bar">not spam</a>, so not counted as sewage.'
     if i["filter"] == KNOTS:
-        return "Knots counts it as data by default."
+        return "" if s is not None and not knots_counts(s) else "Knots counts it as data by default."
     if i["filter"] == NONE and i.get("prs"):
         prs = ", ".join(f'<a href="{u}">{esc(l)}</a>' for l, u in i["prs"])
         return f"No shipped filter yet. In review: {prs}."
@@ -793,7 +809,7 @@ def dissection(s, paid_to, rate_ctx):
     others = "".join(f'<span class="chip">{esc(l)}</span>' for l in s["labels"][1:])
     note = ""
     if s["missed"]:
-        note = f'<div class="note"><b>{PLUMB_NAME} relays this.</b> {prose(i.get("note", ""))} {"" if i.get("line") else filter_line(t)}</div>'
+        note = f'<div class="note"><b>{PLUMB_NAME} relays this.</b> {prose(i.get("note", ""))} {"" if i.get("line") else filter_line(t, s)}</div>'
     return f'''<section class="{cls}" id="tx-{s["txid"][:16]}">
 <div class="hd">{tier_stamp}<h3>{esc(i["name"])}</h3><span class="muted small">{esc(s["labels"][0]) if s["labels"] else ""}</span></div>
 <div class="txid"><a href="/tx/{s["txid"]}">{s["txid"]}</a></div>
@@ -805,7 +821,7 @@ def dissection(s, paid_to, rate_ctx):
 Fee <span class="num">{n(s["fee"])}</span> sat ({feerate:.1f} sat/vB), paid {paid_to}.</div>
 <div class="fill" title="Share of the transaction that is {"counted as data" if i.get("staged") else "payload"}"><span style="width:{share * 100:.1f}%;background:var(--sewage)"></span><span style="flex:1"></span></div>
 {verdict_html(s)}
-{f'<p class="small" style="margin:10px 0 0">{filter_line(t)}</p>' if filter_line(t) and not s["missed"] and not (i.get("option") == DATACARRIER and "p83" in s) else ""}
+{f'<p class="small" style="margin:10px 0 0">{filter_line(t, s)}</p>' if filter_line(t, s) and not s["missed"] and not (i.get("option") == DATACARRIER and "p83" in s) else ""}
 {note}
 </section>'''
 

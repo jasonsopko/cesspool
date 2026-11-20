@@ -665,6 +665,11 @@
       .sort(function (a, b) { return knotsBytes(cat, fc, b) - knotsBytes(cat, fc, a); });
   }
   function text(s) { return document.createTextNode(s); }
+  // Whether a transaction's record has Knots counting data in it or giving a reason (site.py knots_acts).
+  function knotsActs(tx) {
+    var dc = tx.dc && tx.dc.knots;
+    return !!((tx.x && tx.x.knots && tx.x.knots.length) || (dc && dc[0] + dc[1] > 0));
+  }
   // For a transaction this software relays: the settings whose value would refuse it. The engine found
   // each value by rerunning the policy checks with that one setting changed (tx.fx); a setting no value
   // of refuses it is left out.
@@ -915,7 +920,8 @@
       } else if (info.line) {
         // a type that names its own filters (the padded fake multisig), shown as site.py shows it: not on a miss
         if (!tx.m) what.push(el("p", { cls: "small" }, prose(info.line)));
-      } else if (info.option && (info.filter === cat.filters.plumb || info.filter === cat.filters.knots)) {
+      } else if (info.option && (info.filter === cat.filters.plumb || (info.filter === cat.filters.knots && knotsActs(tx)))) {
+        // a rule Knots ships, named only where this transaction's record has Knots counting data or refusing it
         var line = el("p", { cls: "small" }, (info.filter === cat.filters.plumb ? "Plumb ships " : "Knots ships "), el("code", { text: info.option }));
         (info.prs || []).forEach(function (p) { line.appendChild(document.createTextNode(" ")); line.appendChild(el("a", { href: p[1], text: p[0] })); });
         what.push(line);
