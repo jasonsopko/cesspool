@@ -16,8 +16,8 @@ SITE = "https://cesspool.lol"
 PLUMB_REPO = "https://github.com/plumb-node/plumb"
 PLUMB_RELEASE = "https://github.com/plumb-node/plumb/releases/latest"
 INSTALLER = "https://github.com/jasonsopko/knots-datum-node"
-PLUMB_TAG = "v29.5.knots20260508.plumb12"
-PLUMB_NAME = "Plumb 12"
+PLUMB_TAG = "v29.5.knots20260508.plumb13"
+PLUMB_NAME = "Plumb 13"
 PLUMB_VERSION = f"{PLUMB_NAME} ({PLUMB_TAG})"  # the release the verdicts come from, as a page names it
 KNOTS_NAME = "Knots 29.5"
 DATACARRIER_SIZE = {"knots": 83, "plumb": 42}  # each one's default -datacarriersize; Plumb went back to 42 in plumb7
@@ -1328,6 +1328,20 @@ def uw_line():
             "passes the bar, so they grade clean.")
 
 
+# Plumb 13 (plumb13) fixes CVE-2026-117348 with bitcoin/bitcoin#35878 as Knots carries it (6814e0ae57). That fix, in
+# src/net_processing.cpp, is its only change under src/ since plumb12, so no filter, option or default moves. The
+# plumb13 regrade of blocks lo to hi with an engine built from its tag, against the plumb12 grade
+# (compare-states.py and tools/records-compare.py, reviews-1121/cesspool-plumb13): blocks blocks and txs
+# transactions, not counting coinbases, every record the same.
+P13_FACTS = {"lo": 961640, "hi": 982935, "blocks": 21296, "txs": 4942714}
+
+
+def p13_line():
+    p = P13_FACTS
+    return (f"Graded again from block {p['lo']} to {p['hi']}, all {n(p['blocks'])} blocks and {n(p['txs'])} transactions, "
+            "not counting coinbases, get the same verdicts, counts and grades as with Plumb 12.")
+
+
 def vanity_line():
     v = VANITY_FACTS
     if not v["changed"]:
@@ -2322,6 +2336,7 @@ def about_page(idx, tip):
 <p>Plumb 6 also refused payments back to the vanity address one of the transaction's inputs spends from, reading the zeros in its hash as data. Plumb 7&#39;s <code>-rejectfakeoutputs</code> counts nothing in an output that pays the script of a coin the transaction spends: the spend proved the key or hash in it is real, and fitting chosen data into one would take at least 2<sup>128</sup> tries. Those payments now grade clean. Plumb 10&#39;s <code>-rejectfakeoutputs</code> also skips the leading zero bytes of a hash or key, when there are seven or fewer, before it looks for repeated bytes, so a payment to an address whose hash or key starts with six or seven zero bytes is no longer refused. {vanity_line()}</p>
 <p>Plumb 11&#39;s <code>-rejectfakeoutputs</code> counts three or more distinct P2WSH outputs sharing one value as data only at {RUN_MAX_VALUE} sat or less, down from 546. Plumb 10 counted them up to 546 sat, which could refuse a Lightning force close whose commitment carried three HTLC outputs of one amount from 354 to 546 sat; below {RUN_MAX_VALUE + 1} sat, the smallest dust limit BOLT 2 allows a channel, a commitment has no P2WSH output but its 330-sat anchors, two at most. {cap_line()}</p>
 <p>Plumb 12 adds <code>-rejectunverifiedwitness</code> (plumb#8). After the script check it counts the bytes of witness items that no verified signature check used, past 42 an input, as data. {uw_line()}</p>
+<p>Plumb 13 fixes <a href="https://bitcoincore.org/en/2026/11/20/disclose-orphan-inv-stall/">CVE-2026-117348</a>, a node stall through duplicate orphan announcements, with bitcoin/bitcoin#35878 as Knots carries it. No filter or default changes. {p13_line()}</p>
 <p>One kind stays sewage on purpose. A <a href="/guide/#liquid-emergency">Liquid-layout emergency spend</a> ({n(tn("liquid-emergency"))}) is very likely Liquid's own recovery, but every Liquid deposit tweaks the federation keys, so the layout cannot prove that the keys Plumb counts are real, and anyone could copy it.</p>
 <p>Protocols with defenders that do not pass have their case in the <a href="/guide/">field guide</a>, next to the reason they fail: inscriptions, Runes, JSON token messages, Stamps, Counterparty, Omni, BIP47 notifications, swap memos, and the tags Babylon, Core DAO and Stacks add. Babylon and Core DAO move real bitcoin to ordinary scripts, and that part passes; the tag beside it is a record for another chain.</p>
 <h2 id="known">How protocols are recognized</h2>
