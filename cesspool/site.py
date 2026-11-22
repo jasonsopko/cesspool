@@ -541,7 +541,7 @@ def page(path, title, body, *, nav="", desc="", og=None, tip=None):
 '''
 
 
-ASSET_V = "40"
+ASSET_V = "41"
 
 
 def write(out, rel, text):
@@ -618,26 +618,30 @@ def rule_list(rs, dc, k):
 
 
 def plumb_own(s, data_rs):
-    """Plumb's own filters behind a refusal, most bytes first: those measured in fc, plus any a reason names,
-    plus knots#470's recount when it counts bytes."""
+    """Plumb's own filters behind a refusal, most bytes first: those measured in fc, plus any a reason names.
+    knots#470's recount is Knots' own since 29.5.1, part of its unproven-key rule (knots_bytes)."""
     fc = s.get("fc") or {}
     own = (set(fc) & PLUMB_OWN) | {RULES[r][1] for r in data_rs if r in RULES and RULES[r][1] in PLUMB_OWN}
-    if fc.get(RECOUNT):
-        own.add(RECOUNT)
     return sorted(own, key=lambda o: -fc.get(o, 0))
 
 
 def own_name(o):
     """How a refusal sentence names one of Plumb's own filters."""
-    if o == RECOUNT:
-        return f'recount from verified keys (<a href="{esc(RECOUNT_URL)}">{esc(RECOUNT)}</a>, under <code>-rejectfakemultisig</code>)'
     return f"<code>{esc(o)}</code>"
 
 
 def knots_bytes(fc, o):
-    """The bytes Knots' rule o counts, as Plumb measured it: Plumb's -rejectfakemultisig count holds its recount
-    from verified keys too, which Knots does not count."""
-    return fc.get(o, 0) - (fc.get(RECOUNT, 0) if o == "-rejectfakemultisig" else 0)
+    """The bytes Knots' rule o counts, as Plumb measured it. Plumb's -rejectfakemultisig count holds its recount
+    from verified keys too, and Knots counts the same keys since 29.5.1 (knots#470)."""
+    return fc.get(o, 0)
+
+
+def knots_source(fc, o):
+    """The source link of Knots' rule o, with knots#470 beside knots#422 where the recount counted bytes."""
+    if o == "-rejectfakemultisig" and fc.get(RECOUNT):
+        a, b = KNOTS_SOURCE[o]
+        return f' (<a href="{esc(b)}">{esc(a)}</a>, <a href="{esc(RECOUNT_URL)}">{esc(RECOUNT)}</a>)'
+    return source_link(o)
 
 
 def knots_measured(s):
@@ -708,14 +712,14 @@ def plumb_by(s, data_rs):
                     f'Knots&#39; default is {DATACARRIER_SIZE["knots"]}{relays}.</div>')
     added = sum(dc.get("plumb", [0, 0])) - sum(dc.get("knots", [0, 0]))
     own = plumb_own(s, data_rs)
-    parts = [own_name(o) + (f" counts {n(fc[o])} B" if fc.get(o) else "") + (source_link(o) if o != RECOUNT else "") for o in own]
-    if added > 0 and not (set(fc) & (PLUMB_OWN | {RECOUNT})):
+    parts = [own_name(o) + (f" counts {n(fc[o])} B" if fc.get(o) else "") + source_link(o) for o in own]
+    if added > 0 and not (set(fc) & PLUMB_OWN):
         # Two filters covering the same bytes: neither changes the count alone, together they do.
         parts.append(f"its filters together count {n(added)} B that Knots does not")
     knots_refuses = any(classify.DATA_REASONS.match(r) for r in knots_rs)
     # Knots' own rules, with the bytes each one counts, where the engine measured them
     # a rule Knots applies with no switch goes by its name: the switch is Plumb's
-    kparts = [(KNOTS_RULE_NAMES[o] if o in KNOTS_HAS_NO_SWITCH else f"<code>{esc(o)}</code>") + f" counts {n(knots_bytes(fc, o))} B{source_link(o)}"
+    kparts = [(KNOTS_RULE_NAMES[o] if o in KNOTS_HAS_NO_SWITCH else f"<code>{esc(o)}</code>") + f" counts {n(knots_bytes(fc, o))} B{knots_source(fc, o)}"
               for o in knots_measured(s)]
     krules = f'Knots&#39; rules refuse it: {"; ".join(kparts)}.' if kparts else "Knots&#39; rules refuse it."
     also = f" It is also over {size42}; Knots&#39; is {DATACARRIER_SIZE['knots']}." if by42 else ""
@@ -767,7 +771,10 @@ def filter_line(t, s=None):
     Knots counts data in it, and a line naming a rule Knots ships only where Knots counts data or gives a reason."""
     i = info(t)
     if i.get("line"):
-        # a type that names its own filters (the padded fake multisig)
+        # a type that names its own filters (the padded fake multisig); its line_knots, which says Knots counts it as
+        # data, only where Knots counts data in it
+        if i.get("line_knots") and s is not None and knots_counts(s):
+            return prose(i["line_knots"])
         return prose(i["line"])
     if i.get("option") == DATACARRIER:
         return (f'{PLUMB_NAME}&#39;s default <code>datacarriersize={DATACARRIER_SIZE["plumb"]}</code> refuses this kind once it counts '
@@ -1068,7 +1075,7 @@ def drop_from_tx_index(out, heights):
 
 def tx_catalog():
     """What the transaction page needs to name and explain a finding."""
-    types = {t: {k: i[k] for k in ("name", "what", "how", "filter", "option", "knots_since", "line", "note", "staged", "case") if k in i}
+    types = {t: {k: i[k] for k in ("name", "what", "how", "filter", "option", "knots_since", "line", "line_knots", "note", "staged", "case") if k in i}
              | {"prs": i.get("prs", [])} for t, i in TYPES.items()}
     return {"plumb": PLUMB_NAME, "verdicts": VERDICT_NAMES, "rules": RULES, "sources": {**KNOTS_SOURCE, **FILTER_SOURCE},
             "plumb_options": sorted(PLUMB_OPTIONS), "plumb_own": sorted(PLUMB_OWN), "knots_rules": list(KNOTS_RULES),
@@ -1181,8 +1188,9 @@ KNOTS_RULE_NAMES = {"-rejectfakemultisig": "the unproven-key rule", "-rejectbare
 KNOTS_RULES = ("-rejectdeadbranches", "-rejectbareenvelopes", "-rejectfakemultisig", "-rejectbpub")
 PLUMB_OWN = {"-rejectfakeoutputs", "-rejecttokenmessages", "-rejectunverifiedwitness"}
 # The engine also measures knots#470's recount on its own (fc "knots#470": what Plumb counts from the keys a
-# signature verified against beyond the count from the script alone). Knots 29.5 has no recount, so those bytes
-# are Plumb's own, under its -rejectfakemultisig switch, and Plumb's -rejectfakemultisig count includes them.
+# signature verified against beyond the count from the script alone). Knots has the recount since 29.5.1, as part
+# of its unproven-key rule, so those bytes are Knots' too: Plumb's -rejectfakemultisig count includes them, and
+# so does what knots_bytes gives for Knots' rule. The fc key keeps its name, so a page can link the pull request.
 RECOUNT = "knots#470"
 RECOUNT_URL = "https://github.com/bitcoinknots/bitcoin/pull/470"
 KNOTS_SOURCE = {"-rejectdeadbranches": ("knots#400", "https://github.com/bitcoinknots/bitcoin/pull/400"),

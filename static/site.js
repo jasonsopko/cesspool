@@ -628,11 +628,11 @@
     });
     return ul;
   }
-  // Plumb's own filters behind a refusal, most bytes first: those measured in fc, plus any a reason names,
-  // plus knots#470's recount (cat.recount) when it counts bytes. Knots 29.5 applies the other measured rules
-  // itself (cat.knots_rules), so they are not Plumb's own.
+  // Plumb's own filters behind a refusal, most bytes first: those measured in fc, plus any a reason names.
+  // Knots 29.5.1 applies the other measured rules itself (cat.knots_rules), knots#470's recount (cat.recount)
+  // included, as part of its unproven-key rule, so they are not Plumb's own.
   function plumbOwn(cat, tx, dataRs) {
-    var fc = tx.fc || {}, options = (cat.plumb_own || cat.plumb_options || []).concat(cat.recount ? [cat.recount[0]] : []);
+    var fc = tx.fc || {}, options = cat.plumb_own || cat.plumb_options || [];
     var own = Object.keys(fc).filter(function (o) { return options.indexOf(o) >= 0 && fc[o]; });
     dataRs.forEach(function (r) {
       var rule = cat.rules && cat.rules[r];
@@ -641,22 +641,29 @@
     own.sort(function (a, b) { return (fc[b] || 0) - (fc[a] || 0); });
     return own;
   }
-  // How a refusal sentence names one of Plumb's own filters, with its source link.
+  // How a refusal sentence names one of Plumb's own filters.
   function ownName(cat, o) {
     var f = document.createDocumentFragment();
-    if (cat.recount && o === cat.recount[0]) {
-      f.appendChild(text("recount from verified keys ("));
-      f.appendChild(el("a", { href: cat.recount[1], text: o }));
-      f.appendChild(text(", under ")); f.appendChild(el("code", { text: "-rejectfakemultisig" })); f.appendChild(text(")"));
-      return f;
-    }
     f.appendChild(el("code", { text: o }));
     return f;
   }
-  // The bytes Knots' rule o counts, as Plumb measured it: Plumb's -rejectfakemultisig count holds its recount
-  // from verified keys too, which Knots does not count.
+  // The bytes Knots' rule o counts, as Plumb measured it. Plumb's -rejectfakemultisig count holds its recount
+  // from verified keys too, and Knots counts the same keys since 29.5.1 (knots#470).
   function knotsBytes(cat, fc, o) {
-    return (fc[o] || 0) - (cat.recount && o === "-rejectfakemultisig" ? fc[cat.recount[0]] || 0 : 0);
+    return fc[o] || 0;
+  }
+  // The source link of Knots' rule o, with knots#470 beside knots#422 where the recount counted bytes
+  // (site.py knots_source).
+  function knotsSource(cat, fc, o) {
+    var s = cat.knots_source && cat.knots_source[o];
+    if (!(o === "-rejectfakemultisig" && cat.recount && fc[cat.recount[0]] && s)) return sourceLink(cat, o);
+    var f = document.createDocumentFragment();
+    f.appendChild(text(" ("));
+    f.appendChild(el("a", { href: s[1], text: s[0] }));
+    f.appendChild(text(", "));
+    f.appendChild(el("a", { href: cat.recount[1], text: cat.recount[0] }));
+    f.appendChild(text(")"));
+    return f;
   }
   // Knots' own data-counting rules behind a refusal, most bytes first, as the engine measured them.
   function knotsMeasured(cat, tx) {
@@ -768,11 +775,11 @@
       var f = document.createDocumentFragment();
       f.appendChild(ownName(cat, o));
       if (fc[o]) f.appendChild(document.createTextNode(" counts " + num(fc[o]) + " B"));
-      var s = cat.recount && o === cat.recount[0] ? null : sourceLink(cat, o); if (s) f.appendChild(s);
+      var s = sourceLink(cat, o); if (s) f.appendChild(s);
       return f;
     });
     // Two filters covering the same bytes: neither changes the count alone, together they do.
-    var ownMeasured = Object.keys(fc).some(function (o) { return (cat.plumb_own || []).indexOf(o) >= 0 || (cat.recount && o === cat.recount[0]); });
+    var ownMeasured = Object.keys(fc).some(function (o) { return (cat.plumb_own || []).indexOf(o) >= 0; });
     if (added > 0 && !ownMeasured) parts.push(document.createTextNode("its filters together count " + num(added) + " B that Knots does not"));
     var box = el("div", { cls: "by" }), knotsRefuses = knots.some(function (r) { return DATA_REASON.test(r); });
     // Knots' own rules, with the bytes each one counts where the engine measured them
@@ -784,7 +791,7 @@
         // a rule Knots applies with no switch goes by its name: the switch is Plumb's (site.py plumb_by)
         var nm = (cat.knots_no_switch || []).indexOf(o) >= 0 && (cat.knots_rule_names || {})[o];
         b.appendChild(nm ? document.createTextNode(nm) : el("code", { text: o })); b.appendChild(document.createTextNode(" counts " + num(knotsBytes(cat, fc, o)) + " B"));
-        var s = sourceLink(cat, o); if (s) b.appendChild(s);
+        var s = knotsSource(cat, fc, o); if (s) b.appendChild(s);
       });
       if (ks.length) b.appendChild(document.createTextNode("."));
     };
@@ -924,8 +931,9 @@
           what.push(el("p", { cls: "small" }, plumb + "'s default ", el("code", { text: "datacarriersize=" + dcs.plumb }), " refuses this kind once it counts more than " + dcs.plumb + " bytes; Knots' default is " + dcs.knots + "."));
         }
       } else if (info.line) {
-        // a type that names its own filters (the padded fake multisig), shown as site.py shows it: not on a miss
-        if (!tx.m) what.push(el("p", { cls: "small" }, prose(info.line)));
+        // a type that names its own filters (the padded fake multisig), shown as site.py shows it: not on a miss, and
+        // its line_knots, which says Knots counts it as data, only where this record has Knots counting data in it
+        if (!tx.m) what.push(el("p", { cls: "small" }, prose(info.line_knots && knotsCounts(tx) ? info.line_knots : info.line)));
       } else if (info.option && info.filter === cat.filters.knots && info.knots_since && (cat.knots_no_switch || []).indexOf(info.option) >= 0) {
         // a rule Knots took in with no switch, the option Plumb's: the block page's line (site.py filter_line), shown
         // only where this transaction's record has Knots counting data in it
