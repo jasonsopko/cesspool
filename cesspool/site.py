@@ -436,13 +436,6 @@ LOGO = ('<svg viewBox="0 0 64 64" aria-hidden="true"><defs><clipPath id="mc"><ci
         + "".join(f'<line x1="8" y1="{y}" x2="56" y2="{y}"/>' for y in range(14, 54, 7))
         + '</g><path d="M24 50 q8 6 16 0" fill="none" stroke="var(--water)" stroke-width="3" stroke-linecap="round"/></svg>')
 
-PLUMB_MARK = ('<svg viewBox="-72 -72 144 144" aria-hidden="true"><defs><mask id="pm"><rect x="-90" y="-100" width="180" height="200" fill="#fff"/>'
-              '<circle cx="0" cy="0" r="6.5" fill="#000"/><circle cx="0" cy="-63" r="4.5" fill="#000"/></mask></defs>'
-              '<g fill="#C8102E" mask="url(#pm)"><path d="M-8,-10 Q-10,-38 -22,-52 L22,-52 Q10,-38 8,-10 Z"/>'
-              '<path d="M10,-8 Q38,-10 52,-22 L52,22 Q38,10 10,8 Z"/><path d="M-10,-8 Q-38,-10 -52,-22 L-52,22 Q-38,10 -10,8 Z"/>'
-              '<circle cx="0" cy="0" r="15"/><path d="M-6,10 L6,10 L6,15 C6,20 18,20 18,28 L18,36 L0,72 L-18,36 L-18,28 C-18,20 -6,20 -6,15 Z"/>'
-              '<rect x="-4" y="-57" width="8" height="7"/><circle cx="0" cy="-63" r="9"/></g></svg>')
-
 LIQUID = {"pristine": ("#8fe6ff", "#c8f4ff"), "tainted": ("#6e9a9c", "#97b7b4"),
           "foul": ("#8a7a48", "#a8986a"), "raw": ("#6b4f1d", "#8c6b30")}
 SLUDGE = "#5a3f12"
@@ -504,7 +497,7 @@ def barcell(x, mx, color="var(--sewage)"):
 def plumb_cta(headline="Run Plumb and this stays out of your blocks.", body=None):
     body = body or ("Plumb is Bitcoin Knots with every reviewed spam filter on by default. It is a drop-in replacement: "
                     "same binaries, same config file, same data directory. Payments pass. Data storage does not.")
-    return f'''<div class="plumbcta">{PLUMB_MARK}<div>
+    return f'''<div class="plumbcta"><img class="emblem" src="/static/plumb-emblem.svg?v={ASSET_V}" width="200" height="254" alt="Plumb emblem: a red cross with four crosslets on a white shield, over a scroll that reads Nodus Vult"><div>
 <h3>{esc(headline)}</h3><p>{esc(body)}</p>
 <p><a class="btn" href="{PLUMB_RELEASE}">Get Plumb</a><a class="btn ghost" href="/plumb/">What it filters</a></p></div></div>'''
 
@@ -541,7 +534,7 @@ def page(path, title, body, *, nav="", desc="", og=None, tip=None):
 '''
 
 
-ASSET_V = "41"
+ASSET_V = "42"
 
 
 def write(out, rel, text):
@@ -2605,7 +2598,7 @@ def save_og_drawn():
 def copy_static(out):
     sdir = os.path.join(out, "static")
     os.makedirs(f"{sdir}/fonts", exist_ok=True)
-    for name in ("site.css", "site.js", "check.js", "favicon.svg", "beh-discord.png"):
+    for name in ("site.css", "site.js", "check.js", "favicon.svg", "beh-discord.png", "plumb-emblem.svg"):
         shutil.copy2(os.path.join(SRC, "static", name), f"{sdir}/{name}")
     fonts = os.path.expanduser("~/.local/share/fonts/plumb")
     for name in ("IBMPlexSans.ttf", "IBMPlexMono-Regular.ttf", "IBMPlexMono-Medium.ttf"):

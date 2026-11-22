@@ -204,7 +204,12 @@ tr.rank1 td { background: color-mix(in srgb, var(--sewage) 18%, transparent); }
 details.more summary { cursor: pointer; color: var(--muted); margin: 10px 0; }
 
 /* plumb callout */
-.plumbcta { border: 1px solid color-mix(in srgb, var(--plumb) 60%, var(--line)); background: color-mix(in srgb, var(--plumb) 8%, var(--panel)); border-radius: 8px; padding: 22px 24px; display: flex; gap: 22px; align-items: center; margin: 28px 0; }
+.plumbcta { border: 1px solid color-mix(in srgb, var(--plumb) 60%, var(--line)); background: color-mix(in srgb, var(--plumb) 8%, var(--panel)); border-radius: 8px; padding: 24px; display: flex; gap: 24px; align-items: center; margin: 28px 0; }
+/* Plumb's brand rules: the emblem 200 px wide or more, or NODUS VULT on its scroll stops being readable, and clear space of
+   30 of its 224 units (26.8 px here) around what it draws: the file's own margin, 3.75 to 4.9 px, plus 24 px of padding or gap. */
+.plumbcta .emblem { width: 200px; height: auto; flex: 0 0 auto; }
+/* The inline mark the box carried before the emblem. A page rendered before then that loads this file draws the
+   mark across the whole box without it, so it stays until no page carries that mark. */
 .plumbcta svg { width: 64px; height: 64px; flex: 0 0 auto; }
 .plumbcta h3 { font-size: 1.25rem; margin-bottom: 4px; }
 .plumbcta p { margin: 0 0 .5em; color: var(--muted); }
