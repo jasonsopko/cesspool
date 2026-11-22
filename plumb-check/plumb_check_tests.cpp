@@ -16,10 +16,10 @@
 // or plumb profile relays while the other side sees data in it, "fix" says
 // what a node on that profile could set to refuse it (see Fix below). When
 // Plumb's 42-byte -datacarriersize default changes its reasons, "p83" holds
-// the reasons the plumb profile gives at Knots' 83. Under the plumb profiles
-// the counts include knots#470's recount from the keys a signature verified
-// against (see Count below); "script_error" is there when the policy script
-// check fails, which no profile's reasons include.
+// the reasons the plumb profile gives at Knots' 83. Under the knots and plumb
+// profiles the counts include knots#470's recount from the keys a signature
+// verified against (see Count below); "script_error" is there when the policy
+// script check fails, which no profile's reasons include.
 #include <chainparams.h>
 #include <coins.h>
 #include <common/args.h>
@@ -82,7 +82,7 @@ struct Profile {
     unsigned int bytes_per_sigop;
     unsigned int bytes_per_sigop_strict;
     // Whether the node carries knots#470 and recounts from the keys a signature verified against
-    // (Plumb). Stock Knots 29.5 and Core do not.
+    // (Plumb, and stock Knots since 29.5.1). Core does not.
     bool verified_key_credit;
 };
 
@@ -215,10 +215,11 @@ public:
 };
 
 // The datacarrier bytes the node on the active profile ends with. MemPoolAccept::PreChecks counts
-// from the scripts alone and keeps each input's count. With knots#470, which a Plumb profile
-// carries, PolicyScriptChecks counts again once the scripts have run, with -rejectfakemultisig on,
-// -datacarrierfullcount and a witness in the transaction, crediting a key only when a signature
-// verified against it, and that count is never the lower one. Like the node, the recount reuses the
+// from the scripts alone and keeps each input's count. With knots#470, which the knots and plumb
+// profiles carry, PolicyScriptChecks counts again once the scripts have run, with -rejectfakemultisig
+// on (Plumb's switch; Knots has the rule with no switch), -datacarrierfullcount and a witness in the
+// transaction, crediting a key only when a signature verified against it, and that count is never
+// the lower one. Like the node, the recount reuses the
 // inputs' kept counts and redoes only the unproven-key part. keys_used is the sets the count was
 // taken with, or nullptr.
 std::pair<size_t, size_t> Count(const Profile& p, const CTransaction& tx, const CCoinsViewCache& view, const std::vector<size_t>& data_outputs, ScriptRun& scripts, const std::vector<VerifiedKeys>*& keys_used)
@@ -392,16 +393,16 @@ BOOST_AUTO_TEST_CASE(plumb_check)
     // (30), which Knots has no option for, so that reason is dropped below. Core 30's larger
     // datacarriersize cannot matter here: BIP110 caps OP_RETURN outputs at 83 bytes by consensus.
     // Core has no knots#487 either: -permitlnrevokeleaf=0 keeps the 34 bytes of LND's revocation
-    // leaf where Knots 29.5 books them. -corepolicy skips the data carrier check, so no verdict moves.
+    // leaf where Knots 29.5.1 books them. -corepolicy skips the data carrier check, so no verdict moves.
     profiles.push_back(MakeProfile("core", {{"-corepolicy", "1"}, {"-maxtxlegacysigops", "2500"}, {"-permitlnrevokeleaf", "0"}}, defaults, false));
-    // Stock Knots 29.5: it carries the dead-branch, bare-envelope, unproven-key and BPUB rules
-    // itself (knots#400, #319, #422, #463), so only Plumb's three own filters are off, and
-    // -datacarriersize defaults to 83 where Plumb's is 42. It has none of knots#470, #487 and
-    // #489: no recount from verified keys (the count is PreChecks' alone, which a null set of
-    // verified keys leaves as Knots 29.5 has it), LND's revocation leaf refused as non-standard data
-    // (-permitlnrevokeleaf=0), and -rejecttokens without the JSON and Omni checks
-    // (-rejecttokenmessages=0).
-    profiles.push_back(MakeProfile("knots", {{"-rejectfakeoutputs", "0"}, {"-rejecttokenmessages", "0"}, {"-rejectunverifiedwitness", "0"}, {"-permitlnrevokeleaf", "0"}, {"-datacarriersize", "83"}}, defaults, false));
+    // Stock Knots 29.5.1: it carries the dead-branch, bare-envelope, unproven-key and BPUB rules
+    // itself (knots#400, #319, #422, #463) and, since 29.5.1, knots#470's recount from verified
+    // keys, which it runs with -datacarrierfullcount and a witness in the transaction as the knots
+    // profile does with the unproven-key rule on. So only Plumb's three own filters are off, and
+    // -datacarriersize defaults to 83 where Plumb's is 42. It has neither knots#487 nor #489: LND's
+    // revocation leaf refused as non-standard data (-permitlnrevokeleaf=0), and -rejecttokens
+    // without the JSON and Omni checks (-rejecttokenmessages=0).
+    profiles.push_back(MakeProfile("knots", {{"-rejectfakeoutputs", "0"}, {"-rejecttokenmessages", "0"}, {"-rejectunverifiedwitness", "0"}, {"-permitlnrevokeleaf", "0"}, {"-datacarriersize", "83"}}, defaults, true));
     profiles.push_back(MakeProfile("plumb", {}, defaults, true));
     // Plumb with Knots' -datacarriersize, to tell what the 42-byte default refuses on its own.
     const Profile plumb83{MakeProfile("plumb", {{"-datacarriersize", "83"}}, defaults, true)};
@@ -413,8 +414,8 @@ BOOST_AUTO_TEST_CASE(plumb_check)
         plumb_without.push_back(MakeProfile(option, {{option, "0"}}, defaults, true));
     }
     // And knots#470's recount left out alone, -rejectfakemultisig still on: the bytes Plumb counts
-    // from the verified keys beyond what PreChecks counted, which Knots 29.5 never counts. The
-    // node has no switch for the recount alone, so "fc" names it by its pull request.
+    // from the verified keys beyond what PreChecks counted, which Knots counts too since 29.5.1.
+    // Neither node has a switch for the recount alone, so "fc" names it by its pull request.
     plumb_without.push_back(MakeProfile("knots#470", {}, defaults, false));
     const Profile restore{"", {}, {}, defaults.weight_per_data_byte, defaults.script_size_limit, defaults.reject_dead_branches,
                           defaults.reject_bare_envelopes, defaults.reject_fake_multisig, defaults.reject_bpub, defaults.permit_ln_revoke_leaf,
