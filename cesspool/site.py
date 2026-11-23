@@ -1811,7 +1811,10 @@ CHECK_SPEC = {
 # sigop strict. Leo Haf's Umbrel app and StartOS 0.3 package have no switch for rejectdeadbranches or rejectbpub, new in 29.4.3 and on by default; his StartOS 0.4 package has both since 29.5rc1 (Horizon-btc/knots-startos 58ea6ed0e5, b55a4ef3b2), Plumb's since plumb10. Umbrel has no switch for bytespersigopstrict (settings.meta.ts); its Advanced tab takes conf lines. Umbrel: Retropex/umbrel-bitcoin libs/settings/settings.meta.ts (Settings, Policy tab).
 # StartOS 0.3: Retropex/knots-startos scripts/services/getConfig.ts (Config, Mempool). StartOS 0.4:
 # startos/fileModels/bitcoin.conf.ts and actions/config/mempool.ts (Actions, Mempool Settings), where an
-# unset switch writes nothing and leaves Knots' default.
+# unset switch writes nothing and leaves Knots' default. Plumb's package (plumb-node/plumb branch startos, the same two
+# files) adds one switch for Plumb's own filters, Reject Unverified Witness (-rejectunverifiedwitness, 4f9c478, in
+# the plumb12 package and every one since), and writes nothing for the other four, which Plumb turns on. Its token
+# message check runs only while -rejecttokens is on (policy.cpp: reject_tokens && reject_token_messages).
 PLATFORM_SWITCHES = {
     "umbrel": [("Reject tokens transactions", "on", "the app has started it off; on Knots 29.4 it does not refuse Counterparty"), ("Reject parasitic transactions", "on", ""),
                ("Relay Transactions Containing Arbitrary Data", "on", ""), ("Max Allowed Size of Arbitrary Data in Transactions", "42", "the app starts it at 83"),
@@ -1871,7 +1874,7 @@ def check_page(tip):
 <p style="max-width:75ch">Bitcoin Knots for StartOS 0.3 runs Knots 29.4 at its newest, with the same limits as above, and starts Reject Tokens off. Under Config, Mempool:</p>
 {switch_list("startos03")}
 <h3>StartOS 0.4</h3>
-<p style="max-width:75ch">Under Actions &amp; Config, Mempool Settings. A switch left unset writes nothing, so Knots&#39; own default applies, whatever the footnote under it says. Plumb&#39;s StartOS package uses the same screen; its extra filters are on and have no switches there. Reject Dead Branches and Reject BPUB are in Leo Haf&#39;s Bitcoin Knots 29.5 package and Plumb&#39;s plumb10 package. Both packages need StartOS 0.4.1 or later.</p>
+<p style="max-width:75ch">Under Actions &amp; Config, Mempool Settings. A switch left unset writes nothing, so Knots&#39; own default applies, whatever the footnote under it says. Plumb&#39;s StartOS package uses the same screen. One of Plumb&#39;s own filters has a switch there, <b>Reject Unverified Witness</b>, since plumb12: leave it unset or on. The others have none and are on, the token message check while Reject Tokens is on. Reject Dead Branches and Reject BPUB are in Leo Haf&#39;s Bitcoin Knots 29.5 package and Plumb&#39;s plumb10 package. Both packages need StartOS 0.4.1 or later.</p>
 {switch_list("startos04")}
 <h3>Knots or Plumb, anywhere else</h3>
 <p style="max-width:75ch">Set them in <code>bitcoin.conf</code>: <a href="#settings">the recommended files are below</a>, with <a href="#lightning">a Lightning version</a> for a node that a Lightning node sends transactions through.</p>
