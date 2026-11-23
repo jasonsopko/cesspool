@@ -16,8 +16,8 @@ SITE = "https://cesspool.lol"
 PLUMB_REPO = "https://github.com/plumb-node/plumb"
 PLUMB_RELEASE = "https://github.com/plumb-node/plumb/releases/latest"
 INSTALLER = "https://github.com/jasonsopko/knots-datum-node"
-PLUMB_TAG = "v29.5.1.knots20260508.plumb14"
-PLUMB_NAME = "Plumb 14"
+PLUMB_TAG = "v29.5.1.knots20260508.plumb15"
+PLUMB_NAME = "Plumb 15"
 PLUMB_VERSION = f"{PLUMB_NAME} ({PLUMB_TAG})"  # the release the verdicts come from, as a page names it
 KNOTS_NAME = "Knots 29.5.1"
 DATACARRIER_SIZE = {"knots": 83, "plumb": 42}  # each one's default -datacarriersize; Plumb went back to 42 in plumb7
@@ -1368,6 +1368,21 @@ def k2951_line():
             "already. No other Knots verdict or count changes in those blocks.")
 
 
+# Plumb 15 (plumb15) fixes 1c5a6b6206: plumb12 to plumb14 kept each verified signature in the set the unproven-key count
+# looks keys up in, so a witness script that pushes a signature the size of a key had its bytes go uncounted. Plumb 15
+# keeps keys and signatures apart; -rejectunverifiedwitness still looks witness items up in both. No filter, option or
+# default moves. The plumb15 regrade of blocks lo to hi with an engine built from its tag (the same engine source),
+# against the plumb14 grade (tools/engine-ab2.py and tools/records-compare.py, reviews-1122/cesspool-plumb15): blocks
+# blocks and txs transactions, not counting coinbases, every row and every record the same.
+P15_FACTS = {"lo": 961640, "hi": 983245, "blocks": 21606, "txs": 5002965}
+
+
+def p15_line():
+    p = P15_FACTS
+    return (f"Graded again from block {p['lo']} to {p['hi']}, all {n(p['blocks'])} blocks and {n(p['txs'])} transactions, "
+            "not counting coinbases, get the same verdicts, counts and grades as with Plumb 14.")
+
+
 def vanity_line():
     v = VANITY_FACTS
     if not v["changed"]:
@@ -2368,6 +2383,7 @@ def about_page(idx, tip):
 <p>Plumb 13 fixes <a href="https://bitcoincore.org/en/2026/11/20/disclose-orphan-inv-stall/">CVE-2026-117348</a>, a node stall through duplicate orphan announcements, with bitcoin/bitcoin#35878 as Knots carries it. No filter or default changes. {p13_line()}</p>
 <p>Plumb 14 is built on Knots 29.5.1 and carries its consensus rules. No filter or default changes. {p14_line()}</p>
 <p>Knots 29.5.1 takes in knots#470, which Plumb has carried since plumb9: a key in a witness script counts as proven only when a signature in the spend verified against it, so a signature check that never runs proves nothing. The Knots column counts those keys too now. {k2951_line()}</p>
+<p>Plumb 15 fixes a bug that Plumb 12, 13 and 14 have: they treat a verified signature as a proven key when a witness script pushes one the size of a key, so its bytes go uncounted. Plumb 15 credits keys only, as Knots does. No filter or default changes. {p15_line()}</p>
 <p>One kind stays sewage on purpose. A <a href="/guide/#liquid-emergency">Liquid-layout emergency spend</a> ({n(tn("liquid-emergency"))}) is very likely Liquid's own recovery, but every Liquid deposit tweaks the federation keys, so the layout cannot prove that the keys Plumb counts are real, and anyone could copy it.</p>
 <p>Protocols with defenders that do not pass have their case in the <a href="/guide/">field guide</a>, next to the reason they fail: inscriptions, Runes, JSON token messages, Stamps, Counterparty, Omni, BIP47 notifications, swap memos, and the tags Babylon, Core DAO and Stacks add. Babylon and Core DAO move real bitcoin to ordinary scripts, and that part passes; the tag beside it is a record for another chain.</p>
 <h2 id="known">How protocols are recognized</h2>
