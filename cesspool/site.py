@@ -495,8 +495,9 @@ def barcell(x, mx, color="var(--sewage)"):
 
 
 def plumb_cta(headline="Run Plumb and this stays out of your blocks.", body=None):
-    body = body or ("Plumb is Bitcoin Knots with every reviewed spam filter on by default. It is a drop-in replacement: "
-                    "same binaries, same config file, same data directory. Payments pass. Data storage does not.")
+    body = body or ("Plumb is Bitcoin Knots with every reviewed spam filter on by default. "
+                    f"{PLUMB_NAME} is a drop-in replacement for {KNOTS_NAME}: same binaries, same config file, "
+                    "same data directory. Payments pass. Data storage does not.")
     return f'''<div class="plumbcta"><img class="emblem" src="/static/plumb-emblem.svg?v={ASSET_V}" width="200" height="254" alt="Plumb emblem: a red cross with four crosslets on a white shield, over a scroll that reads Nodus Vult"><div>
 <h3>{esc(headline)}</h3><p>{esc(body)}</p>
 <p><a class="btn" href="{PLUMB_RELEASE}">Get Plumb</a><a class="btn ghost" href="/plumb/">What it filters</a></p></div></div>'''
@@ -2269,7 +2270,7 @@ def plumb_page(idx, tip):
 <div class="tile"><div class="v">{n(tot["sm"])}</div><div class="l">sewage transaction{"" if tot["sm"] == 1 else "s"} {PLUMB_NAME} misses</div><div class="s">{"a fake multisig reveal" if tot["sm"] == 1 else "fake multisig reveals"} small enough to stay under the limit</div></div></div>
 <h2>What it adds to Knots</h2><div class="tw"><table><tr><th>Option</th><th>What it counts as data</th><th>Source</th><th>In Plumb since</th></tr>{frows}</table></div>
 <p class="small muted" style="margin-top:8px">It also starts <code>datacarriersize</code> at {DATACARRIER_SIZE["plumb"]} bytes where Knots starts at {DATACARRIER_SIZE["knots"]}, which refuses most swap memos, staking tags and text notes. Everything Knots already refuses stays refused: runestones, Counterparty, inscriptions, CAT-21, bare multisig.</p>
-<h2>Run it</h2><div class="grid2"><div class="panel"><h3>A node</h3><p class="muted">Build from the signed tag and replace <code>bitcoind</code>. Same config, same data directory, same RPC. Already on Knots or Plumb? <a href="/check/">Check your node</a>.</p>
+<h2>Run it</h2><div class="grid2"><div class="panel"><h3>A node</h3><p class="muted">Build from the signed tag and replace <code>bitcoind</code>. Same config, same data directory and same RPC as {KNOTS_NAME}. Already on Knots or Plumb? <a href="/check/">Check your node</a>.</p>
 <p><a class="btn" href="{PLUMB_RELEASE}">Latest release</a><a class="btn ghost" href="{PLUMB_REPO}">Source</a></p></div>
 <div class="panel"><h3>A mining node</h3><p class="muted">If you mine through a DATUM pool, your node builds the template. Point your gateway at a Plumb node and your blocks come out clean.</p>
 <p><a class="btn ghost" href="{INSTALLER}">knots-datum-node installer</a></p></div></div>
