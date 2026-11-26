@@ -263,6 +263,29 @@ th .thsub { font-size: .72rem; text-transform: none; letter-spacing: 0; color: v
 .t-down { color: var(--ok); }
 .t-same { color: var(--muted); }
 
+/* month by month: bars on a time axis, Knots releases as lines across it, Plumb releases as ticks under it */
+.mo-chart { min-width: 340px; padding: 12px 10px 8px; }
+.mo-lane { position: relative; font-family: "Plex Mono", monospace; font-size: .7rem; line-height: 1.3em; color: var(--muted); }
+.mo-lab { position: absolute; top: 0; white-space: nowrap; }
+.mo-plot { position: relative; height: 180px; margin-top: 4px; border-bottom: 1px solid var(--line); }
+.mo-bar { position: absolute; bottom: 0; background: var(--sewage); border-radius: 2px 2px 0 0; }
+.mo-bar.part, .wk-sw.part { background: repeating-linear-gradient(135deg, var(--sewage) 0 3px, color-mix(in srgb, var(--sewage) 35%, transparent) 3px 6px); }
+.mo-v { position: absolute; z-index: 1; bottom: 100%; margin-bottom: 3px; padding: 0 2px; background: var(--panel); font-family: "Plex Mono", monospace; font-size: .72rem; color: var(--text); white-space: nowrap; }
+.mo-k { position: absolute; top: -4px; bottom: 0; width: 0; margin-left: -1px; border-left: 2px dashed var(--water); }
+.mo-months { margin-top: 4px; }
+.mo-plumb { margin-top: 6px; }
+.mo-t { position: absolute; top: 0; width: 9px; height: 9px; margin-left: -4.5px; }
+.mo-t::before { content: ""; position: absolute; left: 3.5px; top: 0; width: 2px; height: 9px; background: var(--plumb-hi); }
+.mo-pl { position: absolute; top: .8em; left: 0; right: 0; }
+.mo-sw { display: inline-block; margin-right: 6px; vertical-align: -1px; }
+.mo-sw.k { width: 0; height: 12px; border-left: 2px dashed var(--water); }
+.mo-sw.p { width: 2px; height: 10px; background: var(--plumb-hi); }
+.mo-tbl .on-narrow { display: none; }
+@media (max-width: 900px) {
+  .mo-tbl .on-wide { display: none; } .mo-tbl .on-narrow { display: inline; }
+  .mo-tbl th, .mo-tbl td { padding: 8px 6px; font-size: .82rem; } .mo-tbl th { font-size: .72rem; } .mo-tbl td:first-child { white-space: normal; }
+}
+
 footer { border-top: 1px solid var(--line); margin-top: 60px; padding: 26px 0 40px; color: var(--faint); font-size: .84rem; }
 footer a { color: var(--muted); }
 footer .wrap { display: flex; gap: 24px; flex-wrap: wrap; justify-content: space-between; }

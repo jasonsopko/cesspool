@@ -34,6 +34,9 @@ out.
   pointed runes or a Counterparty enhanced send at it, and in what role. It
   reads runestones and Counterparty enhanced sends to find which addresses
   they point tokens to.
+- `cesspool/releases.tsv` lists the Knots and Plumb releases that `/monthly/`
+  marks, each with GitHub's `published_at`. A release gets its line when it
+  ships.
 - `tools/update.py` runs from cron each minute with `--watch 57`: it checks the
   node's tip every 2 seconds, and when the best block changes fetches new
   blocks over REST, reprocesses anything a reorg replaced, renders what

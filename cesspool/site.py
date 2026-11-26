@@ -505,7 +505,8 @@ def plumb_cta(headline="Run Plumb and this stays out of your blocks.", body=None
 
 def page(path, title, body, *, nav="", desc="", og=None, tip=None):
     og = og or "/og/site.png"
-    nav_items = [("blocks", "/blocks/", "Blocks"), ("found", "/found/", "Your Blocks"), ("shame", "/shame/", "Hall of Shame"), ("past", "/past-defaults/", "Past the Defaults"),
+    nav_items = [("blocks", "/blocks/", "Blocks"), ("found", "/found/", "Your Blocks"), ("shame", "/shame/", "Hall of Shame"), ("monthly", "/monthly/", "Monthly"),
+                 ("past", "/past-defaults/", "Past the Defaults"),
                  ("check", "/check/", "Check Node"), ("guide", "/guide/", "Field Guide"), ("plumb", "/plumb/", "Plumb"), ("about", "/about/", "About"),
                  ("address", "/address/", "Address Lookup")]  # last, so it does not push Plumb out of view
     navh = "".join(f'<a href="{u}"{" class=\"on\"" if k == nav else ""}>{t}</a>' for k, u, t in nav_items)
@@ -535,7 +536,7 @@ def page(path, title, body, *, nav="", desc="", og=None, tip=None):
 '''
 
 
-ASSET_V = "42"
+ASSET_V = "43"
 
 
 def write(out, rel, text):
@@ -2006,6 +2007,190 @@ def weekly_chart(mine, everything, name):
             f'The scale runs to {pct(top, 0)}. An empty column had no blocks from {esc(name)}.</span></div>')
 
 
+# ---------------------------------------------------------------- month by month
+
+RELEASES = os.path.join(SRC, "cesspool", "releases.tsv")  # the releases /monthly/ marks, one appended as each ships
+MONTH_CHART_MIN = 320  # px: the chart's plot width at its CSS min-width (.mo-chart, 340 less its padding), the
+                       # narrowest it draws, where its labels are placed so that none overlaps; it scrolls in its box below that
+MARK_CHAR = 7          # px a character of a marker label takes at .7rem in Plex Mono, a little over
+
+
+def load_releases():
+    """Knots and Plumb releases from releases.tsv, oldest first: kind, name, tag, t (GitHub's published_at), url.
+    Read at every build, so a line appended by the switch to a new release shows from the next render on."""
+    out = []
+    with open(RELEASES) as f:
+        for line in f:
+            if not line.strip() or line.startswith("#"):
+                continue
+            kind, name, tag, when, url = line.rstrip("\n").split("\t")
+            t = datetime.datetime.strptime(when, "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=datetime.timezone.utc).timestamp()
+            out.append({"kind": kind, "name": name, "tag": tag, "t": int(t), "url": url})
+    return sorted(out, key=lambda r: r["t"])
+
+
+def month_rows(blocks):
+    """One entry per calendar month, by each block's own time in UTC, oldest first: the month's first day, its
+    blocks, totals() over them (the share is the one the home page and the Hall of Shame use: the weight of the
+    sewage over the weight of every block), the share as the page prints it, and the change from the month before
+    in percentage points, taken from the printed shares so the table adds up as read."""
+    by = {}
+    for b in blocks:
+        d = datetime.datetime.fromtimestamp(b["t"], datetime.timezone.utc)
+        by.setdefault((d.year, d.month), []).append(b)
+    rows = []
+    for (y, m), bs in sorted(by.items()):
+        t = totals(bs)
+        shown = f"{100 * t['share']:.2f}"
+        change = None if not rows else float(shown) - float(rows[-1]["shown"])
+        rows.append({"start": datetime.datetime(y, m, 1, tzinfo=datetime.timezone.utc), "blocks": bs, "t": t,
+                     "shown": shown, "change": change})
+    return rows
+
+
+def next_month(d):
+    return d.replace(year=d.year + (d.month == 12), month=d.month % 12 + 1)
+
+
+def place(lo, hi, rows):
+    """Lane row for a label spanning fractions lo to hi of the chart at its narrowest width: the first row where it
+    clears every label already placed there. `rows` holds each row's spans and is updated."""
+    for row, spans in enumerate(rows):
+        if all(hi + 0.01 < a or lo > b + 0.01 for a, b in spans):
+            spans.append((lo, hi))
+            return row
+    rows.append([(lo, hi)])
+    return len(rows) - 1
+
+
+def centered(x, chars):
+    """(lo, hi, CSS) for a label of `chars` characters centered at fraction x, pushed inside the chart at its ends."""
+    half = chars * MARK_CHAR / 2 / MONTH_CHART_MIN
+    if x - half < 0:
+        return 0.0, 2 * half, "left:0"
+    if x + half > 1:
+        return 1 - 2 * half, 1.0, "right:0"
+    return x - half, x + half, f"left:{100 * x:.3f}%;transform:translateX(-50%)"
+
+
+def month_chart(rows, releases, lo, hi):
+    """Bars for each month's sewage share on a time axis from the first block's time to the last one's, each bar as
+    wide as the part of its month the blocks cover; Knots releases as labeled lines across it, Plumb releases as
+    ticks under it, numbered in groups that sit close together. A release after the last block's time is left off
+    until a block passes it."""
+    span = hi - lo
+    x = lambda t: min(1.0, max(0.0, (t - lo) / span))
+    top = next(c for c in CHART_TOPS if c >= max(r["t"]["share"] for r in rows))
+    bars, months, mrows = [], [], []
+    for i, r in enumerate(rows):
+        a, b = x(max(r["start"].timestamp(), lo)), x(min(next_month(r["start"]).timestamp(), hi))
+        partial = i == 0 or i == len(rows) - 1
+        mid = (a + b) / 2
+        vpos = "left:0" if mid < 0.03 else ("right:0" if mid > 0.97 else "left:50%;transform:translateX(-50%)")
+        tip = (f'{r["start"]:%B %Y}{", part of the month" if partial else ""}: {plural(len(r["blocks"]), "block")}, '
+               f'{r["shown"]}% sewage')
+        bars.append(f'<div class="mo-bar{" part" if partial else ""}" style="left:calc({100 * a:.3f}% + 1px);width:calc({100 * (b - a):.3f}% - 2px);'
+                    f'height:{max(0.75, 100 * r["t"]["share"] / top):.2f}%" title="{tip}"><span class="mo-v" style="{vpos}">{r["shown"]}%</span></div>')
+        label = f'{r["start"]:%b}' + (f' {r["start"].year}' if r["start"].month == 1 else "")  # the table names each year
+        lo_, hi_, lpos = centered(mid, len(label))
+        row = place(lo_, hi_, mrows)
+        months.append(f'<span class="mo-lab" style="{lpos};top:{1.3 * row:.1f}em">{label}</span>')
+    shown = [r for r in releases if lo <= r["t"] <= hi]
+    klines, klabels, krows = [], [], []
+    for r in [r for r in shown if r["kind"] == "knots"]:
+        k, text = x(r["t"]), r["name"].split(" ", 1)[1]
+        w = (len(text) + 1) * MARK_CHAR / MONTH_CHART_MIN
+        # the label starts at its line, or ends there when it would run past the chart's right edge
+        lo_, hi_, pos = (k, k + w, f"left:{100 * k:.3f}%;padding-left:4px") if k + w <= 1 else (k - w, k, f"right:{100 * (1 - k):.3f}%;padding-right:4px")
+        row = place(lo_, hi_, krows)
+        when = utc(r["t"])
+        klines.append((k, row, f'title="{esc(r["name"])}, published {when}"'))
+        klabels.append(f'<span class="mo-lab" style="{pos};top:{1.3 * row:.1f}em" title="{esc(r["name"])}, published {when}">{esc(text)}</span>')
+    # each line runs up to the bottom of its label's row; a row of the lane is 1.3em at .7rem
+    klines = [f'<div class="mo-k" style="left:{100 * k:.3f}%;top:calc(-4px - {0.91 * (len(krows) - 1 - row):.2f}rem)" {title}></div>'
+              for k, row, title in klines]
+    plumb = [r for r in shown if r["kind"] == "plumb"]
+    groups = []
+    for r in plumb:
+        if groups and x(r["t"]) - x(groups[-1][-1]["t"]) < 0.04:
+            groups[-1].append(r)
+        else:
+            groups.append([r])
+    ticks, plabels, prows = [], [], []
+    for r in plumb:
+        ticks.append(f'<span class="mo-t" style="left:{100 * x(r["t"]):.3f}%" title="{esc(r["name"])}, published {utc(r["t"])}"></span>')
+    for g in groups:
+        num = lambda r: r["name"].rsplit(" ", 1)[1]
+        text = num(g[0]) if len(g) == 1 else (f"{num(g[0])}, {num(g[1])}" if len(g) == 2 else f"{num(g[0])} to {num(g[-1])}")
+        lo_, hi_, pos = centered((x(g[0]["t"]) + x(g[-1]["t"])) / 2, len(text))
+        row = place(lo_, hi_, prows)
+        plabels.append(f'<span class="mo-lab" style="{pos};top:{1.3 * row:.1f}em">{esc(text)}</span>')
+    return (f'<div class="tw"><div class="mo-chart" role="img" aria-label="Sewage share of the block weight mined in each month since the fork, '
+            f'with Knots releases as lines and Plumb releases as ticks under the months. The table below has every number.">'
+            f'<div class="mo-lane" style="height:{1.3 * max(1, len(krows)):.1f}em">{"".join(klabels)}</div>'
+            f'<div class="mo-plot">{"".join(bars)}{"".join(klines)}</div>'
+            f'<div class="mo-lane mo-months" style="height:{1.3 * len(mrows):.1f}em">{"".join(months)}</div>'
+            f'<div class="mo-lane mo-plumb" style="height:{0.8 + 1.3 * max(1, len(prows)):.1f}em">{"".join(ticks)}'
+            f'<div class="mo-pl">{"".join(plabels)}</div></div></div></div>'
+            f'<div class="small faint wk-key"><span><i class="wk-sw"></i>sewage share of the month</span>'
+            f'<span><i class="wk-sw part"></i>part of a month</span><span><i class="mo-sw k"></i>Knots release</span>'
+            f'<span><i class="mo-sw p"></i>Plumb release, by number</span>'
+            f'<span>Months by block time, UTC. The scale runs to {pct(top, 0)}.</span></div>'), top
+
+
+def monthly_page(idx, tip):
+    blocks = window_blocks(idx, None)
+    rows = month_rows(blocks)
+    releases = load_releases()
+    lo, hi = min(b["t"] for b in blocks), max(b["t"] for b in blocks)
+    chart, _ = month_chart(rows, releases, lo, hi)
+    first, last = datetime.datetime.fromtimestamp(lo, datetime.timezone.utc), datetime.datetime.fromtimestamp(hi, datetime.timezone.utc)
+    trs = []
+    for i, r in enumerate(rows):
+        # On a phone (.mo-tbl in site.css) the table drops its last column and the words after the numbers
+        if i == 0:
+            covers = (f'<div class="small faint">part: {first:%b} {first.day} to {(next_month(r["start"]) - datetime.timedelta(days=1)).day}'
+                      f'<span class="on-wide">, from block {FORK}</span></div>')
+        elif i == len(rows) - 1:
+            covers = f'<div class="small faint">part: {last:%b} 1 to {last.day}<span class="on-wide">, to block {tip["h"]}</span></div>'
+        else:
+            covers = ""
+        if r["change"] is None:
+            ch = '<span class="faint">first month</span>'
+        elif abs(r["change"]) < 0.005:
+            ch = '<span class="t-same">no change</span>'
+        else:
+            ch = (f'<span class="{"t-up" if r["change"] > 0 else "t-down"}">{"up" if r["change"] > 0 else "down"} {abs(r["change"]):.2f}'
+                  f'<span class="on-wide"> points</span></span>')
+        trs.append(f'<tr><td><span class="on-wide">{r["start"]:%B %Y}</span><span class="on-narrow">{r["start"]:%b %Y}</span>{covers}</td>'
+                   f'<td class="r num">{r["shown"]}%</td><td class="r">{ch}</td>'
+                   f'<td class="r num">{n(len(r["blocks"]))}</td><td class="r num on-wide">{n(r["t"]["sn"])}</td></tr>')
+    # Every release since the fork is listed, one published after the last block's time too (the chart marks it once a
+    # block passes it), so a release shows here as soon as its line is in releases.tsv
+    shown = [r for r in releases if r["t"] >= lo]
+
+    def rel_table(kind, title):
+        rs = "".join(f'<tr><td><a href="{esc(r["url"])}">{esc(r["name"])}</a></td><td class="num">{utc(r["t"])}</td></tr>'
+                     for r in shown if r["kind"] == kind)
+        none = '<tr><td colspan="2" class="muted">None since the fork.</td></tr>'
+        return (f'<div><h3>{title}</h3><div class="tw"><table><tr><th>Release</th><th>Published on GitHub</th></tr>'
+                f'{rs or none}</table></div></div>')
+    body = f'''<div class="hero"><div class="kicker">Month by month</div><h1>Sewage by month</h1>
+<p class="lede">The share of each month&#39;s block weight that is sewage, from the fork at height {FORK} to block {tip["h"]}, with the dates Knots and Plumb releases came out.</p></div>
+{chart}
+<p style="max-width:75ch">Each bar is the weight of the sewage mined that month divided by the weight of every block mined that month.
+Every block is graded by today&#39;s rules, the policy code of {PLUMB_NAME}, and the site grades every block since the fork again whenever that changes.
+A release can change a month&#39;s share only through the miners and relay nodes that run it, and this chart cannot tell that apart from a change in how much spam is sent.
+A marker shows the day a release came out, not when anyone installed it.</p>
+<h3 style="margin-top:22px">Each month</h3>
+<div class="tw"><table class="mo-tbl"><tr><th>Month</th><th class="r"><span class="on-wide">Sewage share</span><span class="on-narrow">Share</span></th><th class="r"><span class="on-wide">Change from the month before</span><span class="on-narrow">Change</span></th><th class="r">Blocks</th><th class="r on-wide">Sewage txs</th></tr>{"".join(trs)}</table></div>
+<p class="small muted" style="margin-top:8px">The change is in percentage points, the later month&#39;s share less the earlier one&#39;s. <a href="/about/">How blocks are graded</a>.</p>
+<div class="grid2" style="margin-top:22px">{rel_table("knots", "Knots releases")}{rel_table("plumb", "Plumb releases")}</div>
+{plumb_cta()}'''
+    return page("/monthly/", "Month by month", body, nav="monthly",
+                desc="The share of each month's block weight that is sewage since the fork, with the dates Knots and Plumb releases came out.", tip=tip)
+
+
 def gateway_table(blocks, pool):
     """One row per gateway tag among blocks DATUM gateways built with `pool` upstream: blocks, sewage,
     share of block space, payload, last block. Sorted by sewage transactions, then blocks."""
@@ -2505,7 +2690,8 @@ def index_page(idx, tip):
 <p class="small muted" style="margin:8px 0 0">Ten or more blocks and not one sewage transaction.</p></div>
 <div class="panel"><div class="kicker">Since the fork</div><p style="margin:0"><b>{size(tall["sd"])}</b> of sewage payload in <b>{n(tall["sn"])}</b> transactions.
 A Plumb node refuses <b>{pct(tall["psw"] / tall["sw"] if tall["sw"] else 0)}</b> of that block space. Stock Knots refuses {pct(tall["ksw"] / tall["sw"] if tall["sw"] else 0)}.</p>
-<p class="small muted" style="margin:8px 0 0"><a href="/guide/">What it is and what stops it &rarr;</a></p></div></div>
+<p class="small muted" style="margin:8px 0 0"><a href="/guide/">What it is and what stops it &rarr;</a></p>
+<p class="small muted" style="margin:4px 0 0"><a href="/monthly/">Month by month, with release dates &rarr;</a></p></div></div>
 {plumb_cta()}'''
     return page("/", "", body, desc="Every Bitcoin block tested for spam: what got mined, who mined it, and which filter would have kept it out.", og="/og/site.png", tip=tip)
 
@@ -2693,6 +2879,7 @@ def build(out, heights=None, all_blocks=False, og=True, pages=False):
     write(out, "blocks/index.html", blocks_page(idx, tip))
     write(out, "shame/index.html", shame_page(idx, tip))
     write(out, "past-defaults/index.html", past_page(idx, tip))
+    write(out, "monthly/index.html", monthly_page(idx, tip))
     write(out, "check/index.html", check_page(tip))
     for key, (make, _) in CONF_FILES.items():
         write(out, f"check/{key}.conf", make())

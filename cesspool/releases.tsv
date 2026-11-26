@@ -1,0 +1,22 @@
+# The releases /monthly/ marks: kind, name, tag, GitHub's published_at (UTC), release page. One line is
+# appended when a release ships; site.py reads this file at every build.
+knots	Knots 29.4.1	v29.4.1.knots20260508	2026-09-02T19:02:34Z	https://github.com/bitcoinknots/bitcoin/releases/tag/v29.4.1.knots20260508
+knots	Knots 29.4.2	v29.4.2.knots20260508	2026-09-21T06:02:37Z	https://github.com/bitcoinknots/bitcoin/releases/tag/v29.4.2.knots20260508
+plumb	Plumb 1	v29.4.2.knots20260508.plumb1	2026-10-01T22:28:33Z	https://github.com/plumb-node/plumb/releases/tag/v29.4.2.knots20260508.plumb1
+plumb	Plumb 2	v29.4.2.knots20260508.plumb2	2026-10-02T04:42:50Z	https://github.com/plumb-node/plumb/releases/tag/v29.4.2.knots20260508.plumb2
+plumb	Plumb 3	v29.4.2.knots20260508.plumb3	2026-10-02T05:40:09Z	https://github.com/plumb-node/plumb/releases/tag/v29.4.2.knots20260508.plumb3
+plumb	Plumb 4	v29.4.2.knots20260508.plumb4	2026-10-03T19:19:13Z	https://github.com/plumb-node/plumb/releases/tag/v29.4.2.knots20260508.plumb4
+plumb	Plumb 5	v29.4.2.knots20260508.plumb5	2026-10-04T14:52:49Z	https://github.com/plumb-node/plumb/releases/tag/v29.4.2.knots20260508.plumb5
+plumb	Plumb 6	v29.4.2.knots20260508.plumb6	2026-10-07T12:08:56Z	https://github.com/plumb-node/plumb/releases/tag/v29.4.2.knots20260508.plumb6
+plumb	Plumb 7	v29.4.2.knots20260508.plumb7	2026-10-18T04:54:14Z	https://github.com/plumb-node/plumb/releases/tag/v29.4.2.knots20260508.plumb7
+plumb	Plumb 8	v29.4.3.knots20260508.plumb8	2026-10-27T20:48:25Z	https://github.com/plumb-node/plumb/releases/tag/v29.4.3.knots20260508.plumb8
+knots	Knots 29.4.3	v29.4.3.knots20260508	2026-10-28T05:59:09Z	https://github.com/bitcoinknots/bitcoin/releases/tag/v29.4.3.knots20260508
+plumb	Plumb 9	v29.4.3.knots20260508.plumb9	2026-10-29T17:24:43Z	https://github.com/plumb-node/plumb/releases/tag/v29.4.3.knots20260508.plumb9
+knots	Knots 29.5	v29.5.knots20260508	2026-11-06T18:40:26Z	https://github.com/bitcoinknots/bitcoin/releases/tag/v29.5.knots20260508
+plumb	Plumb 10	v29.5.knots20260508.plumb10	2026-11-07T20:23:21Z	https://github.com/plumb-node/plumb/releases/tag/v29.5.knots20260508.plumb10
+plumb	Plumb 11	v29.5.knots20260508.plumb11	2026-11-15T02:14:46Z	https://github.com/plumb-node/plumb/releases/tag/v29.5.knots20260508.plumb11
+plumb	Plumb 12	v29.5.knots20260508.plumb12	2026-11-20T01:26:48Z	https://github.com/plumb-node/plumb/releases/tag/v29.5.knots20260508.plumb12
+plumb	Plumb 13	v29.5.knots20260508.plumb13	2026-11-21T12:47:09Z	https://github.com/plumb-node/plumb/releases/tag/v29.5.knots20260508.plumb13
+knots	Knots 29.5.1	v29.5.1.knots20260508	2026-11-21T22:10:38Z	https://github.com/bitcoinknots/bitcoin/releases/tag/v29.5.1.knots20260508
+plumb	Plumb 14	v29.5.1.knots20260508.plumb14	2026-11-22T02:11:17Z	https://github.com/plumb-node/plumb/releases/tag/v29.5.1.knots20260508.plumb14
+plumb	Plumb 15	v29.5.1.knots20260508.plumb15	2026-11-23T03:49:40Z	https://github.com/plumb-node/plumb/releases/tag/v29.5.1.knots20260508.plumb15
