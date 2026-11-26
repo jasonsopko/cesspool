@@ -281,8 +281,9 @@ th .thsub { font-size: .72rem; text-transform: none; letter-spacing: 0; color: v
 .mo-sw.k { width: 0; height: 12px; border-left: 2px dashed var(--water); }
 .mo-sw.p { width: 2px; height: 10px; background: var(--plumb-hi); }
 .mo-tbl .on-narrow { display: none; }
+.mo-tbl th { white-space: normal; vertical-align: bottom; }
 @media (max-width: 900px) {
-  .mo-tbl .on-wide { display: none; } .mo-tbl .on-narrow { display: inline; }
+  .mo-tbl .on-wide { display: none; } .mo-tbl .on-narrow { display: inline; } .mo-tbl div.on-narrow { display: block; } .mo-tbl td.wrapc { min-width: 0; } .mo-rules td:first-child code { font-size: .72rem; overflow-wrap: anywhere; }
   .mo-tbl th, .mo-tbl td { padding: 8px 6px; font-size: .82rem; } .mo-tbl th { font-size: .72rem; } .mo-tbl td:first-child { white-space: normal; }
 }
 

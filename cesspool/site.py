@@ -147,6 +147,17 @@ def summarize(rec):
     sw = rec["sewage"]["w"]
     share = sw / rec["w"] if rec["w"] else 0
     plumb_stops = sum(1 for s in rec["spam"] if s["tier"] == "sewage" and rejected(s["v"]["plumb"]))
+    # The sewage Plumb refuses: how much of it Knots relays (gives no reason against at all), and under each rule its
+    # by-line names (refused_by) how many and how many of those Knots relays
+    knots_relays, by_rule = 0, {}
+    for s in rec["spam"]:
+        if s["tier"] == "sewage" and rejected(s["v"]["plumb"]):
+            relays = not s["v"]["knots"]
+            knots_relays += relays
+            for k in refused_by(s):
+                e = by_rule.setdefault(k, [0, 0])
+                e[0] += 1
+                e[1] += relays
     plumb_stops_w = sum(s["w"] for s in rec["spam"] if s["tier"] == "sewage" and rejected(s["v"]["plumb"]))
     knots_stops_w = sum(s["w"] for s in rec["spam"] if s["tier"] == "sewage" and rejected(s["v"]["knots"]))
     return {
@@ -154,7 +165,7 @@ def summarize(rec):
         "w": rec["w"], "fees": rec["fees"], "reward": rec["reward"],
         "sn": rec["sewage"]["n"], "sw": sw, "sf": rec["sewage"]["fee"], "sd": rec["sewage"]["data"],
         "sm": rec["sewage"]["missed"], "gn": rec["gray"]["n"], "gw": rec["gray"]["w"],
-        "ps": plumb_stops, "psw": plumb_stops_w, "ksw": knots_stops_w,
+        "ps": plumb_stops, "psw": plumb_stops_w, "ksw": knots_stops_w, "pk": knots_relays, "rr": by_rule,
         "share": share, "grade": grade(rec["sewage"]["n"], share),
         "ty": ty, "top": top, "bld": rec.get("bld", ""), "dtag": rec.get("dtag", ""), "via": rec.get("via", False),
         "own": rec.get("own", ""),
@@ -186,7 +197,8 @@ def load_index():
         m = os.path.getmtime(p)
         old = idx.get(h)
         stale = old is None or old.get("_m") != m  # a new or rewritten record always counts as changed
-        if stale or old.get("_g") != GRADE_VERSION:
+        # a summary from before "rr" (the sewage Plumb refuses, by rule) is made again once
+        if stale or old.get("_g") != GRADE_VERSION or "rr" not in old:
             with open(p) as f:
                 rec = json.load(f)
             s = summarize(rec)
@@ -705,31 +717,58 @@ def refuse_with(k, name, s, counted):
             f'<code>dustrelayfee</code> up to {feerate_conf(MAX_DUST_RATE)} refuses it.{does}</div>')
 
 
+def refusal_names(s, data_rs):
+    """What a Plumb refusal rests on, as plumb_by names it and refused_by counts it: whether Plumb's 42-byte
+    -datacarriersize default changes its reasons ("p83": Plumb's reasons at Knots' 83), and whether that default alone
+    is named (no other data reason left); else Plumb's own filters (plumb_own), Knots' measured rules (knots_measured),
+    the KNOTS_AHEAD pull requests that add bytes (ahead) and the bytes Plumb's filters count together when no one of
+    them changes the count alone."""
+    fc = s.get("fc") or {}
+    dc = s.get("dc") or {}
+    by42 = "p83" in s
+    if by42:
+        data_rs = [r for r in data_rs if r != "txn-datacarrier-exceeded"]
+    added = sum(dc.get("plumb", [0, 0])) - sum(dc.get("knots", [0, 0]))
+    return {"by42": by42, "only42": by42 and not data_rs, "data_rs": data_rs, "own": plumb_own(s, data_rs),
+            "knots": knots_measured(s), "ahead": [pr for pr in KNOTS_AHEAD if fc.get(pr, 0) > 0],
+            # Two filters covering the same bytes: neither changes the count alone, together they do.
+            "together": added if added > 0 and not (set(fc) & PLUMB_OWN) and not ahead(fc) else 0}
+
+
+def refused_by(s):
+    """The rules a Plumb refusal's by-line names (refusal_names), as keys: each option, each KNOTS_AHEAD pull request,
+    "datacarriersize" for Plumb's 42-byte default, "together" for Plumb's filters together. Where the by-line names no
+    rule ("Knots' rules refuse it", or the reasons Knots does not give), "reason " and the option behind each data reason
+    of the verdict (RULES, as the verdict's list of reasons names it); "none" if even those name no option."""
+    r = refusal_names(s, [x for x in s["v"]["plumb"] if classify.DATA_REASONS.match(x)])
+    if r["only42"]:
+        return ["datacarriersize"]
+    keys = (["datacarriersize"] if r["by42"] else []) + r["own"] + r["knots"] + r["ahead"] + (["together"] if r["together"] else [])
+    return keys or [f"reason {o}" for o in sorted({RULES[x][1] for x in r["data_rs"] if x in RULES and RULES[x][1]})] or ["none"]
+
+
 def plumb_by(s, data_rs):
     """What a Plumb refusal rests on: its own filters, each measured with that filter alone off, its 42-byte
     -datacarriersize default ("p83": Plumb's reasons at Knots' 83, there when 42 changes them), or Knots' rules."""
     knots_rs = set(s["v"]["knots"])
     fc = s.get("fc") or {}
     dc = s.get("dc") or {}
-    by42 = "p83" in s
+    rn = refusal_names(s, data_rs)
+    by42, data_rs = rn["by42"], rn["data_rs"]
     size42 = f'{PLUMB_NAME}&#39;s default <code>datacarriersize={DATACARRIER_SIZE["plumb"]}</code>'
-    if by42:
-        data_rs = [r for r in data_rs if r != "txn-datacarrier-exceeded"]
-        if not data_rs:
-            relays = ", so stock Knots relays it" if not s["v"]["knots"] else ""
-            return (f'<div class="by">Refused by {size42}: it counts {n(sum(dc.get("plumb", [0, 0])))} B. '
-                    f'Knots&#39; default is {DATACARRIER_SIZE["knots"]}{relays}.</div>')
-    added = sum(dc.get("plumb", [0, 0])) - sum(dc.get("knots", [0, 0]))
-    own = plumb_own(s, data_rs)
+    if rn["only42"]:
+        relays = ", so stock Knots relays it" if not s["v"]["knots"] else ""
+        return (f'<div class="by">Refused by {size42}: it counts {n(sum(dc.get("plumb", [0, 0])))} B. '
+                f'Knots&#39; default is {DATACARRIER_SIZE["knots"]}{relays}.</div>')
+    own = rn["own"]
     parts = [own_name(o) + (f" counts {n(fc[o])} B" if fc.get(o) else "") + source_link(o) for o in own]
-    if added > 0 and not (set(fc) & PLUMB_OWN) and not ahead(fc):
-        # Two filters covering the same bytes: neither changes the count alone, together they do.
-        parts.append(f"its filters together count {n(added)} B that Knots does not")
+    if rn["together"]:
+        parts.append(f"its filters together count {n(rn['together'])} B that Knots does not")
     knots_refuses = any(classify.DATA_REASONS.match(r) for r in knots_rs)
     # Knots' own rules, with the bytes each one counts, where the engine measured them
     # a rule Knots applies with no switch goes by its name: the switch is Plumb's
     kparts = [(KNOTS_RULE_NAMES[o] if o in KNOTS_HAS_NO_SWITCH else f"<code>{esc(o)}</code>") + f" counts {n(knots_bytes(fc, o))} B{knots_source(fc, o)}"
-              for o in knots_measured(s)]
+              for o in rn["knots"]]
     krules = f'Knots&#39; rules refuse it: {"; ".join(kparts)}.' if kparts else "Knots&#39; rules refuse it."
     also = f" It is also over {size42}; Knots&#39; is {DATACARRIER_SIZE['knots']}." if by42 else ""
     # a pull request Plumb carries ahead of Knots (KNOTS_AHEAD) gets its own sentence
@@ -2162,6 +2201,51 @@ def month_chart(rows, releases, lo, hi):
             f'<span>Months by block time, UTC. The scale runs to {pct(top, 0)}.</span></div>'), top
 
 
+def rule_row(k):
+    """(rule, whose) for a refused_by key, as the by-rule table names them."""
+    if k == "datacarriersize":
+        return (f'<code>datacarriersize={DATACARRIER_SIZE["plumb"]}</code>',
+                f'{esc(PLUMB_NAME)}&#39;s default; Knots&#39; is {DATACARRIER_SIZE["knots"]}')
+    if k in KNOTS_AHEAD:
+        opt, url = KNOTS_AHEAD[k]
+        return f'<code>{esc(opt)}</code> with <a href="{esc(url)}">{esc(k)}</a>', f'{esc(PLUMB_NAME)}&#39;s; {esc(KNOTS_NAME)} does not have it'
+    if k == "together":
+        return "Plumb&#39;s own filters together", "Plumb&#39;s own: no one of them changes the count alone"
+    if k.startswith("reason "):
+        o = k[len("reason "):]
+        what = "; ".join(prose(w) for r, (w, opt) in RULES.items() if opt == o)
+        return f'<code>{esc(o)}</code><div class="small faint">{what}</div>', ("Plumb&#39;s own" if o in PLUMB_OWN else "Knots&#39;") + ", by its reason"
+    if k == "none":
+        return "No rule or option named", "the reasons on its page"
+    if k in PLUMB_OWN:
+        return f'<code>{esc(k)}</code>', f'Plumb&#39;s own{source_link(k)}'
+    name = KNOTS_RULE_NAMES[k] if k in KNOTS_HAS_NO_SWITCH else f'<code>{esc(k)}</code>'
+    return name, f'Knots&#39;{knots_source({RECOUNT: 1}, k)}'
+
+
+def rules_section(blocks):
+    """What Plumb refuses among the sewage mined, in total and by the rules its refusals name (summary "rr")."""
+    sn, ps, pk = (sum(b[k] for b in blocks) for k in ("sn", "ps", "pk"))
+    rr = {}
+    for b in blocks:
+        for k, (c, r) in b["rr"].items():
+            e = rr.setdefault(k, [0, 0])
+            e[0] += c
+            e[1] += r
+    total = sum(c for c, _ in rr.values())
+    lead = (f"{esc(PLUMB_NAME)} refuses every one of the {n(sn)} sewage transactions mined since the fork" if ps == sn
+            else f"Of the {n(sn)} sewage transactions mined since the fork, {esc(PLUMB_NAME)} refuses {n(ps)}")
+    adds = (f"so the rows add up to {n(total)}, more than {n(ps)}" if total > ps else "and here no transaction counts under two")
+    rows = "".join(f'<tr><td class="wrapc">{rule_row(k)[0]}<div class="small faint on-narrow">{rule_row(k)[1]}</div></td>'
+                   f'<td class="wrapc on-wide">{rule_row(k)[1]}</td><td class="r num">{n(c)}</td><td class="r num">{n(r)}</td></tr>'
+                   for k, (c, r) in sorted(rr.items(), key=lambda kv: (kv[0].startswith("reason ") + 2 * (kv[0] == "none"), -kv[1][0], kv[0])))
+    return f'''<h3 id="by-rule" style="margin-top:22px">What {esc(PLUMB_NAME)} refuses, by rule</h3>
+<p style="max-width:75ch">{lead} at its defaults, and {esc(KNOTS_NAME)} relays {n(pk)} of those at its defaults.
+These are transactions that were mined, so the counts say what each policy refuses, not what any node turned away when they were sent.</p>
+<div class="tw"><table class="mo-tbl mo-rules"><tr><th>Rule</th><th class="on-wide">Whose</th><th class="r"><span class="on-wide">Refusals that name it</span><span class="on-narrow">Refusals</span></th><th class="r"><span class="on-wide">{esc(KNOTS_NAME)} relays of those</span><span class="on-narrow">Knots relays</span></th></tr>{rows}</table></div>
+<p class="small muted" style="margin-top:8px">A transaction counts under every rule its page names, {adds}. A rule that counts bytes is named when it changes the count on its own. Rows marked by its reason hold transactions whose page names no single rule, counted under the option behind each data reason {esc(PLUMB_NAME)}&#39;s verdict gives.</p>'''
+
+
 def monthly_page(idx, tip):
     blocks = window_blocks(idx, None)
     rows = month_rows(blocks)
@@ -2186,9 +2270,12 @@ def monthly_page(idx, tip):
         else:
             ch = (f'<span class="{"t-up" if r["change"] > 0 else "t-down"}">{"up" if r["change"] > 0 else "down"} {abs(r["change"]):.2f}'
                   f'<span class="on-wide"> points</span></span>')
-        trs.append(f'<tr><td><span class="on-wide">{r["start"]:%B %Y}</span><span class="on-narrow">{r["start"]:%b %Y}</span>{covers}</td>'
+        ps, pk = sum(b["ps"] for b in r["blocks"]), sum(b["pk"] for b in r["blocks"])
+        counts = f'<div class="small faint on-narrow">{PLUMB_NAME} refuses {n(ps)}, {KNOTS_NAME} relays {n(pk)} of them</div>'
+        trs.append(f'<tr><td><span class="on-wide">{r["start"]:%B %Y}</span><span class="on-narrow">{r["start"]:%b %Y}</span>{covers}{counts}</td>'
                    f'<td class="r num">{r["shown"]}%</td><td class="r">{ch}</td>'
-                   f'<td class="r num">{n(len(r["blocks"]))}</td><td class="r num on-wide">{n(r["t"]["sn"])}</td></tr>')
+                   f'<td class="r num">{n(len(r["blocks"]))}</td><td class="r num on-wide">{n(r["t"]["sn"])}</td>'
+                   f'<td class="r num on-wide">{n(ps)}</td><td class="r num on-wide">{n(pk)}</td></tr>')
     # Every release since the fork is listed, one published after the last block's time too (the chart marks it once a
     # block passes it), so a release shows here as soon as its line is in releases.tsv
     shown = [r for r in releases if r["t"] >= lo]
@@ -2207,8 +2294,9 @@ Every block is graded by today&#39;s rules, the policy code of {PLUMB_NAME}, and
 A release can change a month&#39;s share only through the miners and relay nodes that run it, and this chart cannot tell that apart from a change in how much spam is sent.
 A marker shows the day a release came out, not when anyone installed it.</p>
 <h3 style="margin-top:22px">Each month</h3>
-<div class="tw"><table class="mo-tbl"><tr><th>Month</th><th class="r"><span class="on-wide">Sewage share</span><span class="on-narrow">Share</span></th><th class="r"><span class="on-wide">Change from the month before</span><span class="on-narrow">Change</span></th><th class="r">Blocks</th><th class="r on-wide">Sewage txs</th></tr>{"".join(trs)}</table></div>
-<p class="small muted" style="margin-top:8px">The change is in percentage points, the later month&#39;s share less the earlier one&#39;s. <a href="/about/">How blocks are graded</a>.</p>
+<div class="tw"><table class="mo-tbl"><tr><th>Month</th><th class="r"><span class="on-wide">Sewage share</span><span class="on-narrow">Share</span></th><th class="r"><span class="on-wide">Change from the month before</span><span class="on-narrow">Change</span></th><th class="r">Blocks</th><th class="r on-wide">Sewage txs</th><th class="r on-wide">{esc(PLUMB_NAME)} refuses</th><th class="r on-wide">{esc(KNOTS_NAME)} relays of those</th></tr>{"".join(trs)}</table></div>
+<p class="small muted" style="margin-top:8px">The change is in percentage points, the later month&#39;s share less the earlier one&#39;s. {esc(PLUMB_NAME)} refuses and {esc(KNOTS_NAME)} relays count sewage transactions, as in the table below. <a href="/about/">How blocks are graded</a>.</p>
+{rules_section(blocks)}
 <div class="grid2" style="margin-top:22px">{rel_table("knots", "Knots releases")}{rel_table("plumb", "Plumb releases")}</div>
 {plumb_cta()}'''
     return page("/monthly/", "Month by month", body, nav="monthly",
@@ -2479,6 +2567,7 @@ def plumb_page(idx, tip):
 <div class="tile"><div class="v">{n(tot["sm"])}</div><div class="l">sewage transaction{"" if tot["sm"] == 1 else "s"} {PLUMB_NAME} misses</div><div class="s">{"a fake multisig reveal" if tot["sm"] == 1 else "fake multisig reveals"} small enough to stay under the limit</div></div></div>
 <h2>What it adds to Knots</h2><div class="tw"><table><tr><th>Option</th><th>What it counts as data</th><th>Source</th><th>In Plumb since</th></tr>{frows}</table></div>
 <p class="small muted" style="margin-top:8px">It also starts <code>datacarriersize</code> at {DATACARRIER_SIZE["plumb"]} bytes where Knots starts at {DATACARRIER_SIZE["knots"]}, which refuses most swap memos, staking tags and text notes. Everything Knots already refuses stays refused: runestones, Counterparty, inscriptions, CAT-21, bare multisig.</p>
+<p class="small muted"><a href="/monthly/#by-rule">What Plumb refuses among the sewage mined, rule by rule &rarr;</a></p>
 <h2>Run it</h2><div class="grid2"><div class="panel"><h3>A node</h3><p class="muted">Build from the signed tag and replace <code>bitcoind</code>. Same config, same data directory and same RPC as {KNOTS_NAME}. Already on Knots or Plumb? <a href="/check/">Check your node</a>.</p>
 <p><a class="btn" href="{PLUMB_RELEASE}">Latest release</a><a class="btn ghost" href="{PLUMB_REPO}">Source</a></p></div>
 <div class="panel"><h3>A mining node</h3><p class="muted">If you mine through a DATUM pool, your node builds the template. Point your gateway at a Plumb node and your blocks come out clean.</p>
