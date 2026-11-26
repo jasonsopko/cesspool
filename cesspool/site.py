@@ -16,8 +16,8 @@ SITE = "https://cesspool.lol"
 PLUMB_REPO = "https://github.com/plumb-node/plumb"
 PLUMB_RELEASE = "https://github.com/plumb-node/plumb/releases/latest"
 INSTALLER = "https://github.com/jasonsopko/knots-datum-node"
-PLUMB_TAG = "v29.5.1.knots20260508.plumb15"
-PLUMB_NAME = "Plumb 15"
+PLUMB_TAG = "v29.5.1.knots20260508.plumb16"
+PLUMB_NAME = "Plumb 16"
 PLUMB_VERSION = f"{PLUMB_NAME} ({PLUMB_TAG})"  # the release the verdicts come from, as a page names it
 KNOTS_NAME = "Knots 29.5.1"
 DATACARRIER_SIZE = {"knots": 83, "plumb": 42}  # each one's default -datacarriersize; Plumb went back to 42 in plumb7
@@ -1448,6 +1448,24 @@ def p15_line():
             "not counting coinbases, get the same verdicts, counts and grades as with Plumb 14.")
 
 
+# Plumb 16 (plumb16) carries knots#525 (the merge 24380c7b12 of b2e443ab1e): -rejectbpub reads the BPUB multisigs
+# anywhere in a witness script, where Knots 29.5.1 reads only a script that is one multisig and nothing else. No switch;
+# no default moves. The plumb16 regrade of blocks lo to hi with an engine built from the tested tree, against the
+# plumb15 grade (tools/engine-ab2.py and tools/records-ab.py, reviews-1126/cesspool-plumb16): the reveals with OP_1
+# OP_EQUAL after the multisig (classify.equal_fake_multisig) go from clean to sewage, equal of them in equal_blocks
+# blocks from equal_first on; Plumb counts more bytes in padded reveals that Knots and Plumb refused already, with their
+# tier and type the same; no other transaction's record changes.
+P16_FACTS = {"lo": 961640, "hi": 983666, "equal": 436, "equal_blocks": 253, "equal_first": 983314, "padded": 524}
+
+
+def p16_line():
+    p = P16_FACTS
+    return (f"Graded again from block {p['lo']} to {p['hi']}, {plural(p['equal'], 'reveal')} with <code>OP_1 OP_EQUAL</code> after "
+            f"the multisig, in {plural(p['equal_blocks'], 'block')} from block {p['equal_first']} on, go from clean to sewage, and Plumb "
+            f"counts more bytes in {n(p['padded'])} padded fake multisig reveals that Knots and Plumb refused already. No other "
+            "transaction&#39;s verdict, count or grade changes.")
+
+
 def vanity_line():
     v = VANITY_FACTS
     if not v["changed"]:
@@ -2683,6 +2701,7 @@ def about_page(idx, tip):
 <p>Plumb 14 is built on Knots 29.5.1 and carries its consensus rules. No filter or default changes. {p14_line()}</p>
 <p>Knots 29.5.1 takes in knots#470, which Plumb has carried since plumb9: a key in a witness script counts as proven only when a signature in the spend verified against it, so a signature check that never runs proves nothing. The Knots column counts those keys too now. {k2951_line()}</p>
 <p>Plumb 15 fixes a bug that Plumb 12, 13 and 14 have: they treat a verified signature as a proven key when a witness script pushes one the size of a key, so its bytes go uncounted. Plumb 15 credits keys only, as Knots does. No filter or default changes. {p15_line()}</p>
+<p>Plumb 16 carries knots#525: the BPUB rule, <code>-rejectbpub</code>, reads BPUB multisigs anywhere in a witness script, not only in a script that is one multisig and nothing else. Knots 29.5.1 does not have it, so the Knots column counts BPUB files as Knots 29.5.1 does. No default changes. {p16_line()}</p>
 <p>One kind stays sewage on purpose. A <a href="/guide/#liquid-emergency">Liquid-layout emergency spend</a> ({n(tn("liquid-emergency"))}) is very likely Liquid's own recovery, but every Liquid deposit tweaks the federation keys, so the layout cannot prove that the keys Plumb counts are real, and anyone could copy it.</p>
 <p>Protocols with defenders that do not pass have their case in the <a href="/guide/">field guide</a>, next to the reason they fail: inscriptions, Runes, JSON token messages, Stamps, Counterparty, Omni, BIP47 notifications, swap memos, and the tags Babylon, Core DAO and Stacks add. Babylon and Core DAO move real bitcoin to ordinary scripts, and that part passes; the tag beside it is a record for another chain.</p>
 <h2 id="known">How protocols are recognized</h2>
