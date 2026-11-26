@@ -649,8 +649,27 @@
   }
   // The bytes Knots' rule o counts, as Plumb measured it. Plumb's -rejectfakemultisig count holds its recount
   // from verified keys too, and Knots counts the same keys since 29.5.1 (knots#470).
+  // Plumb's count for a rule in cat.knots_ahead holds what that pull request adds, which Knots does not count.
   function knotsBytes(cat, fc, o) {
-    return fc[o] || 0;
+    var a = cat.knots_ahead || {};
+    return (fc[o] || 0) - Object.keys(a).filter(function (pr) { return a[pr][0] === o; })
+      .reduce(function (t, pr) { return t + (fc[pr] || 0); }, 0);
+  }
+  // [rule, pull request, url, bytes] for each pull request Plumb carries ahead of Knots that adds bytes to this count
+  // (site.py ahead), and its sentence for a by-line (site.py ahead_sentence)
+  function ahead(cat, fc) {
+    var a = cat.knots_ahead || {};
+    return Object.keys(a).filter(function (pr) { return (fc[pr] || 0) > 0; })
+      .map(function (pr) { return [a[pr][0], pr, a[pr][1], fc[pr]]; });
+  }
+  function aheadSentences(cat, fc, also, box) {
+    ahead(cat, fc).forEach(function (x) {
+      box.appendChild(text(" " + cat.plumb + (also ? " also" : "") + " carries "));
+      box.appendChild(el("a", { href: x[2], text: x[1] }));
+      box.appendChild(text(", which " + cat.knots_name + " does not: it makes "));
+      box.appendChild(el("code", { text: x[0] }));
+      box.appendChild(text(" count " + num(x[3]) + " B more here."));
+    });
   }
   // The source link of Knots' rule o, with knots#470 beside knots#422 where the recount counted bytes
   // (site.py knots_source).
@@ -732,15 +751,20 @@
     // Name Plumb's filter only when Plumb refuses the transaction; fc alone measures bytes
     var plumbAll = (tx.x && tx.x.plumb) || [], plumbRs = plumbAll.filter(function (r) { return DATA_REASON.test(r); });
     var own = k === "knots" && plumbAll.length ? plumbOwn(cat, tx, plumbRs) : [];
+    var ah = k === "knots" && plumbAll.length ? ahead(cat, tx.fc || {}) : [];
     box.appendChild(text("No ")); box.appendChild(el("code", { text: "datacarriersize" }));
     box.appendChild(text(", no ")); box.appendChild(el("code", { text: "maxscriptsize" }));
     box.appendChild(text(" of " + lim.mss_floor + " or more, no ")); box.appendChild(el("code", { text: "bytespersigopstrict" }));
     box.appendChild(text(" up to " + lim.bpss_max + " and no ")); box.appendChild(el("code", { text: "dustrelayfee" }));
     box.appendChild(text(" up to " + conf(lim.dust_max) + " refuses it."));
-    if (own.length) {
+    if (own.length || ah.length) {
       box.appendChild(text(" " + cat.plumb + "'s "));
       own.forEach(function (o, i) { if (i) box.appendChild(text(", ")); box.appendChild(ownName(cat, o)); });
-      box.appendChild(text(own.length > 1 ? " do." : " does."));
+      ah.forEach(function (x, i) {
+        if (own.length || i) box.appendChild(text(", "));
+        box.appendChild(el("code", { text: x[0] })); box.appendChild(text(" with ")); box.appendChild(el("a", { href: x[2], text: x[1] }));
+      });
+      box.appendChild(text(own.length + ah.length > 1 ? " do." : " does."));
     }
     return box;
   }
@@ -780,7 +804,7 @@
     });
     // Two filters covering the same bytes: neither changes the count alone, together they do.
     var ownMeasured = Object.keys(fc).some(function (o) { return (cat.plumb_own || []).indexOf(o) >= 0; });
-    if (added > 0 && !ownMeasured) parts.push(document.createTextNode("its filters together count " + num(added) + " B that Knots does not"));
+    if (added > 0 && !ownMeasured && !ahead(cat, fc).length) parts.push(document.createTextNode("its filters together count " + num(added) + " B that Knots does not"));
     var box = el("div", { cls: "by" }), knotsRefuses = knots.some(function (r) { return DATA_REASON.test(r); });
     // Knots' own rules, with the bytes each one counts where the engine measured them
     var krules = function (b) {
@@ -796,17 +820,19 @@
       if (ks.length) b.appendChild(document.createTextNode("."));
     };
     if (!parts.length) {
-      if (knotsRefuses) { krules(box); box.appendChild(document.createTextNode(" None of Plumb's own filters is needed here.")); also(box); return box; }
+      if (knotsRefuses) { krules(box); aheadSentences(cat, fc, true, box); box.appendChild(document.createTextNode(" None of Plumb's own filters is needed here.")); also(box); return box; }
+      if (ahead(cat, fc).length) { box.appendChild(text(cat.knots_name + " relays it.")); aheadSentences(cat, fc, false, box); also(box); return box; }
       box.appendChild(document.createTextNode("Knots relays it; the refusal comes from rules Knots does not have: "));
       dataRs.filter(function (r) { return knots.indexOf(r) < 0; }).forEach(function (r, i) { if (i) box.appendChild(document.createTextNode(", ")); box.appendChild(el("code", { text: r })); });
       box.appendChild(document.createTextNode("."));
       also(box);
       return box;
     }
-    if (knotsRefuses) { krules(box); box.appendChild(document.createTextNode(" Plumb's own filters add: ")); }
+    if (knotsRefuses) { krules(box); aheadSentences(cat, fc, true, box); box.appendChild(document.createTextNode(" Plumb's own filters add: ")); }
     else box.appendChild(document.createTextNode("Refused by Plumb's own filters: "));
     parts.forEach(function (p, i) { if (i) box.appendChild(document.createTextNode("; ")); box.appendChild(p); });
     box.appendChild(document.createTextNode("."));
+    if (!knotsRefuses) aheadSentences(cat, fc, true, box);
     also(box);
     return box;
   }

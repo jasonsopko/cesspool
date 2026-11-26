@@ -14,11 +14,15 @@ out.
   script check, which credits a key only when a signature verified against it (in Plumb since plumb9,
   in Knots since 29.5.1). Plumb's also includes, since plumb12, the witness items no verified signature
   check used, past 42 bytes an input (plumb#8), which stock Knots 29.5.1 does not count; the engine runs
-  the script check the way the node does to get those keys and signatures.
+  the script check the way the node does to get those keys and signatures. Plumb's BPUB rule carries
+  knots#525 since plumb16, which reads BPUB multisigs anywhere in a witness script and which Knots 29.5.1
+  does not have, so the Knots and Core counts take their BPUB bytes from a copy of Knots 29.5.1's own
+  `BPUBBytes` in the engine. Remove the copy when the Knots release named here includes knots#525.
   For Plumb it also reports where the bytes sit, how much of each input's count is those witness items
   (`data_uw`), how many each of six data-counting rules adds (the count with
-  that rule alone off) and how many the recount adds (the count with it
-  left out, against the count with `-rejectunverifiedwitness` off), and, when Plumb's 42-byte limit changes its reasons, the
+  that rule alone off), how many the recount adds (the count with it
+  left out, against the count with `-rejectunverifiedwitness` off) and how many knots#525 adds (the count
+  with Knots 29.5.1's `BPUBBytes` in its place), and, when Plumb's 42-byte limit changes its reasons, the
   reasons it gives at 83 (`p83`). Nothing reimplements a filter.
   The site shows the Knots and Plumb verdicts only: Bitcoin Core does not
   accept block 961640 or any block after it, so no Core node has these blocks.

@@ -627,8 +627,20 @@ def own_name(o):
 
 def knots_bytes(fc, o):
     """The bytes Knots' rule o counts, as Plumb measured it. Plumb's -rejectfakemultisig count holds its recount
-    from verified keys too, and Knots counts the same keys since 29.5.1 (knots#470)."""
-    return fc.get(o, 0)
+    from verified keys too, and Knots counts the same keys since 29.5.1 (knots#470). Plumb's count for a rule in
+    KNOTS_AHEAD holds what that pull request adds, which Knots does not count."""
+    return fc.get(o, 0) - sum(fc.get(pr, 0) for pr, (opt, _) in KNOTS_AHEAD.items() if opt == o)
+
+
+def ahead(fc):
+    """(rule, linked pull request, bytes) for each KNOTS_AHEAD pull request that adds bytes to this count."""
+    return [(opt, f'<a href="{esc(url)}">{esc(pr)}</a>', fc[pr]) for pr, (opt, url) in KNOTS_AHEAD.items() if fc.get(pr, 0) > 0]
+
+
+def ahead_sentence(fc, also):
+    """What the KNOTS_AHEAD pull requests add, a sentence each, as a by-line says it."""
+    return " ".join(f'{PLUMB_NAME} {"also " if also else ""}carries {link}, which {KNOTS_NAME} does not: it makes '
+                    f'<code>{esc(o)}</code> count {n(b)} B more here.' for o, link, b in ahead(fc))
 
 
 def knots_source(fc, o):
@@ -685,7 +697,9 @@ def refuse_with(k, name, s, counted):
         return f'<div class="by">Would refuse it with: {"; ".join(parts)}.</div>'
     # Name Plumb's filter only when Plumb refuses the transaction; fc alone measures bytes
     own = plumb_own(s, [r for r in s["v"]["plumb"] if classify.DATA_REASONS.match(r)]) if k == "knots" and s["v"]["plumb"] else []
-    does = f" {esc(PLUMB_NAME)}&#39;s {', '.join(own_name(o) for o in own)} {'do' if len(own) > 1 else 'does'}." if own else ""
+    names = [own_name(o) for o in own] + ([f"<code>{esc(o)}</code> with {link}" for o, link, _ in ahead(s.get("fc") or {})]
+                                         if k == "knots" and s["v"]["plumb"] else [])
+    does = f" {esc(PLUMB_NAME)}&#39;s {', '.join(names)} {'do' if len(names) > 1 else 'does'}." if names else ""
     return (f'<div class="by">No <code>datacarriersize</code>, no <code>maxscriptsize</code> of {MIN_USEFUL_SCRIPT_LIMIT} or more, no '
             f'<code>bytespersigopstrict</code> up to {MAX_USEFUL_SIGOP_STRICT} and no '
             f'<code>dustrelayfee</code> up to {feerate_conf(MAX_DUST_RATE)} refuses it.{does}</div>')
@@ -708,7 +722,7 @@ def plumb_by(s, data_rs):
     added = sum(dc.get("plumb", [0, 0])) - sum(dc.get("knots", [0, 0]))
     own = plumb_own(s, data_rs)
     parts = [own_name(o) + (f" counts {n(fc[o])} B" if fc.get(o) else "") + source_link(o) for o in own]
-    if added > 0 and not (set(fc) & PLUMB_OWN):
+    if added > 0 and not (set(fc) & PLUMB_OWN) and not ahead(fc):
         # Two filters covering the same bytes: neither changes the count alone, together they do.
         parts.append(f"its filters together count {n(added)} B that Knots does not")
     knots_refuses = any(classify.DATA_REASONS.match(r) for r in knots_rs)
@@ -718,12 +732,17 @@ def plumb_by(s, data_rs):
               for o in knots_measured(s)]
     krules = f'Knots&#39; rules refuse it: {"; ".join(kparts)}.' if kparts else "Knots&#39; rules refuse it."
     also = f" It is also over {size42}; Knots&#39; is {DATACARRIER_SIZE['knots']}." if by42 else ""
+    # a pull request Plumb carries ahead of Knots (KNOTS_AHEAD) gets its own sentence
+    ah = ahead_sentence(fc, knots_refuses or bool(parts))
+    ah = f" {ah}" if ah else ""
     if parts:
         if knots_refuses:
-            return f'<div class="by">{krules} Plumb&#39;s own filters add: {"; ".join(parts)}.{also}</div>'
-        return f'<div class="by">Refused by Plumb&#39;s own filters: {"; ".join(parts)}.{also}</div>'
+            return f'<div class="by">{krules}{ah} Plumb&#39;s own filters add: {"; ".join(parts)}.{also}</div>'
+        return f'<div class="by">Refused by Plumb&#39;s own filters: {"; ".join(parts)}.{ah}{also}</div>'
     if knots_refuses:
-        return f'<div class="by">{krules} None of Plumb&#39;s own filters is needed here.{also}</div>'
+        return f'<div class="by">{krules}{ah} None of Plumb&#39;s own filters is needed here.{also}</div>'
+    if ah:
+        return f'<div class="by">{KNOTS_NAME} relays it.{ah}{also}</div>'
     extra = [r for r in data_rs if r not in knots_rs]
     return f'<div class="by">Knots relays it; the refusal comes from rules Knots does not have: {", ".join(f"<code>{esc(r)}</code>" for r in extra)}.{also}</div>'
 
@@ -1075,7 +1094,7 @@ def tx_catalog():
     return {"plumb": PLUMB_NAME, "verdicts": VERDICT_NAMES, "rules": RULES, "sources": {**KNOTS_SOURCE, **FILTER_SOURCE},
             "plumb_options": sorted(PLUMB_OPTIONS), "plumb_own": sorted(PLUMB_OWN), "knots_rules": list(KNOTS_RULES),
             "knots_no_switch": sorted(KNOTS_HAS_NO_SWITCH), "knots_rule_names": KNOTS_RULE_NAMES, "recount": [RECOUNT, RECOUNT_URL],
-            "knots_source": KNOTS_SOURCE, "dcsize": DATACARRIER_SIZE, "types": types,
+            "knots_source": KNOTS_SOURCE, "knots_ahead": KNOTS_AHEAD, "knots_name": KNOTS_NAME, "dcsize": DATACARRIER_SIZE, "types": types,
             "limits": {"dcsize": DATACARRIER_SIZE, "mss": MAXSCRIPTSIZE_DEFAULT, "dust": DUSTRELAYFEE_DEFAULT,
                        "mss_floor": MIN_USEFUL_SCRIPT_LIMIT, "dust_max": MAX_DUST_RATE,
                        "bpss": BYTESPERSIGOPSTRICT_DEFAULT, "bpss_max": MAX_USEFUL_SIGOP_STRICT},
@@ -1192,6 +1211,11 @@ KNOTS_SOURCE = {"-rejectdeadbranches": ("knots#400", "https://github.com/bitcoin
                 "-rejectbareenvelopes": ("knots#319", "https://github.com/bitcoinknots/bitcoin/pull/319"),
                 "-rejectfakemultisig": ("knots#422", "https://github.com/bitcoinknots/bitcoin/pull/422"),
                 "-rejectbpub": ("knots#463", "https://github.com/bitcoinknots/bitcoin/pull/463")}
+# Pull requests Plumb carries that change one of Knots' rules and that the Knots release named here does not have, with
+# the rule they change. The engine measures each on its own under its name in fc (fc "knots#525": what knots#525 adds
+# to -rejectbpub's count), and the Knots column counts without it, so those bytes are Plumb's alone: knots_bytes leaves
+# them out of Knots' rule. Drop an entry when the Knots release named here takes the pull request in.
+KNOTS_AHEAD = {"knots#525": ("-rejectbpub", "https://github.com/bitcoinknots/bitcoin/pull/525")}
 
 
 def load_filters():
@@ -2539,8 +2563,8 @@ def about_page(idx, tip):
 <p class="lede">Every block since the fork at height {FORK}, every transaction in it, run through the Knots and Plumb policy checks.</p></div>
 <div class="prose">
 <h2>Verdicts come from the shipped code</h2>
-<p>Each transaction, with the coins it spends, goes through the policy checks of {PLUMB_VERSION}: <code>IsStandardTx</code>, <code>AreInputsStandard</code>, the data-carrier count, <code>IsWitnessStandard</code> and the sigop limits, once with each software's default policy: stock {KNOTS_NAME} (Plumb's three own filters off, <code>permitlnrevokeleaf=0</code>, and <code>datacarriersize</code> at Knots' {DATACARRIER_SIZE["knots"]}) and Plumb (<code>datacarriersize</code> at {DATACARRIER_SIZE["plumb"]}, its default since plumb7). For both the engine also runs the policy script check, as the node does, and counts the multisig keys again, crediting only those a signature verified against (knots#470, in Plumb since plumb9 and in Knots since 29.5.1). For Plumb it also counts the witness items no verified signature check used, past 42 bytes an input (plumb#8), which {KNOTS_NAME} does not count. Bitcoin Core is not compared: it does not accept block {FORK} or any block after it, so no Core node has these blocks. Nothing here reimplements a filter, so this page and a Plumb node cannot disagree about a transaction.</p>
-<p>Each refusal on a block or transaction page names the rule it comes from and the option behind it. Plumb's count is also taken with each of six data-counting rules turned off alone, and once with knots#470's recount from verified keys left out, against the count with <code>-rejectunverifiedwitness</code> off so that the two never claim the same bytes. So the bytes a rule is responsible for come from the code too (the seventh, <code>-rejecttokenmessages</code>, names itself in its reason), and a refusal that rests on Knots' own rules says so. So does one that rests on Plumb's {DATACARRIER_SIZE["plumb"]}-byte limit: the count is taken again with the limit at Knots' {DATACARRIER_SIZE["knots"]}.</p>
+<p>Each transaction, with the coins it spends, goes through the policy checks of {PLUMB_VERSION}: <code>IsStandardTx</code>, <code>AreInputsStandard</code>, the data-carrier count, <code>IsWitnessStandard</code> and the sigop limits, once with each software's default policy: stock {KNOTS_NAME} (Plumb's three own filters off, <code>permitlnrevokeleaf=0</code>, <code>datacarriersize</code> at Knots' {DATACARRIER_SIZE["knots"]}, and BPUB files counted with {KNOTS_NAME}'s own <code>BPUBBytes</code>, copied into the engine, since Plumb carries knots#525 and {KNOTS_NAME} does not) and Plumb (<code>datacarriersize</code> at {DATACARRIER_SIZE["plumb"]}, its default since plumb7). For both the engine also runs the policy script check, as the node does, and counts the multisig keys again, crediting only those a signature verified against (knots#470, in Plumb since plumb9 and in Knots since 29.5.1). For Plumb it also counts the witness items no verified signature check used, past 42 bytes an input (plumb#8), which {KNOTS_NAME} does not count. Bitcoin Core is not compared: it does not accept block {FORK} or any block after it, so no Core node has these blocks. Nothing here reimplements a filter, so this page and a Plumb node cannot disagree about a transaction.</p>
+<p>Each refusal on a block or transaction page names the rule it comes from and the option behind it. Plumb's count is also taken with each of six data-counting rules turned off alone, and once with knots#470's recount from verified keys left out, against the count with <code>-rejectunverifiedwitness</code> off so that the two never claim the same bytes, and once with BPUB files counted as {KNOTS_NAME} counts them, which gives the bytes knots#525 adds. So the bytes a rule is responsible for come from the code too (the seventh, <code>-rejecttokenmessages</code>, names itself in its reason), and a refusal that rests on Knots' own rules says so. So does one that rests on Plumb's {DATACARRIER_SIZE["plumb"]}-byte limit: the count is taken again with the limit at Knots' {DATACARRIER_SIZE["knots"]}.</p>
 <p>Where Knots or Plumb relays a transaction shown here, the engine also tries four settings one at a time and keeps the value that would refuse it: the largest <code>datacarriersize</code>; the largest <code>maxscriptsize</code> of {MIN_USEFUL_SCRIPT_LIMIT} or more, the size of the largest push a script may hold, since a limit below that starts refusing ordinary multisig witnesses (a 3-of-5 P2WSH witness is about 395 bytes); the smallest <code>bytespersigopstrict</code> up to {MAX_USEFUL_SIGOP_STRICT}, since above that it starts refusing segwit 2-of-15 spends (a 2-of-15 P2WSH input has about 55 weight units for each of its 15 signature checks; multisig with many keys and few signatures can be refused lower); and the smallest <code>dustrelayfee</code> up to {feerate_conf(MAX_DUST_RATE)} (100 sat/vB, where a P2TR output under 11,000 sat is already dust; higher rates were not tried). Each value comes from rerunning the same checks with only that setting changed. A setting that refuses the transaction at no value in its range is left out, and a verdict that offers none names the four that were tried.</p>
 <p>Not modeled: fee floors, mempool limits, replacement rules and address reuse. Those depend on the mempool at the time, not on what the transaction carries.</p>
 <h2>Grades</h2>

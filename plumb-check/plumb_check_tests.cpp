@@ -12,20 +12,25 @@
 // data-counting rule is responsible for ("fc": the count with that rule
 // alone turned off, taken from the full count; "knots#470" for the recount
 // from verified keys, "-rejectunverifiedwitness" for the witness items no
-// verified signature check used, which that recount finds). For a transaction the knots
+// verified signature check used, which that recount finds; "knots#525" for
+// the BPUB bytes knots#525 adds to -rejectbpub's count). For a transaction the knots
 // or plumb profile relays while the other side sees data in it, "fix" says
 // what a node on that profile could set to refuse it (see Fix below). When
 // Plumb's 42-byte -datacarriersize default changes its reasons, "p83" holds
 // the reasons the plumb profile gives at Knots' 83. Under the knots and plumb
 // profiles the counts include knots#470's recount from the keys a signature
 // verified against (see Count below); "script_error" is there when the policy
-// script check fails, which no profile's reasons include.
+// script check fails, which no profile's reasons include. The knots and core
+// profiles count BPUB files with Knots 29.5.1's own BPUBBytes, copied below, in
+// place of the tree's, which carries knots#525 (see Knots2951BPUBBytes).
 #include <chainparams.h>
 #include <coins.h>
 #include <common/args.h>
+#include <consensus/consensus.h>
 #include <consensus/tx_verify.h>
 #include <consensus/validation.h>
 #include <core_io.h>
+#include <crypto/common.h>
 #include <deploymentstatus.h>
 #include <init.h>
 #include <kernel/mempool_options.h>
@@ -33,6 +38,7 @@
 #include <policy/policy.h>
 #include <policy/settings.h>
 #include <primitives/transaction.h>
+#include <pubkey.h>
 #include <script/interpreter.h>
 #include <script/script.h>
 #include <script/sigcache.h>
@@ -47,10 +53,13 @@
 
 #include <boost/test/unit_test.hpp>
 
+#include <algorithm>
 #include <cstdlib>
 #include <fstream>
+#include <limits>
 #include <map>
 #include <sstream>
+#include <vector>
 
 // Defined in validation.cpp, which declares them in no header.
 int64_t GetAccurateTransactionSigOpCost(const CTransaction& tx, const CCoinsViewCache& inputs, int flags);
@@ -84,6 +93,10 @@ struct Profile {
     // Whether the node carries knots#470 and recounts from the keys a signature verified against
     // (Plumb, and stock Knots since 29.5.1). Core does not.
     bool verified_key_credit;
+    // Whether -rejectbpub counts with Knots 29.5.1's BPUBBytes (Knots2951BPUBBytes) in place of the
+    // tree's, which carries knots#525 since plumb16: the knots profile, and the core profile, whose
+    // -corepolicy leaves -rejectbpub on.
+    bool bpub_2951;
 };
 
 struct Globals {
@@ -102,7 +115,7 @@ struct Globals {
 
 // Same steps init.cpp takes: the -corepolicy soft-sets, then the mempool
 // options and the policy globals.
-Profile MakeProfile(const std::string& name, const Settings& set, const Globals& defaults, bool verified_key_credit)
+Profile MakeProfile(const std::string& name, const Settings& set, const Globals& defaults, bool verified_key_credit, bool bpub_2951)
 {
     ArgsManager args;
     for (const auto& [k, v] : set) args.ForceSetArg(k, v);
@@ -110,7 +123,7 @@ Profile MakeProfile(const std::string& name, const Settings& set, const Globals&
     Profile p{name, set, kernel::MemPoolOptions{}, defaults.weight_per_data_byte, defaults.script_size_limit,
               defaults.reject_dead_branches, defaults.reject_bare_envelopes, defaults.reject_fake_multisig, defaults.reject_bpub,
               defaults.permit_ln_revoke_leaf, defaults.reject_fake_outputs, defaults.reject_unverified_witness, defaults.bytes_per_sigop,
-              defaults.bytes_per_sigop_strict, verified_key_credit};
+              defaults.bytes_per_sigop_strict, verified_key_credit, bpub_2951};
     BOOST_REQUIRE(ApplyArgsManOptions(args, Params(), p.opts));
     if (auto parsed = args.GetFixedPointArg("-datacarriercost", 2)) {
         p.weight_per_data_byte = ((*parsed * WITNESS_SCALE_FACTOR) + 99) / 100;
@@ -135,7 +148,8 @@ void Activate(const Profile& p)
     ::g_reject_dead_branches = p.reject_dead_branches;
     ::g_reject_bare_envelopes = p.reject_bare_envelopes;
     ::g_reject_fake_multisig = p.reject_fake_multisig;
-    ::g_reject_bpub = p.reject_bpub;
+    // The tree's BPUBBytes stays off where the profile counts with Knots 29.5.1's, which the engine adds itself
+    ::g_reject_bpub = p.reject_bpub && !p.bpub_2951;
     ::g_permit_ln_revoke_leaf = p.permit_ln_revoke_leaf;
     ::g_reject_fake_outputs = p.reject_fake_outputs;
     ::g_reject_unverified_witness = p.reject_unverified_witness;
@@ -170,6 +184,82 @@ std::vector<size_t> DataOutputs(const CTransaction& tx, const CCoinsViewCache& v
         data_outputs = DataOutputBytes(tx, &view);
     }
     return data_outputs;
+}
+
+// Knots 29.5.1's IsBPUBHeader and BPUBBytes, copied from src/policy/policy.cpp at v29.5.1.knots20260508 with their
+// names changed and IsBPUBHeader's static dropped, the namespace keeping both file-local (plumb15's policy.cpp has the
+// same text). Plumb 16 carries knots#525, which reads BPUB multisigs anywhere in a witness script and has no switch;
+// Knots 29.5.1 does not. The knots profile counts with this copy so that the Knots column shows Knots 29.5.1's
+// verdict, and so does the core profile, since -corepolicy leaves -rejectbpub on and its counts must not move. The
+// engine adds the count where policy.cpp adds BPUBBytes: DatacarrierBytes' non-standard member (Count) and
+// CalculateExtraTxWeight (SigopReasons). Remove the copy, and bpub_2951, when the Knots release cesspool names
+// includes knots#525.
+bool Knots2951IsBPUBHeader(const std::vector<unsigned char>& head)
+{
+    if (head.size() < 10) return false;
+    if (std::equal(head.begin(), head.begin() + 4, "BPUB")) return head[4] == 1;
+    if (head[4] != 4 && head[4] != 5) return false;
+    // The body opens with a 44 byte header and fits in a block, and DEFLATE inflates at most
+    // 1032 times, so the high half of its 64 bit uncompressed size is always zero.
+    const uint32_t body_len{ReadBE32(head.data())};
+    return body_len >= 44 && body_len <= MAX_BLOCK_SERIALIZED_SIZE && ReadBE32(head.data() + 6) == 0;
+}
+
+size_t Knots2951BPUBBytes(const CTransaction& tx)
+{
+    // Spam can be pushed as the keys of a 1-of-N multisig, since nothing checks the other keys
+    // once the last one signs. Inputs whose witness ends in such a script with the same last key
+    // are joined in input order, taking each key but the last less its first and last bytes, and
+    // counted when the result opens with a known spam header. Keys are taken both as pushes of
+    // any size but OP_0, with N as any opcode valued 0x50 + N, and as compressed keys with OP_N
+    // only, skipping any other input.
+    struct Input {
+        std::vector<unsigned char> control, head;
+        bool compressed_keys;
+        size_t bytes;
+    };
+    std::vector<Input> inputs;
+    std::vector<unsigned char> push_data;
+    for (const CTxIn& txin : tx.vin) {
+        const auto& stack{txin.scriptWitness.stack};
+        if (stack.size() < 2) continue;
+        const CScript script(stack.back().begin(), stack.back().end());
+        CScript::const_iterator it{script.begin()};
+        opcodetype opcode;
+        if (!script.GetOp(it, opcode) || opcode != OP_1) continue;
+        Input input{{}, {}, true, script.size()};
+        size_t keys{0};
+        bool parsed;
+        while ((parsed = script.GetOp(it, opcode, push_data)) && opcode > OP_0 && opcode <= OP_PUSHDATA4) {
+            if (keys++ && input.head.size() < 10 && input.control.size() > 2) {
+                input.head.insert(input.head.end(), input.control.begin() + 1, input.control.begin() + 1 + std::min(10 - input.head.size(), input.control.size() - 2));
+            }
+            input.compressed_keys &= push_data.size() == CPubKey::COMPRESSED_SIZE;
+            input.control.swap(push_data);
+        }
+        if (!parsed || keys < 2 || static_cast<size_t>(opcode) != 0x50 + keys) continue;
+        input.compressed_keys &= keys <= 16;
+        if (!script.GetOp(it, opcode) || opcode != OP_CHECKMULTISIG || it != script.end()) continue;
+        inputs.push_back(std::move(input));
+    }
+
+    std::stable_sort(inputs.begin(), inputs.end(), [](const Input& a, const Input& b) { return a.control < b.control; });
+    size_t bytes{0};
+    for (auto stream{inputs.begin()}; stream != inputs.end();) {
+        const auto end{std::find_if(stream, inputs.end(), [&](const Input& input) { return input.control != stream->control; })};
+        std::vector<unsigned char> head, compressed_head;
+        size_t stream_bytes{0};
+        for (auto input{stream}; input != end; ++input) {
+            if (head.size() < 10) head.insert(head.end(), input->head.begin(), input->head.end());
+            if (input->compressed_keys && compressed_head.size() < 10) {
+                compressed_head.insert(compressed_head.end(), input->head.begin(), input->head.end());
+            }
+            stream_bytes += input->bytes;
+        }
+        if (Knots2951IsBPUBHeader(head) || Knots2951IsBPUBHeader(compressed_head)) bytes += stream_bytes;
+        stream = end;
+    }
+    return bytes;
 }
 
 // The keys a signature verified against in each input, recorded the way
@@ -226,10 +316,14 @@ std::pair<size_t, size_t> Count(const Profile& p, const CTransaction& tx, const 
 {
     keys_used = nullptr;
     std::vector<DatacarrierInputCache> input_cache;
-    const auto dcb{DatacarrierBytes(tx, view, data_outputs, /*verified_keys=*/nullptr, &input_cache)};
-    if (!p.verified_key_credit || (!::g_reject_fake_multisig && !::g_reject_unverified_witness) || !p.opts.datacarrier_fullcount || !tx.HasWitness()) return dcb;
-    keys_used = scripts.Keys();
-    return keys_used ? DatacarrierBytes(tx, view, data_outputs, keys_used, &input_cache) : dcb;
+    auto dcb{DatacarrierBytes(tx, view, data_outputs, /*verified_keys=*/nullptr, &input_cache)};
+    if (p.verified_key_credit && (::g_reject_fake_multisig || ::g_reject_unverified_witness) && p.opts.datacarrier_fullcount && tx.HasWitness()) {
+        keys_used = scripts.Keys();
+        if (keys_used) dcb = DatacarrierBytes(tx, view, data_outputs, keys_used, &input_cache);
+    }
+    // Both counts hold the BPUB bytes, in the non-standard member; with the tree's BPUBBytes off, Knots 29.5.1's go there
+    if (p.bpub_2951 && p.reject_bpub) dcb.second += Knots2951BPUBBytes(tx);
+    return dcb;
 }
 
 // policy.cpp's UnverifiedWitnessBytes (-rejectunverifiedwitness), which is file-local, for the per-input
@@ -270,10 +364,15 @@ void DatacarrierReasons(const Profile& p, const CTransaction& tx, const CCoinsVi
 // the weight plus the extra weight -datacarriercost puts on data, raised for sigops at
 // -bytespersigop. -bytespersigopstrict refuses a transaction with fewer than that many weight
 // units for each sigop, counting a multisig's keys and leaving out its outputs.
-void SigopReasons(const CTransaction& tx, const CCoinsViewCache& view, const kernel::MemPoolOptions& o, std::vector<std::string>& reasons)
+void SigopReasons(const Profile& p, const CTransaction& tx, const CCoinsViewCache& view, std::vector<std::string>& reasons)
 {
+    const kernel::MemPoolOptions& o{p.opts};
     const int64_t sigops{GetTransactionSigOpCost(tx, view, STANDARD_SCRIPT_VERIFY_FLAGS)};
-    const int32_t extra_weight{CalculateExtraTxWeight(tx, view, ::g_weight_per_data_byte, DataOutputs(tx, view, o))};
+    int32_t extra_weight{CalculateExtraTxWeight(tx, view, ::g_weight_per_data_byte, DataOutputs(tx, view, o))};
+    if (p.bpub_2951 && p.reject_bpub && ::g_weight_per_data_byte > 1) {
+        // CalculateExtraTxWeight's BPUB term, with Knots 29.5.1's count, and its cap on the sum
+        extra_weight = int32_t(std::min(int64_t{extra_weight} + int64_t(Knots2951BPUBBytes(tx)) * (::g_weight_per_data_byte - 1), int64_t{std::numeric_limits<int32_t>::max()}));
+    }
     const int64_t vsize{GetVirtualTransactionSize(GetTransactionWeight(tx) + extra_weight, sigops, ::nBytesPerSigOp)};
     if (sigops > MAX_STANDARD_TX_SIGOPS_COST || (::nBytesPerSigOpStrict && GetAccurateTransactionSigOpCost(tx, view, STANDARD_SCRIPT_VERIFY_FLAGS) > vsize * WITNESS_SCALE_FACTOR / ::nBytesPerSigOpStrict)) {
         reasons.emplace_back("bad-txns-too-many-sigops");
@@ -292,7 +391,7 @@ std::vector<std::string> Reasons(const Profile& p, const CTransaction& tx, const
     if (tx.HasWitness()) {
         Collect([&](std::string& r, const ignore_rejects_type& ig) { return IsWitnessStandard(tx, view, "bad-witness-", r, ig); }, reasons);
     }
-    SigopReasons(tx, view, p.opts, reasons);
+    SigopReasons(p, tx, view, reasons);
     if (p.name == "core") std::erase(reasons, std::string{"multi-op-return"});
     return reasons;
 }
@@ -320,7 +419,7 @@ UniValue Fix(const Profile& p, const CTransaction& tx, const CCoinsViewCache& vi
         Settings set{p.set};
         set.emplace_back(key, value);
         std::pair<size_t, size_t> unused;
-        return !Reasons(MakeProfile(p.name, set, defaults, p.verified_key_credit), tx, view, scripts, unused).empty();
+        return !Reasons(MakeProfile(p.name, set, defaults, p.verified_key_credit, p.bpub_2951), tx, view, scripts, unused).empty();
     };
     UniValue fix{UniValue::VOBJ};
     if (counted > 0 && refuses("-datacarriersize", util::ToString(counted - 1))) {
@@ -394,32 +493,35 @@ BOOST_AUTO_TEST_CASE(plumb_check)
     // datacarriersize cannot matter here: BIP110 caps OP_RETURN outputs at 83 bytes by consensus.
     // Core has no knots#487 either: -permitlnrevokeleaf=0 keeps the 34 bytes of LND's revocation
     // leaf where Knots 29.5.1 books them. -corepolicy skips the data carrier check, so no verdict moves.
-    profiles.push_back(MakeProfile("core", {{"-corepolicy", "1"}, {"-maxtxlegacysigops", "2500"}, {"-permitlnrevokeleaf", "0"}}, defaults, false));
+    profiles.push_back(MakeProfile("core", {{"-corepolicy", "1"}, {"-maxtxlegacysigops", "2500"}, {"-permitlnrevokeleaf", "0"}}, defaults, false, true));
     // Stock Knots 29.5.1: it carries the dead-branch, bare-envelope, unproven-key and BPUB rules
     // itself (knots#400, #319, #422, #463) and, since 29.5.1, knots#470's recount from verified
     // keys, which it runs with -datacarrierfullcount and a witness in the transaction as the knots
     // profile does with the unproven-key rule on. So only Plumb's three own filters are off, and
     // -datacarriersize defaults to 83 where Plumb's is 42. It has neither knots#487 nor #489: LND's
     // revocation leaf refused as non-standard data (-permitlnrevokeleaf=0), and -rejecttokens
-    // without the JSON and Omni checks (-rejecttokenmessages=0).
-    profiles.push_back(MakeProfile("knots", {{"-rejectfakeoutputs", "0"}, {"-rejecttokenmessages", "0"}, {"-rejectunverifiedwitness", "0"}, {"-permitlnrevokeleaf", "0"}, {"-datacarriersize", "83"}}, defaults, true));
-    profiles.push_back(MakeProfile("plumb", {}, defaults, true));
+    // without the JSON and Omni checks (-rejecttokenmessages=0). Nor has it knots#525: its BPUB count is Knots 29.5.1's.
+    profiles.push_back(MakeProfile("knots", {{"-rejectfakeoutputs", "0"}, {"-rejecttokenmessages", "0"}, {"-rejectunverifiedwitness", "0"}, {"-permitlnrevokeleaf", "0"}, {"-datacarriersize", "83"}}, defaults, true, true));
+    profiles.push_back(MakeProfile("plumb", {}, defaults, true, false));
     // Plumb with Knots' -datacarriersize, to tell what the 42-byte default refuses on its own.
-    const Profile plumb83{MakeProfile("plumb", {{"-datacarriersize", "83"}}, defaults, true)};
+    const Profile plumb83{MakeProfile("plumb", {{"-datacarriersize", "83"}}, defaults, true, false)};
     // Plumb with one data-counting rule off at a time, to measure what each adds to the
     // count. -rejecttokenmessages needs no measurement: its reasons name it. -permitlnrevokeleaf
     // moves the leaf's bytes between the two members and changes no count.
     std::vector<Profile> plumb_without;
     for (const char* option : {"-rejectfakeoutputs", "-rejectdeadbranches", "-rejectbareenvelopes", "-rejectfakemultisig", "-rejectbpub", "-rejectunverifiedwitness"}) {
-        plumb_without.push_back(MakeProfile(option, {{option, "0"}}, defaults, true));
+        plumb_without.push_back(MakeProfile(option, {{option, "0"}}, defaults, true, false));
     }
     // And knots#470's recount left out alone, -rejectfakemultisig still on: the bytes Plumb counts
     // from the verified keys beyond what PreChecks counted, which Knots counts too since 29.5.1.
     // Neither node has a switch for the recount alone, so "fc" names it by its pull request.
-    plumb_without.push_back(MakeProfile("knots#470", {}, defaults, false));
+    plumb_without.push_back(MakeProfile("knots#470", {}, defaults, false, false));
+    // And knots#525 left out alone: -rejectbpub counting with Knots 29.5.1's BPUBBytes, so "fc" holds the bytes
+    // knots#525 adds, which Knots 29.5.1 does not count, under the pull request's name as for knots#470.
+    plumb_without.push_back(MakeProfile("knots#525", {}, defaults, true, true));
     const Profile restore{"", {}, {}, defaults.weight_per_data_byte, defaults.script_size_limit, defaults.reject_dead_branches,
                           defaults.reject_bare_envelopes, defaults.reject_fake_multisig, defaults.reject_bpub, defaults.permit_ln_revoke_leaf,
-                          defaults.reject_fake_outputs, defaults.reject_unverified_witness, defaults.bytes_per_sigop, defaults.bytes_per_sigop_strict, false};
+                          defaults.reject_fake_outputs, defaults.reject_unverified_witness, defaults.bytes_per_sigop, defaults.bytes_per_sigop_strict, false, false};
     // Signatures and scripts for ScriptRun, sized like the node's defaults.
     ValidationCache validation_cache{DEFAULT_SCRIPT_EXECUTION_CACHE_BYTES, DEFAULT_SIGNATURE_CACHE_BYTES};
 
