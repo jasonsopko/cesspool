@@ -32,6 +32,14 @@ TYPES = {
         "line_knots": "Knots counts the unproven keys as data by default since 29.5.1 (knots#470); Plumb keeps a switch, `-rejectfakemultisig`, and since plumb12 also counts the dropped items under `-rejectunverifiedwitness` (plumb#8). The verdict says which refused it.",
         "prs": [("knots#470", "https://github.com/bitcoinknots/bitcoin/pull/470"), ("plumb#8", "https://github.com/plumb-node/plumb/pull/8")],
     },
+    "fake-multisig-equal": {
+        "name": "Fake multisig with OP_1 OP_EQUAL",
+        "what": "Spends a multisig script with eight or more public keys that no signature needs, followed by `OP_1 OP_EQUAL`, which leaves the multisig's result as it was. Only the signing keys are real; the rest are file bytes dressed as keys.",
+        "how": "Knots' BPUB rule (knots#463) reads a multisig only where it ends the script, so the two opcodes after it keep these reveals out of its count. knots#525 reads BPUB multisigs anywhere in a witness script. Plumb carries it since plumb16, under `-rejectbpub`; Knots 29.5.1 does not have it.",
+        "filter": PLUMB, "option": "-rejectbpub",
+        "line": "Plumb counts the BPUB files among these under `-rejectbpub` since plumb16, which carries knots#525; Knots 29.5.1 does not have knots#525.",
+        "prs": [("knots#525", "https://github.com/bitcoinknots/bitcoin/pull/525")],
+    },
     "p2wsh-run": {
         "name": "Dust P2WSH run",
         "what": "A run of three or more distinct P2WSH outputs sharing one value of 353 sats or less, which Plumb counts as data, in a transaction without OLGA framing, tagged or not.",

@@ -322,6 +322,28 @@ def padded_fake_multisig(tx):
     return sum(1 for b in per_input if b), sum(per_input), per_input
 
 
+def equal_multisig(script_hex):
+    """(m, n) for a plain m-of-n OP_CHECKMULTISIG over 33-byte keys followed by OP_1 OP_EQUAL and nothing else, which
+    leaves the multisig's result as it was: the BPUB reveals since block 983314. Knots 29.5.1 reads a BPUB multisig only
+    where it ends the script; knots#525 reads it anywhere. None for any other script."""
+    o = ops(script_hex)
+    if len(o) < 6 or [op for op, _ in o[-2:]] != [OP_1, OP_EQUAL]:
+        return None
+    ms = multisig_ops(o[:-2])
+    return ms if ms and all(len(d) == 33 for _, d in o[1:-4]) else None
+
+
+def equal_fake_multisig(tx):
+    """fake_multisig() for P2WSH inputs whose script equal_multisig() reads: those with eight or more keys no
+    signature needs."""
+    per_input = []
+    for vin in tx["vin"]:
+        kind, script = witness_script(vin)
+        ms = equal_multisig(script) if kind == "p2wsh" else None
+        per_input.append((ms[1] - ms[0]) * 33 if ms and ms[1] - ms[0] >= 8 else 0)
+    return sum(1 for b in per_input if b), sum(per_input), per_input
+
+
 def sorted_keys(script_hex):
     """True when a multisig script's keys are in BIP67 order, the way sortedmulti wallets write them."""
     keys = [d for _, d in ops(script_hex)[1:-2]]
@@ -519,10 +541,11 @@ def classify(tx, verdict):
     # (-rejectunverifiedwitness, data_uw) is named apart from what its script holds.
     uw = verdict.get("data_uw", [])
     pm_inputs, pm_bytes, pm_per_input = padded_fake_multisig(tx)
+    em_inputs, em_bytes, em_per_input = equal_fake_multisig(tx)
     for i, n in enumerate(verdict.get("data_in", [])):
         items = uw[i] if i < len(uw) else 0
-        # an input padded_fake_multisig() names is not unnamed witness data
-        if n - items and not pm_per_input[i]:
+        # an input padded_fake_multisig() or equal_fake_multisig() names is not unnamed witness data
+        if n - items and not pm_per_input[i] and not em_per_input[i]:
             add(*data_input(tx["vin"][i]))
         if items and data_reasons:
             add("witness-items", "Witness items no verified signature check used")
@@ -546,14 +569,17 @@ def classify(tx, verdict):
     if pm_inputs:
         # The same finding behind an OP_SIZE 64 guard, a type of its own: Knots' rule credits its checks as signatures
         add("fake-multisig-padded", f"Padded fake multisig keys in {pm_inputs} input{'s' if pm_inputs != 1 else ''}")
-    if fm_inputs or pm_inputs:
-        fm_per_input = [a + b for a, b in zip(fm_per_input, pm_per_input)]
+    if em_inputs:
+        # The same finding with OP_1 OP_EQUAL after the multisig, a type of its own: only knots#525 reads it
+        add("fake-multisig-equal", f"Fake multisig keys with OP_1 OP_EQUAL in {em_inputs} input{'s' if em_inputs != 1 else ''}")
+    if fm_inputs or pm_inputs or em_inputs:
+        fm_per_input = [a + b + c for a, b, c in zip(fm_per_input, pm_per_input, em_per_input)]
         # Plumb counts only the keys past its allowance; the payload is every unused key
-        data_bytes = max(data_bytes, fm_bytes + pm_bytes)
+        data_bytes = max(data_bytes, fm_bytes + pm_bytes + em_bytes)
         if not data_reasons:
             missed = True
 
-    for t in ("fake-multisig-padded", "fake-multisig"):
+    for t in ("fake-multisig-equal", "fake-multisig-padded", "fake-multisig"):
         if t in types:
             # The witness-data label for the same inputs is the generic name; the fake keys are the finding.
             k = types.index(t)
@@ -561,7 +587,7 @@ def classify(tx, verdict):
             labels.insert(0, labels.pop(k))
 
     # Fake multisig keys Plumb tolerates are cesspool's own finding; no exemption may clear them.
-    ex = None if missed or fm_inputs or pm_inputs else exemption(tx, verdict, data_reasons)
+    ex = None if missed or fm_inputs or pm_inputs or em_inputs else exemption(tx, verdict, data_reasons)
     if ex:
         # Everything Plumb refused it for is padding, a commitment or a payment: name the protocol, not the bytes.
         types, labels, data_bytes = [ex[0]], [ex[1]], ex[2]
