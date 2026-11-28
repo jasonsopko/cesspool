@@ -131,6 +131,7 @@ def rejected(reasons):
 
 def summarize(rec):
     ty = {}
+    sbm = {}
     top = None
     for s in rec["spam"]:
         t = s["types"][0] if s["types"] else "unknown"
@@ -142,6 +143,8 @@ def summarize(rec):
         e[4] += rejected(s["v"]["plumb"])
         e[5] += s["tier"] == "sewage"
         e[6] += bool(s["missed"])
+        if s["tier"] == "sewage":
+            sbm[t] = sbm.get(t, 0) + s["w"]
         if s["tier"] == "sewage" and (top is None or s["data"] > top[2]):
             top = [s["txid"], t, s["data"]]
     sw = rec["sewage"]["w"]
@@ -166,6 +169,7 @@ def summarize(rec):
         "sn": rec["sewage"]["n"], "sw": sw, "sf": rec["sewage"]["fee"], "sd": rec["sewage"]["data"],
         "sm": rec["sewage"]["missed"], "gn": rec["gray"]["n"], "gw": rec["gray"]["w"],
         "ps": plumb_stops, "psw": plumb_stops_w, "ksw": knots_stops_w, "pk": knots_relays, "rr": by_rule,
+        "sbm": dict(sorted(sbm.items())),
         "share": share, "grade": grade(rec["sewage"]["n"], share),
         "ty": ty, "top": top, "bld": rec.get("bld", ""), "dtag": rec.get("dtag", ""), "via": rec.get("via", False),
         "own": rec.get("own", ""),
@@ -180,6 +184,9 @@ def kp_flagged(rec):
         if s.get("kp"):
             out.setdefault(s["kp"], [0, 0])[s["tier"] == "sewage"] += 1
     return out
+
+
+API_ONLY = ("sbm",)  # summary keys only the API reads
 
 
 def load_index():
@@ -197,8 +204,8 @@ def load_index():
         m = os.path.getmtime(p)
         old = idx.get(h)
         stale = old is None or old.get("_m") != m  # a new or rewritten record always counts as changed
-        # a summary from before "rr" (the sewage Plumb refuses, by rule) is made again once
-        if stale or old.get("_g") != GRADE_VERSION or "rr" not in old:
+        # a summary from before "rr" (the sewage Plumb refuses, by rule) or "sbm" (its weight by type) is made again once
+        if stale or old.get("_g") != GRADE_VERSION or "rr" not in old or "sbm" not in old:
             with open(p) as f:
                 rec = json.load(f)
             s = summarize(rec)
@@ -207,7 +214,8 @@ def load_index():
             idx[h] = s
             rewrite = True
             # A regrade touches every stored summary; only the blocks it changes need their pages again.
-            if stale or {k: v for k, v in old.items() if k[0] != "_"} != {k: v for k, v in s.items() if k[0] != "_"}:
+            # sbm feeds only the API (api.py compares its own files), so it never counts as a change.
+            if stale or {k: v for k, v in old.items() if k[0] != "_" and k not in API_ONLY} != {k: v for k, v in s.items() if k[0] != "_" and k not in API_ONLY}:
                 changed.append(h)
     for h in [h for h in idx if not os.path.exists(f"{BLOCKS}/{h}.json")]:
         del idx[h]
@@ -2719,7 +2727,7 @@ The foul and raw-sewage blocks are also an <a href="/feed.xml">Atom feed</a>.</p
 <ul><li><code>/api/v1/block/&lt;height&gt;.json</code>: one block.</li>
 <li><code>/api/v1/blocks/&lt;n&gt;.json</code>: the blocks of one thousand, sorted by height, with <code>from</code> and <code>to</code>. <code>blocks/975.json</code> holds 975000 to 975999. The first is <code>961.json</code>, from {FORK}. Read these to backfill, or to catch up from a height.</li>
 <li><code>/api/v1/tip.json</code>: the highest block graded here, as <code>height</code>, <code>hash</code> and <code>grader_version</code>.</li></ul>
-<p>A block has <code>height</code>, <code>hash</code>, <code>time</code> (the block&#39;s time), <code>grade</code>, <code>grade_label</code>, <code>sewage_share</code> (the share of the block&#39;s weight that is sewage, to 6 places), <code>sewage_tx</code> and <code>gray_tx</code> (how many sewage and gray water transactions), <code>weight</code>, <code>url</code> (its page here) and <code>grader_version</code>. The grade is <code>pristine</code>, <code>tainted</code>, <code>foul</code> or <code>raw</code>, as under Grades above, and <code>grade_label</code> is the name this site shows for it. A height not graded here gets a 404.</p>
+<p>A block has <code>height</code>, <code>hash</code>, <code>time</code> (the block&#39;s time), <code>grade</code>, <code>grade_label</code>, <code>sewage_share</code> (the share of the block&#39;s weight that is sewage, to 6 places), <code>sewage_tx</code> and <code>gray_tx</code> (how many sewage and gray water transactions), <code>weight</code>, <code>sewage_by_type</code> (the weight of the block&#39;s sewage transactions per type id), <code>url</code> (its page here) and <code>grader_version</code>. The grade is <code>pristine</code>, <code>tainted</code>, <code>foul</code> or <code>raw</code>, as under Grades above, and <code>grade_label</code> is the name this site shows for it. A height not graded here gets a 404.</p>
 <p>A block near the tip can be replaced by a reorg, so key on the hash. Grades follow Plumb&#39;s rules, and the site can regrade. When <code>grader_version</code> changes, read the blocks files again; it is now <code>{GRADER_VERSION}</code>. If you cache, read them again about once a day as well.</p>
 <p>Please keep under 30 requests a minute, and credit cesspool.lol with a link to the block&#39;s page. <code>/d/</code> is internal to this site and changes without notice.</p>
 </div>'''

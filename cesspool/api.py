@@ -6,6 +6,10 @@ under <out>/api/v1/, written from the index on every build; site.py calls publis
                        {"api": 1, "from": lowest height, "to": highest, "blocks": [...]}. The backfill.
   tip.json             {"api": 1, "height", "hash", "grader_version"} of the highest block
 
+A block object's keys, in order: height, hash, time, grade, grade_label, sewage_share, sewage_tx, gray_tx,
+weight, sewage_by_type, url, grader_version. sewage_by_type is {type id: weight of the block's sewage
+transactions filed under it}, the types present only.
+
 A file is written only when its content changes, through a temporary file and a rename, so a build after
 one new block writes that block's file, its thousand's file and tip.json, and every other file keeps its
 mtime. Order: each thousand's block files, then its blocks file, then tip.json, then the files of
@@ -35,9 +39,12 @@ def dump(obj):
 def block(b, labels, version, site):
     """The API object for one index summary, keys in the documented order."""
     h = b["h"]
-    return {"height": h, "hash": b["hash"], "time": b["t"], "grade": b["grade"], "grade_label": labels[b["grade"]],
-            "sewage_share": round(b["share"], 6), "sewage_tx": b["sn"], "gray_tx": b["gn"], "weight": b["w"],
-            "url": f"{site}/block/{h}/", "grader_version": version}
+    o = {"height": h, "hash": b["hash"], "time": b["t"], "grade": b["grade"], "grade_label": labels[b["grade"]],
+         "sewage_share": round(b["share"], 6), "sewage_tx": b["sn"], "gray_tx": b["gn"], "weight": b["w"]}
+    if "sbm" in b:
+        o["sewage_by_type"] = b["sbm"]
+    o["url"], o["grader_version"] = f"{site}/block/{h}/", version
+    return o
 
 
 def read(path):
